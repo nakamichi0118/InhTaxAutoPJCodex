@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>InhTaxAutoPJ CSV デモ</title>
     <style>
+        :root {
+            color-scheme: light;
+        }
         body {
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             margin: 0;
@@ -44,10 +47,14 @@
             gap: 1rem;
             flex-wrap: wrap;
             margin-bottom: 1rem;
+            align-items: center;
+        }
+        .input-row label {
+            font-weight: 600;
         }
         textarea {
             width: 100%;
-            min-height: 200px;
+            min-height: 220px;
             padding: 1rem;
             border: 1px solid #cbd5f5;
             border-radius: 10px;
@@ -88,6 +95,13 @@
         .file-input {
             display: none;
         }
+        .text-input {
+            padding: 0.55rem 0.75rem;
+            border: 1px solid #cbd5f5;
+            border-radius: 8px;
+            background: #f8fafc;
+            min-width: 260px;
+        }
         .status {
             padding: 0.6rem 0.8rem;
             border-radius: 8px;
@@ -121,7 +135,7 @@
         }
         .preview {
             overflow-x: auto;
-            max-height: 200px;
+            max-height: 220px;
             background: white;
             border: 1px solid #cbd5f5;
             border-radius: 8px;
@@ -129,6 +143,7 @@
             font-family: monospace;
             font-size: 0.85rem;
             white-space: pre;
+            margin-top: 0.6rem;
         }
         footer {
             text-align: center;
@@ -143,15 +158,29 @@
             textarea {
                 min-height: 180px;
             }
+            .text-input {
+                min-width: 100%;
+            }
         }
     </style>
 </head>
 <body>
     <header>
         <h1>InhTaxAutoPJ CSV デモ</h1>
-        <p style="margin-top:0.4rem;font-size:0.9rem;color:#d1d5db;">相続書類OCRの正規化JSONをブラウザ内でCSVに変換します。</p>
+        <p style="margin-top:0.4rem;font-size:0.9rem;color:#d1d5db;">相続書類の正規化JSONをバックエンドAPI経由でCSVに変換します。</p>
     </header>
     <main>
+        <section>
+            <h2>バックエンド設定</h2>
+            <div class="input-row">
+                <label for="apiBaseInput">APIエンドポイント</label>
+                <input class="text-input" type="url" id="apiBaseInput" placeholder="https://example.up.railway.app/api">
+                <button class="secondary" id="checkApiBtn">接続テスト</button>
+                <span id="apiStatus" style="font-size:0.9rem;color:#4b5563;"></span>
+            </div>
+            <p style="margin:0;font-size:0.85rem;color:#6b7280;">クエリパラメータ <code>?api=...</code> でもエンドポイントを指定できます。</p>
+        </section>
+
         <section>
             <h2>JSON入力</h2>
             <div class="input-row">
@@ -159,9 +188,9 @@
                 <input type="file" id="inputFile" class="file-input" accept="application/json">
                 <button class="secondary" id="loadSample">サンプルJSONを読み込む</button>
             </div>
-            <textarea id="jsonInput" placeholder="{\n  &quot;assets&quot;: [ ... ]\n}"></textarea>
+            <textarea id="jsonInput" placeholder="{\n  \"assets\": [ ... ]\n}"></textarea>
             <div class="input-row" style="justify-content:flex-end;">
-                <button id="convertBtn">CSVを生成</button>
+                <button id="convertBtn">バックエンドでCSV生成</button>
                 <button class="secondary" id="clearBtn">クリア</button>
             </div>
             <div id="status" class="status" style="display:none;"></div>
@@ -178,127 +207,157 @@
 
 <script>
 (() => {
+    const DEFAULT_API_BASE = 'https://inhtaxautopjcodex-production.up.railway.app/api';
+    const urlParams = new URLSearchParams(window.location.search);
+    const apiInput = document.getElementById('apiBaseInput');
+    const apiStatus = document.getElementById('apiStatus');
+    const initialApi = (urlParams.get('api') || DEFAULT_API_BASE).replace(/\/$/, '');
+    apiInput.value = initialApi;
+
     const eraBaseYear = {
-        "令和": 2018,
-        "平成": 1988,
-        "昭和": 1925,
-        "大正": 1911,
+        '令和': 2018,
+        '平成': 1988,
+        '昭和': 1925,
+        '大正': 1911,
     };
 
     const assetColumns = [
-        "record_id",
-        "source_document",
-        "asset_category",
-        "asset_type",
-        "owner_name",
-        "asset_name",
-        "location_prefecture",
-        "location_municipality",
-        "location_detail",
-        "identifier_primary",
-        "identifier_secondary",
-        "valuation_basis",
-        "valuation_currency",
-        "valuation_amount",
-        "valuation_date",
-        "ownership_share",
-        "notes",
+        'record_id',
+        'source_document',
+        'asset_category',
+        'asset_type',
+        'owner_name',
+        'asset_name',
+        'location_prefecture',
+        'location_municipality',
+        'location_detail',
+        'identifier_primary',
+        'identifier_secondary',
+        'valuation_basis',
+        'valuation_currency',
+        'valuation_amount',
+        'valuation_date',
+        'ownership_share',
+        'notes',
     ];
 
     const bankColumns = [
-        "record_id",
-        "transaction_id",
-        "transaction_date",
-        "value_date",
-        "description",
-        "withdrawal_amount",
-        "deposit_amount",
-        "balance",
-        "line_confidence",
+        'record_id',
+        'transaction_id',
+        'transaction_date',
+        'value_date',
+        'description',
+        'withdrawal_amount',
+        'deposit_amount',
+        'balance',
+        'line_confidence',
     ];
 
     const sampleJson = {
-        "assets": [
+        'assets': [
             {
-                "category": "bank_deposit",
-                "type": "ordinary_deposit",
-                "source_document": "bankbook_001.pdf",
-                "owner_name": ["山田 太郎"],
-                "asset_name": "三菱UFJ銀行 普通預金",
-                "identifiers": {"primary": "1234567", "secondary": "渋谷支店"},
-                "valuation": {
-                    "basis": "残高証明",
-                    "currency": "JPY",
-                    "amount": "1,250,000",
-                    "date": "2025/01/31"
+                'category': 'bank_deposit',
+                'type': 'ordinary_deposit',
+                'source_document': 'bankbook_001.pdf',
+                'owner_name': ['山田 太郎'],
+                'asset_name': '三菱UFJ銀行 普通預金',
+                'identifiers': { 'primary': '1234567', 'secondary': '渋谷支店' },
+                'valuation': {
+                    'basis': '残高証明',
+                    'currency': 'JPY',
+                    'amount': '1,250,000',
+                    'date': '2025/01/31'
                 },
-                "ownership_share": 100,
-                "notes": "OCR confidence 0.92",
-                "transactions": [
+                'ownership_share': 100,
+                'notes': 'OCR confidence 0.92',
+                'transactions': [
                     {
-                        "transaction_date": "2025-01-05",
-                        "description": "給与振込",
-                        "deposit_amount": 350000,
-                        "balance": 1250000,
-                        "confidence": 0.88
+                        'transaction_date': '2025-01-05',
+                        'description': '給与振込',
+                        'deposit_amount': 350000,
+                        'balance': 1250000,
+                        'confidence': 0.88
                     },
                     {
-                        "transaction_date": "2025年1月10日",
-                        "description": "家賃支払",
-                        "withdrawal_amount": 120000,
-                        "balance": 1130000,
-                        "confidence": 0.82
+                        'transaction_date': '2025年1月10日',
+                        'description': '家賃支払',
+                        'withdrawal_amount': 120000,
+                        'balance': 1130000,
+                        'confidence': 0.82
                     }
                 ]
             },
             {
-                "category": "land",
-                "type": "residential",
-                "source_document": "fixed_asset_tax_notice.pdf",
-                "owner_name": ["山田 花子", "山田 太郎"],
-                "asset_name": "渋谷区松濤 1-2-3",
-                "location": {
-                    "prefecture": "東京都",
-                    "municipality": "渋谷区",
-                    "detail": "松濤1丁目2番3"
+                'category': 'land',
+                'type': 'residential',
+                'source_document': 'fixed_asset_tax_notice.pdf',
+                'owner_name': ['山田 花子', '山田 太郎'],
+                'asset_name': '渋谷区松濤 1-2-3',
+                'location': {
+                    'prefecture': '東京都',
+                    'municipality': '渋谷区',
+                    'detail': '松濤1丁目2番3'
                 },
-                "identifiers": {
-                    "primary": "渋谷区松濤1丁目2番3",
-                    "secondary": "地番 1234-5"
+                'identifiers': {
+                    'primary': '渋谷区松濤1丁目2番3',
+                    'secondary': '地番 1234-5'
                 },
-                "valuation": {
-                    "basis": "固定資産税評価額",
-                    "currency": "JPY",
-                    "amount": 85600000,
-                    "date": "令和6年1月1日"
+                'valuation': {
+                    'basis': '固定資産税評価額',
+                    'currency': 'JPY',
+                    'amount': 85600000,
+                    'date': '令和6年1月1日'
                 },
-                "ownership_share": 50,
-                "notes": "共有持分 山田姉弟"
+                'ownership_share': 50,
+                'notes': '共有持分 山田姉弟'
             }
         ]
     };
 
     const elements = {
-        fileInput: document.getElementById("inputFile"),
-        loadSampleBtn: document.getElementById("loadSample"),
-        convertBtn: document.getElementById("convertBtn"),
-        clearBtn: document.getElementById("clearBtn"),
-        jsonInput: document.getElementById("jsonInput"),
-        status: document.getElementById("status"),
-        results: document.getElementById("results"),
+        fileInput: document.getElementById('inputFile'),
+        loadSampleBtn: document.getElementById('loadSample'),
+        convertBtn: document.getElementById('convertBtn'),
+        clearBtn: document.getElementById('clearBtn'),
+        jsonInput: document.getElementById('jsonInput'),
+        status: document.getElementById('status'),
+        results: document.getElementById('results'),
+        checkApiBtn: document.getElementById('checkApiBtn'),
     };
 
-    elements.fileInput.addEventListener("change", handleFileSelected);
-    elements.loadSampleBtn.addEventListener("click", () => {
+    elements.fileInput.addEventListener('change', handleFileSelected);
+    elements.loadSampleBtn.addEventListener('click', () => {
         elements.jsonInput.value = JSON.stringify(sampleJson, null, 2);
-        showStatus("サンプルJSONを読み込みました。", false);
+        showStatus('サンプルJSONを読み込みました。', false);
     });
-    elements.convertBtn.addEventListener("click", handleConvert);
-    elements.clearBtn.addEventListener("click", () => {
-        elements.jsonInput.value = "";
-        elements.results.innerHTML = "";
+    elements.convertBtn.addEventListener('click', handleConvert);
+    elements.clearBtn.addEventListener('click', () => {
+        elements.jsonInput.value = '';
+        elements.results.innerHTML = '';
         hideStatus();
     });
+    elements.checkApiBtn.addEventListener('click', handleApiCheck);
+
+    function normalizedApiBase() {
+        const value = (apiInput.value || DEFAULT_API_BASE).trim();
+        return value.endsWith('/api') ? value.replace(/\/$/, '') : `${value.replace(/\/$/, '')}/api`;
+    }
+
+    async function handleApiCheck() {
+        const base = normalizedApiBase();
+        apiStatus.textContent = '接続確認中...';
+        try {
+            const response = await fetch(`${base}/ping`, { method: 'GET' });
+            if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+            const data = await response.json();
+            apiStatus.textContent = data.status === 'ok' ? '接続成功' : '応答が不正です';
+            apiStatus.style.color = data.status === 'ok' ? '#16a34a' : '#b91c1c';
+        } catch (error) {
+            console.error(error);
+            apiStatus.textContent = `接続失敗: ${error.message}`;
+            apiStatus.style.color = '#b91c1c';
+        }
+    }
 
     function handleFileSelected() {
         const file = elements.fileInput.files?.[0];
@@ -309,17 +368,18 @@
             showStatus(`${file.name} を読み込みました。`, false);
         };
         reader.onerror = () => {
-            showStatus("ファイルの読み込みに失敗しました。", true);
+            showStatus('ファイルの読み込みに失敗しました。', true);
         };
-        reader.readAsText(file, "utf-8");
+        reader.readAsText(file, 'utf-8');
     }
 
-    function handleConvert() {
+    async function handleConvert() {
         hideStatus();
-        elements.results.innerHTML = "";
+        elements.results.innerHTML = '';
+        apiStatus.textContent = '';
         const raw = elements.jsonInput.value.trim();
         if (!raw) {
-            showStatus("JSONを入力してください。", true);
+            showStatus('JSONを入力してください。', true);
             return;
         }
         let parsed;
@@ -329,243 +389,94 @@
             showStatus(`JSONの解析に失敗しました: ${error.message}`, true);
             return;
         }
+
+        const apiBase = normalizedApiBase();
+        showStatus('バックエンドにリクエストしています...', false);
         try {
-            const { assetRows, bankRows } = convertAssets(parsed);
-            if (assetRows.length === 0) {
-                showStatus("assets 配列が空、もしくは見つかりませんでした。", true);
-                return;
+            const response = await fetch(`${apiBase}/export`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(parsed),
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`HTTP ${response.status}: ${text}`);
             }
-            const assetCsv = buildCsv(assetColumns, assetRows);
-            renderResultCard("assets.csv", assetCsv, assetColumns, assetRows.slice(0, 6));
-            if (bankRows.length > 0) {
-                const bankCsv = buildCsv(bankColumns, bankRows);
-                renderResultCard("bank_transactions.csv", bankCsv, bankColumns, bankRows.slice(0, 6));
+            const payload = await response.json();
+            if (!payload || payload.status !== 'ok' || !payload.files) {
+                throw new Error('バックエンドから期待した形式のレスポンスが得られませんでした。');
             }
-            showStatus(`CSVを生成しました。${bankRows.length > 0 ? "2ファイル出力" : "1ファイル出力"}。`, false);
+            renderBackendFiles(payload.files);
+            showStatus('CSVを生成しました（バックエンド）。', false);
         } catch (error) {
             console.error(error);
-            showStatus(error.message || "CSV生成中にエラーが発生しました。", true);
+            showStatus(error.message || 'バックエンド呼び出し中にエラーが発生しました。', true);
         }
     }
 
-    function convertAssets(payload) {
-        if (!payload || !Array.isArray(payload.assets)) {
-            throw new Error("入力JSONに assets 配列が見つかりません。");
-        }
-        const assetRows = [];
-        const bankRows = [];
-        for (const item of payload.assets) {
-            if (!item || typeof item !== "object") continue;
-            const recordId = deriveRecordId(item);
-            assetRows.push(toAssetRow(item, recordId));
-            const rows = Array.from(iterTransactions(item, recordId));
-            bankRows.push(...rows);
-        }
-        return { assetRows, bankRows };
+    function renderBackendFiles(fileMap) {
+        elements.results.innerHTML = '';
+        Object.entries(fileMap).forEach(([filename, base64]) => {
+            try {
+                const csvText = decodeBase64Csv(base64);
+                const preview = csvText.split(/\r?\n/).slice(0, 10).join('\n');
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                const heading = document.createElement('h3');
+                heading.textContent = filename;
+                const downloadButton = document.createElement('button');
+                downloadButton.textContent = 'ダウンロード';
+                downloadButton.addEventListener('click', () => {
+                    triggerDownload(filename, csvText);
+                });
+                const previewBox = document.createElement('div');
+                previewBox.className = 'preview';
+                previewBox.textContent = preview;
+                card.appendChild(heading);
+                card.appendChild(downloadButton);
+                card.appendChild(previewBox);
+                elements.results.appendChild(card);
+            } catch (error) {
+                console.error(error);
+            }
+        });
     }
 
-    function toAssetRow(asset, recordId) {
-        const location = asset.location || {};
-        const identifiers = asset.identifiers || {};
-        const valuation = asset.valuation || {};
-        return {
-            record_id: recordId,
-            source_document: cleanText(asset.source_document),
-            asset_category: cleanText(asset.category),
-            asset_type: cleanText(asset.type),
-            owner_name: joinNames(asset.owner_name),
-            asset_name: cleanText(asset.asset_name),
-            location_prefecture: cleanText(location.prefecture),
-            location_municipality: cleanText(location.municipality),
-            location_detail: cleanText(location.detail),
-            identifier_primary: cleanText(identifiers.primary),
-            identifier_secondary: cleanText(identifiers.secondary),
-            valuation_basis: cleanText(valuation.basis),
-            valuation_currency: cleanText(valuation.currency) || "JPY",
-            valuation_amount: normalizeDecimal(valuation.amount),
-            valuation_date: normalizeDate(valuation.date),
-            ownership_share: normalizeDecimal(asset.ownership_share),
-            notes: cleanText(asset.notes),
-        };
-    }
-
-    function* iterTransactions(asset, recordId) {
-        const transactions = asset.transactions;
-        if (!Array.isArray(transactions) || transactions.length === 0) return;
-        let index = 1;
-        for (const txn of transactions) {
-            if (!txn || typeof txn !== "object") continue;
-            yield {
-                record_id: recordId,
-                transaction_id: `${recordId}-${String(index).padStart(4, "0")}`,
-                transaction_date: normalizeDate(txn.transaction_date),
-                value_date: normalizeDate(txn.value_date),
-                description: cleanText(txn.description),
-                withdrawal_amount: normalizeDecimal(txn.withdrawal_amount),
-                deposit_amount: normalizeDecimal(txn.deposit_amount),
-                balance: normalizeDecimal(txn.balance),
-                line_confidence: normalizeDecimal(txn.confidence),
-            };
-            index += 1;
+    function decodeBase64Csv(base64) {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+            bytes[i] = binary.charCodeAt(i);
         }
-    }
-
-    function cleanText(value) {
-        if (value === undefined || value === null) return "";
-        return String(value).trim().replace(/\s+/g, " ");
-    }
-
-    function joinNames(value) {
-        if (Array.isArray(value)) {
-            return value.map(cleanText).filter(Boolean).join(";");
-        }
-        return cleanText(value);
-    }
-
-    function normalizeDecimal(value) {
-        if (value === undefined || value === null || value === "") return "";
-        if (typeof value === "boolean") return value ? "1" : "0";
-        let numericValue;
-        if (typeof value === "number") {
-            if (!Number.isFinite(value)) return "";
-            numericValue = value;
-        } else {
-            const raw = String(value).replace(/,/g, "").trim();
-            if (!raw) return "";
-            numericValue = Number(raw);
-            if (!Number.isFinite(numericValue)) return cleanText(value);
-        }
-        const text = numericValue.toLocaleString("en-US", { useGrouping: false, maximumFractionDigits: 12 });
-        return text.includes(".") ? text.replace(/0+$/, "").replace(/\.$/, "") : text;
-    }
-
-    function normalizeDate(value) {
-        if (!value) return "";
-        const text = cleanText(value);
-        if (!text) return "";
-        if (!isNaN(Date.parse(text))) {
-            const date = new Date(text);
-            return isNaN(date.getTime()) ? text : formatIsoDate(date);
-        }
-        const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/);
-        if (compact) {
-            const [_, y, m, d] = compact;
-            return safeDate(Number(y), Number(m), Number(d)) || text;
-        }
-        const separated = text.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
-        if (separated) {
-            const [_, y, m, d] = separated;
-            return safeDate(Number(y), Number(m), Number(d)) || text;
-        }
-        const kanji = text.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日$/);
-        if (kanji) {
-            const [_, y, m, d] = kanji;
-            return safeDate(Number(y), Number(m), Number(d)) || text;
-        }
-        const eraMatch = text.match(/^(令和|平成|昭和|大正)(\d{1,2})年?(\d{1,2})月?(\d{1,2})日?$/);
-        if (eraMatch) {
-            const [_, era, eraYear, m, d] = eraMatch;
-            const base = eraBaseYear[era];
-            const year = base + Number(eraYear);
-            return safeDate(year, Number(m), Number(d)) || text;
+        let text = new TextDecoder('utf-8').decode(bytes);
+        if (text.charCodeAt(0) === 0xFEFF) {
+            text = text.slice(1);
         }
         return text;
     }
 
-    function safeDate(year, month, day) {
-        if (!year || !month || !day) return "";
-        const date = new Date(Date.UTC(year, month - 1, day));
-        if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day) {
-            return `${year.toString().padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        }
-        return "";
-    }
-
-    function formatIsoDate(date) {
-        return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
-    }
-
-    function deriveRecordId(asset) {
-        if (asset && asset.record_id) return cleanText(asset.record_id);
-        const fingerprint = [
-            cleanText(asset?.source_document),
-            cleanText(asset?.asset_name),
-            JSON.stringify(asset?.identifiers || {}, Object.keys(asset?.identifiers || {}).sort()),
-            cleanText(asset?.category)
-        ].join("|");
-        return `rec_${simpleHash(fingerprint)}`;
-    }
-
-    function simpleHash(input) {
-        let hash = 2166136261;
-        for (let i = 0; i < input.length; i += 1) {
-            hash ^= input.charCodeAt(i);
-            hash = Math.imul(hash, 16777619);
-        }
-        return (hash >>> 0).toString(16).padStart(8, "0");
-    }
-
-    function buildCsv(columns, rows) {
-        const lines = [];
-        lines.push(columns.join(","));
-        for (const row of rows) {
-            const values = columns.map((column) => csvEscape(row[column] ?? ""));
-            lines.push(values.join(","));
-        }
-        return "\ufeff" + lines.join("\n");
-    }
-
-    function csvEscape(value) {
-        const text = String(value ?? "");
-        if (text === "") return "";
-        if (/["]/.test(text) || /,/.test(text) || /\n/.test(text)) {
-            return '"' + text.replace(/"/g, '""') + '"';
-        }
-        return text;
-    }
-
-    function renderResultCard(filename, csvContent, columns, previewRows) {
-        const card = document.createElement("div");
-        card.className = "result-card";
-        const heading = document.createElement("h3");
-        heading.textContent = filename;
-        const downloadButton = document.createElement("button");
-        downloadButton.textContent = "ダウンロード";
-        downloadButton.addEventListener("click", () => {
-            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        });
-        const preview = document.createElement("div");
-        preview.className = "preview";
-        const previewLines = [columns.join(",")];
-        previewRows.forEach((row) => {
-            const line = columns.map((column) => row[column] ?? "").join(",");
-            previewLines.push(line);
-        });
-        preview.textContent = previewLines.join("\n");
-        card.appendChild(heading);
-        card.appendChild(downloadButton);
-        card.appendChild(preview);
-        elements.results.appendChild(card);
+    function triggerDownload(filename, content) {
+        const blob = new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     }
 
     function showStatus(message, isError) {
         elements.status.textContent = message;
-        elements.status.classList.toggle("error", !!isError);
-        elements.status.style.display = "block";
+        elements.status.classList.toggle('error', !!isError);
+        elements.status.style.display = 'block';
     }
 
     function hideStatus() {
-        elements.status.style.display = "none";
-        elements.status.textContent = "";
-        elements.status.classList.remove("error");
+        elements.status.style.display = 'none';
+        elements.status.textContent = '';
+        elements.status.classList.remove('error');
     }
 })();
 </script>
