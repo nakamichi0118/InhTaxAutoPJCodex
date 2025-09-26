@@ -1,0 +1,3 @@
+﻿record_id,transaction_id,transaction_date,value_date,description,withdrawal_amount,deposit_amount,balance,line_confidence
+c27abb3f-f09e-559e-b529-2dfb18ff5bf6,c27abb3f-f09e-559e-b529-2dfb18ff5bf6-0001,2025-01-05,,給与振込,,350000,1250000,0.88
+c27abb3f-f09e-559e-b529-2dfb18ff5bf6,c27abb3f-f09e-559e-b529-2dfb18ff5bf6-0002,2025-01-10,,家賃支払,120000,,1130000,0.82

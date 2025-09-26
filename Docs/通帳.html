@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>通帳データ化アプリ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- heic2any for HEIC conversion -->
+    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+    <!-- pdf.js for PDF processing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+      // Required for pdf.js to work correctly from CDN
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+    <style>
+        body {
+            font-family: 'Noto Sans JP', 'Inter', sans-serif; /* Noto Sans JPを優先 */
+            background-color: #f7fafc; /* Tailwind gray-100 */
+            color: #2d3748; /* Tailwind gray-800 */
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 900px; /* 少し幅を広げる */
+            margin: 2.5rem auto; /* 上下のマージンを調整 */
+            padding: 2.5rem; /* パディングを調整 */
+            background-color: white;
+            border-radius: 0.75rem; /* 角丸を少し大きく */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /*影を調整 */
+        }
+        .btn {
+            padding: 0.625rem 1.25rem; /* ボタンのパディングを微調整 */
+            border-radius: 0.5rem;   /* ボタンの角丸を調整 */
+            font-weight: 500;
+            transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 1px 3px 0 rgba(0,0,0,.1), 0 1px 2px 0 rgba(0,0,0,.06);
+        }
+        .btn:hover {
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
+        }
+        .btn-primary {
+            background-color: #4f46e5; /* Tailwind indigo-600 */
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #4338ca; /* Tailwind indigo-700 */
+        }
+        .btn-primary:disabled {
+            background-color: #a5b4fc; /* Tailwind indigo-300 */
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        .btn-secondary {
+            background-color: #64748b; /* Tailwind slate-500 */
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #475569; /* Tailwind slate-600 */
+        }
+        .btn-danger {
+            background-color: #ef4444; /* Tailwind red-500 */
+            color: white;
+            padding: 0.375rem 0.75rem; 
+            font-size: 0.875rem; 
+            margin-left: 0.75rem;
+        }
+        .btn-danger:hover {
+            background-color: #dc2626; /* Tailwind red-600 */
+        }
+        input[type="date"], input[type="file"] { /* input[type="file"]もスタイル調整対象に */
+            border: 1px solid #cbd5e1; /* Tailwind slate-300 */
+            padding: 0.625rem 0.75rem;
+            border-radius: 0.5rem;
+            box-shadow: inset 0 1px 2px 0 rgba(0,0,0,.05);
+        }
+        input[type="file"] {
+            width: 100%; /* ファイル選択ボタンを幅いっぱいに */
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1.5rem; /* テーブルの上のマージン */
+        }
+        th, td {
+            border: 1px solid #e2e8f0; /* Tailwind slate-200 */
+            padding: 0.875rem 1rem; /* テーブルセルのパディング */
+            text-align: left;
+            font-size: 0.9rem; /* テーブル内文字サイズ調整 */
+        }
+        th {
+            background-color: #f1f5f9; /* Tailwind slate-100 */
+            font-weight: 600; /* ヘッダー文字を少し太く */
+            color: #334155; /* Tailwind slate-700 */
+        }
+        /* Loader Styles */
+        .loader-container { 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 0; /* ローダーの上下パディング */
+            flex-direction: column; 
+        }
+        .progress-ring {
+            width: 50px; 
+            height: 50px;
+        }
+        .progress-ring__circle {
+            stroke-dasharray: 125.6; 
+            stroke-dashoffset: 125.6;
+            stroke-linecap: round;
+            stroke-width: 5; /* 少し太く */ 
+            fill: transparent;
+            stroke: #4f46e5; 
+            transform-origin: 50% 50%;
+            animation: progress-ring-spin 1.2s linear infinite, progress-ring-fill 1.8s ease-in-out infinite alternate; /* アニメーション速度調整 */
+        }
+        .progress-ring__bg-circle { 
+            stroke-width: 5; /* 少し太く */
+            fill: transparent;
+            stroke: #e0e7ff; 
+        }
+
+        @keyframes progress-ring-spin {
+            0% { transform: rotate(-90deg); } /* 開始位置調整 */
+            100% { transform: rotate(270deg); }
+        }
+        @keyframes progress-ring-fill {
+            0% { stroke-dashoffset: 120; } /* 開始時の隙間 */
+            50% { stroke-dashoffset: 25; } 
+            100% { stroke-dashoffset: 120; }
+        }
+
+        .message-base { /* 共通スタイル */
+            padding: 0.875rem 1.25rem;
+            border-radius: 0.5rem;
+            margin-top: 1.25rem;
+            border-width: 1px;
+            text-align: center; /* メッセージを中央寄せ */
+        }
+        .error-message {
+            color: #991b1b; background-color: #fee2e2; border-color: #fecaca; /* Tailwind red-900, red-100, red-300 */
+        }
+        .success-message {
+            color: #065f46; background-color: #d1fae5; border-color: #a7f3d0; /* Tailwind emerald-800, emerald-100, emerald-300 */
+        }
+        .info-message {
+            color: #1e40af; background-color: #dbeafe; border-color: #bfdbfe; /* Tailwind blue-800, blue-100, blue-300 */
+        }
+        .drop-zone {
+            border: 2px dashed #94a3b8; /* Tailwind slate-400 */
+            padding: 2.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+            background-color: #f8fafc; /* Tailwind slate-50 */
+            border-radius: 0.5rem;
+        }
+        .drop-zone:hover {
+            border-color: #4f46e5; /* Tailwind indigo-600 */
+            background-color: #eef2ff; /* Tailwind indigo-50 */
+        }
+        .drop-zone.dragover {
+            background-color: #e0e7ff;
+            border-color: #4338ca; 
+        }
+        .drop-zone-text { color: #475569; /* Tailwind slate-600 */ }
+        .file-list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.375rem 0; /* リストアイテムのパディング */
+            border-bottom: 1px solid #f1f5f9; /* 区切り線 */
+        }
+        .file-list-item:last-child {
+            border-bottom: none;
+        }
+        .file-list { list-style-type: none; padding-left:0; margin-top: 0.75rem; font-size: 0.875rem; color: #334155;}
+        h1 { font-family: 'Noto Sans JP', sans-serif; color: #1e293b; /* Tailwind slate-800 */}
+        h2 { font-family: 'Noto Sans JP', sans-serif; color: #334155; /* Tailwind slate-700 */}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="mb-10 text-center"> 
+            <h1 class="text-4xl font-bold mb-2">通帳データ化アプリ</h1>
+            <p class="text-lg text-slate-600">通帳の画像やPDF(複数ページ可)をアップロードして取引明細をCSVで出力します。</p>
+            <p class="text-sm text-red-600 mt-2">※一度に処理できる合計ページ数（画像含む）は10件までです。</p>
+        </header>
+
+        <section id="uploadSection" class="mb-8 p-6 bg-slate-50 rounded-xl shadow-lg"> 
+            <h2 class="text-2xl font-semibold mb-6 text-slate-700 border-b pb-3">1. 画像/PDFと設定</h2>
+            <div id="initialErrorArea" class="hidden message-base error-message"></div>
+            
+            <div id="filePreProcessingLoaderContainer" class="loader-container hidden">
+                <svg class="progress-ring" viewBox="0 0 50 50">
+                    <circle class="progress-ring__bg-circle" cx="25" cy="25" r="20"></circle>
+                    <circle class="progress-ring__circle" cx="25" cy="25" r="20"></circle>
+                </svg>
+            </div>
+            <div id="filePreProcessingMessageArea" class="mt-2 text-center"></div> 
+
+
+            <div class="space-y-6 mt-4"> 
+                <div>
+                    <label for="imageFiles" class="block text-md font-medium text-slate-700 mb-2">ファイルを選択:複数選択可</label>
+                    <div id="dropZone" class="drop-zone">
+                        <input type="file" id="imageFiles" accept="image/*,.heic,.heif,application/pdf" class="hidden" multiple>
+                        <p id="dropZoneText" class="drop-zone-text text-slate-500">ここにファイルをドラッグ＆ドロップ<br>またはクリックしてファイルを選択</p>
+                    </div>
+                    <div id="filePreviewArea" class="mt-4">
+                        <p class="text-md font-medium text-slate-700 mb-1">処理対象リスト:最大10アイテム</p>
+                        <ul id="selectedFilesList" class="file-list bg-white p-3 rounded-md border border-slate-200 max-h-48 overflow-y-auto">
+                            <li id="noFilesSelected" class="text-slate-500 italic">まだファイルが選択されていません</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="flex items-center pt-2">
+                    <input type="checkbox" id="includeHandwriting" class="h-5 w-5 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 focus:ring-offset-0">
+                    <label for="includeHandwriting" class="ml-2 block text-md text-slate-700">手書き文字を含めて処理する</label>
+                </div>
+                <div>
+                    <label class="block text-md font-medium text-slate-700 mb-2">期間指定：任意</label>
+                    <div class="flex flex-wrap items-center gap-x-2 gap-y-2">
+                        <input type="date" id="startDate" class="flex-grow min-w-[120px]">
+                        <span class="text-slate-500 text-center px-1">-</span>
+                        <input type="date" id="endDate" class="flex-grow min-w-[120px]">
+                    </div>
+                    <p class="text-xs text-slate-500 mt-2">期間を指定しない場合は全てのデータが対象となります。</p>
+                </div>
+                <button id="processButton" class="btn btn-primary w-full text-lg py-3">処理実行</button> 
+            </div>
+        </section>
+
+        <section id="resultSection" class="hidden">
+            <h2 class="text-2xl font-semibold mb-6 text-slate-700 border-b pb-3">2. 抽出結果 (プレビュー)</h2>
+            <div id="loaderContainer" class="loader-container hidden">
+                <svg class="progress-ring" viewBox="0 0 50 50">
+                    <circle class="progress-ring__bg-circle" cx="25" cy="25" r="20"></circle>
+                    <circle class="progress-ring__circle" cx="25" cy="25" r="20"></circle>
+                </svg>
+            </div>
+            <div id="messageArea" class="mt-2"></div> 
+            <div id="previewTableContainer" class="overflow-x-auto mt-4 shadow rounded-lg">
+                <table id="previewTable" class="hidden min-w-full">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">取引日</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">出金額</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">入金額</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">残高</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">取引内容</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">元ファイル(ページ)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="previewTableBody" class="bg-white divide-y divide-slate-200"></tbody>
+                </table>
+            </div>
+            <button id="downloadCsvButton" class="btn btn-secondary mt-8 w-full text-lg py-3 hidden">CSVダウンロード</button>
+        </section>
+    </div>
+
+    <script>
+        // JavaScript部分は変更なし（ID: passbook_to_csv_app_full_html_gas_pdf_support の最新版を参照）
+        document.addEventListener('DOMContentLoaded', () => {
+            const imageFilesEl = document.getElementById('imageFiles');
+            const includeHandwritingEl = document.getElementById('includeHandwriting');
+            const startDateEl = document.getElementById('startDate');
+            const endDateEl = document.getElementById('endDate');
+            const processButtonEl = document.getElementById('processButton');
+            const resultSectionEl = document.getElementById('resultSection');
+            const loaderContainerEl = document.getElementById('loaderContainer'); 
+            const filePreProcessingLoaderContainerEl = document.getElementById('filePreProcessingLoaderContainer');
+            const messageAreaEl = document.getElementById('messageArea');
+            const filePreProcessingMessageAreaEl = document.getElementById('filePreProcessingMessageArea');
+            const initialErrorAreaEl = document.getElementById('initialErrorArea');
+            const previewTableEl = document.getElementById('previewTable');
+            const previewTableBodyEl = document.getElementById('previewTableBody');
+            const downloadCsvButtonEl = document.getElementById('downloadCsvButton');
+            const dropZoneEl = document.getElementById('dropZone');
+            const dropZoneTextEl = document.getElementById('dropZoneText');
+            const selectedFilesListEl = document.getElementById('selectedFilesList');
+            const noFilesSelectedEl = document.getElementById('noFilesSelected');
+
+            const MAX_PROCESS_ITEMS = 10; 
+            let allExtractedData = [];
+            let filesToProcess = []; 
+
+            function showPreProcessingLoader(show, message = "") {
+                if (filePreProcessingLoaderContainerEl) {
+                    filePreProcessingLoaderContainerEl.classList.toggle('hidden', !show);
+                }
+                if (filePreProcessingMessageAreaEl) {
+                    filePreProcessingMessageAreaEl.innerHTML = ""; 
+                    if (show && message) {
+                         const msgDiv = document.createElement('div');
+                         msgDiv.className = 'info-message text-center message-base'; 
+                         msgDiv.textContent = message;
+                         filePreProcessingMessageAreaEl.appendChild(msgDiv);
+                    }
+                }
+                 if (processButtonEl) processButtonEl.disabled = show; 
+            }
+
+
+            if (typeof google === 'undefined' || typeof google.script === 'undefined' || typeof google.script.run === 'undefined') {
+                const errorMsg = "エラー: アプリケーションが正しく読み込まれませんでした。Google Apps Scriptのウェブアプリとして実行されているか確認してください (通常、URLの末尾が /exec となります)。HTMLファイルを直接開いている場合、このエラーが発生します。";
+                console.error(errorMsg);
+                if (initialErrorAreaEl) {
+                    initialErrorAreaEl.textContent = errorMsg;
+                    initialErrorAreaEl.classList.remove('hidden');
+                }
+                if (processButtonEl) {
+                    processButtonEl.disabled = true;
+                    processButtonEl.title = "アプリが正しく読み込まれていないため処理を実行できません。";
+                }
+                if(dropZoneEl) dropZoneEl.style.pointerEvents = 'none';
+                if(imageFilesEl) imageFilesEl.disabled = true;
+                return; 
+            }
+
+            if (dropZoneEl && imageFilesEl) { 
+                dropZoneEl.addEventListener('click', () => imageFilesEl.click());
+                dropZoneEl.addEventListener('dragover', (event) => { event.preventDefault(); dropZoneEl.classList.add('dragover'); });
+                dropZoneEl.addEventListener('dragleave', () => { dropZoneEl.classList.remove('dragover'); });
+                dropZoneEl.addEventListener('drop', (event) => {
+                    event.preventDefault();
+                    dropZoneEl.classList.remove('dragover');
+                    handleFiles(Array.from(event.dataTransfer.files));
+                });
+            }
+
+            if (imageFilesEl) {
+                imageFilesEl.addEventListener('change', (event) => {
+                    handleFiles(Array.from(event.target.files));
+                    imageFilesEl.value = ''; 
+                });
+            }
+
+            async function handleFiles(droppedFiles) {
+                showPreProcessingLoader(true, "選択されたファイルの前処理中です...");
+                clearMessages(); 
+                let currentItemCount = filesToProcess.length;
+                let filesAddedThisRound = 0;
+                let localProcessingErrorOccurred = false;
+
+                for (const file of droppedFiles) {
+                    if (currentItemCount >= MAX_PROCESS_ITEMS) {
+                        appendMessage(`処理アイテム数の上限(${MAX_PROCESS_ITEMS}件)に達したため、「${file.name}」以降のファイルは追加されませんでした。`, 'info');
+                        localProcessingErrorOccurred = true;
+                        break; 
+                    }
+
+                    const isImageDuplicate = filesToProcess.some(existing => 
+                        existing.originalName === file.name && (existing.type === 'image') 
+                    );
+                     if (isImageDuplicate && file.type !== 'application/pdf') {
+                        appendMessage(`画像ファイル「${file.name}」は既に追加されています。`, 'info');
+                        continue;
+                    }
+
+                    if (file.type === 'application/pdf') {
+                        showPreProcessingLoader(true, `PDF「${file.name}」をページ毎の画像に変換中です...`);
+                        try {
+                            const pdfPageImages = await processPdfFile(file); 
+                            for (const pageImage of pdfPageImages) {
+                                if (currentItemCount < MAX_PROCESS_ITEMS) {
+                                    filesToProcess.push({
+                                        type: 'pdf-page',
+                                        originalName: pageImage.fileName,
+                                        base64Data: pageImage.base64Data,
+                                        mimeType: pageImage.mimeType
+                                    });
+                                    currentItemCount++;
+                                    filesAddedThisRound++;
+                                } else {
+                                    appendMessage(`処理アイテム数の上限(${MAX_PROCESS_ITEMS}件)に達したため、PDF「${file.name}」のページ ${pageImage.fileName.split('ページ ')[1].split('/')[0]} 以降は追加されませんでした。`, 'info');
+                                    localProcessingErrorOccurred = true;
+                                    break; 
+                                }
+                            }
+                             if (pdfPageImages.length > 0) {
+                                 // Message is handled by showPreProcessingLoader or final status message
+                             }
+                        } catch (pdfError) {
+                            appendMessage(`PDF「${file.name}」の処理に失敗: ${pdfError.message}`, 'error');
+                            localProcessingErrorOccurred = true;
+                        }
+                    } else if (file.type.startsWith('image/') || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
+                        showPreProcessingLoader(true, `画像ファイル「${file.name}」を処理中です...`);
+                        try {
+                            const imageData = await convertImageFileToBase64(file);
+                             filesToProcess.push({
+                                type: 'image', 
+                                originalName: imageData.fileName,
+                                base64Data: imageData.base64Data,
+                                mimeType: imageData.mimeType 
+                            });
+                            currentItemCount++;
+                            filesAddedThisRound++;
+                        } catch (imageError) {
+                             appendMessage(`画像ファイル「${file.name}」の処理に失敗: ${imageError.message || imageError.error || String(imageError)}`, 'error');
+                             localProcessingErrorOccurred = true;
+                        }
+                    } else {
+                        appendMessage(`未対応のファイル形式です: ${file.name} (${file.type})`, 'info');
+                        localProcessingErrorOccurred = true;
+                    }
+                } 
+
+                updateSelectedFilesDisplay();
+                showPreProcessingLoader(false); 
+                
+                clearMessages();
+                if (filesAddedThisRound > 0) {
+                     appendMessage(`${filesAddedThisRound} アイテムが処理リストに追加されました。`, 'success');
+                 } else if (droppedFiles.length > 0 && !localProcessingErrorOccurred) { 
+                     displayMessage("処理対象として追加できる有効なファイルがありませんでした。", "info");
+                 } else if (filesToProcess.length >= MAX_PROCESS_ITEMS && droppedFiles.length > 0 && !localProcessingErrorOccurred) {
+                    appendMessage(`処理アイテム数の上限(${MAX_PROCESS_ITEMS}件)に達しています。`, 'info');
+                 }
+                 
+
+                if (previewTableEl) previewTableEl.classList.add('hidden');
+                if (downloadCsvButtonEl) downloadCsvButtonEl.classList.add('hidden');
+            }
+            
+            function removeFileFromProcess(itemIndex) { 
+                if (itemIndex >= 0 && itemIndex < filesToProcess.length) {
+                    const removedItem = filesToProcess.splice(itemIndex, 1)[0];
+                    console.log(`Removed item: ${removedItem.originalName}`);
+                    updateSelectedFilesDisplay();
+                    if (filesToProcess.length === 0) {
+                        allExtractedData = [];
+                        if (previewTableBodyEl) previewTableBodyEl.innerHTML = '';
+                        if (previewTableEl) previewTableEl.classList.add('hidden');
+                        if (downloadCsvButtonEl) downloadCsvButtonEl.classList.add('hidden');
+                        clearMessages(); 
+                    }
+                }
+            }
+
+            function updateSelectedFilesDisplay() {
+                 if (!selectedFilesListEl || !noFilesSelectedEl || !dropZoneTextEl) return;
+                selectedFilesListEl.innerHTML = ''; 
+                const placeholderItem = noFilesSelectedEl.cloneNode(true); 
+                
+                if (filesToProcess.length === 0) {
+                    let currentPlaceholder = selectedFilesListEl.querySelector('#noFilesSelected');
+                    if (!currentPlaceholder) { selectedFilesListEl.appendChild(placeholderItem); }
+                    dropZoneTextEl.innerHTML = "ここにファイルをドラッグ＆ドロップ<br>またはクリックしてファイルを選択";
+                } else {
+                    let currentPlaceholder = selectedFilesListEl.querySelector('#noFilesSelected');
+                    if (currentPlaceholder) { selectedFilesListEl.removeChild(currentPlaceholder); }
+                    filesToProcess.forEach((item, index) => { 
+                        const listItem = document.createElement('li');
+                        listItem.className = 'file-list-item'; 
+                        const fileNameSpan = document.createElement('span');
+                        fileNameSpan.textContent = item.originalName; 
+                        const deleteButton = document.createElement('button');
+                        deleteButton.textContent = '削除';
+                        deleteButton.className = 'btn btn-danger';
+                        deleteButton.type = 'button'; 
+                        deleteButton.dataset.itemIndex = index; 
+                        
+                        deleteButton.addEventListener('click', (event) => {
+                            const indexToRemove = parseInt(event.target.dataset.itemIndex, 10);
+                            removeFileFromProcess(indexToRemove);
+                        });
+                        
+                        listItem.appendChild(fileNameSpan);
+                        listItem.appendChild(deleteButton);
+                        selectedFilesListEl.appendChild(listItem);
+                    });
+                    dropZoneTextEl.textContent = `${filesToProcess.length}件のアイテムを処理対象として選択中 (最大${MAX_PROCESS_ITEMS}件)`;
+                }
+            }
+            if (selectedFilesListEl && noFilesSelectedEl) { updateSelectedFilesDisplay(); }
+
+            async function processPdfFile(fileObject) {
+                const fileReader = new FileReader();
+                // Loader and initial message are managed by handleFiles.
+                // This function updates the specific message area for PDF page progress.
+                
+                return new Promise((resolve, reject) => {
+                    fileReader.onload = async function() {
+                        try {
+                            const typedarray = new Uint8Array(this.result);
+                            if (typeof pdfjsLib === 'undefined') {
+                                reject(new Error('pdf.jsライブラリが読み込まれていません。'));
+                                return;
+                            }
+                            const pdfDoc = await pdfjsLib.getDocument(typedarray).promise;
+                            const numPages = pdfDoc.numPages;
+                            const pageImageBase64List = [];
+                            
+                            for (let i = 1; i <= numPages; i++) {
+                                if(filePreProcessingMessageAreaEl) {
+                                    filePreProcessingMessageAreaEl.innerHTML = ''; // Clear previous
+                                    const msgDiv = document.createElement('div');
+                                    msgDiv.className = 'info-message text-center message-base';
+                                    msgDiv.textContent = `PDF「${fileObject.name}」: ${i}/${numPages} ページ目を画像に変換中...`;
+                                    filePreProcessingMessageAreaEl.appendChild(msgDiv);
+                                }
+                                
+                                const page = await pdfDoc.getPage(i);
+                                const viewport = page.getViewport({ scale: 1.5 }); 
+                                const canvas = document.createElement('canvas');
+                                const context = canvas.getContext('2d');
+                                canvas.height = viewport.height;
+                                canvas.width = viewport.width;
+
+                                await page.render({ canvasContext: context, viewport: viewport }).promise;
+                                pageImageBase64List.push({
+                                    fileName: `${fileObject.name} (ページ ${i}/${numPages})`, 
+                                    base64Data: canvas.toDataURL('image/jpeg', 0.8).split(',')[1], 
+                                    mimeType: 'image/jpeg'
+                                });
+                            }
+                            resolve(pageImageBase64List);
+                        } catch (error) {
+                            console.error("PDF処理エラー:", error);
+                            reject(error); 
+                        } 
+                    };
+                    fileReader.onerror = () => {
+                        reject(new Error("PDFファイルの読み込みに失敗しました。"));
+                    }
+                    fileReader.readAsArrayBuffer(fileObject);
+                });
+            }
+
+            async function convertImageFileToBase64(file) { 
+                return new Promise(async (resolve, reject) => {
+                    let processedFile = file;
+                    let mimeType = file.type;
+                    try {
+                        if (file.type === 'image/heic' || file.type === 'image/heif' || 
+                            file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
+                            
+                            if (typeof heic2any !== 'function') { 
+                                throw new Error('heic2anyライブラリが読み込まれていません。HEICファイルは処理できません。'); 
+                            }
+                            const conversionResult = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
+                            if (!conversionResult) {
+                                throw new Error('HEICからJPEGへの変換に失敗しました（結果が不正です）。');
+                            }
+                            processedFile = conversionResult; 
+                            mimeType = "image/jpeg"; 
+                        }
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            const base64Data = e.target.result.split(',')[1]; 
+                            resolve({ fileName: file.name, base64Data, mimeType });
+                        };
+                        reader.onerror = () => {
+                            console.error(`FileReader error (${file.name})`);
+                            reject({fileName: file.name, error: '画像ファイルの読み込み（Base64変換）に失敗しました。'});
+                        };
+                        reader.readAsDataURL(processedFile); 
+                    } catch (err) {
+                         console.error(`画像ファイル「${file.name}」の前処理エラー:`, err);
+                         reject({fileName: file.name, error: `画像ファイル「${file.name}」の前処理に失敗: ${err.message || String(err)}`});
+                    }
+                });
+            }
+
+            function callGasProcessImage(base64Data, mimeType, includeHandwriting) {
+                return new Promise((resolve, reject) => {
+                    google.script.run
+                        .withSuccessHandler(resolve) 
+                        .withFailureHandler(reject)  
+                        .callGeminiApi(base64Data, mimeType, includeHandwriting); 
+                });
+            }
+
+            if (processButtonEl) {
+                processButtonEl.addEventListener('click', async () => {
+                    if (filesToProcess.length === 0) {
+                        displayMessage('処理対象のファイル（またはPDFページ）が選択されていません。', 'error');
+                        return;
+                    }
+                    if (filesToProcess.length > MAX_PROCESS_ITEMS) {
+                        displayMessage(`一度に処理できるアイテム数の上限(${MAX_PROCESS_ITEMS}件)を超えています。現在のアイテム数: ${filesToProcess.length}件。リストからアイテムを削除してください。`, 'error');
+                        return;
+                    }
+                    if(resultSectionEl) resultSectionEl.classList.remove('hidden');
+                    if(loaderContainerEl) loaderContainerEl.classList.remove('hidden'); 
+                    if(processButtonEl) processButtonEl.disabled = true; 
+                    clearMessages(); 
+                   
+                    if(previewTableEl) previewTableEl.classList.add('hidden');
+                    if(previewTableBodyEl) previewTableBodyEl.innerHTML = '';
+                    if(downloadCsvButtonEl) downloadCsvButtonEl.classList.add('hidden');
+                    allExtractedData = [];
+                    let successfulFiles = 0;
+                    let failedFiles = 0;
+                    displayMessage(`${filesToProcess.length}件のアイテム（画像/PDFページ）をサーバーで処理中です...`, 'info');
+
+                    for (let i = 0; i < filesToProcess.length; i++) {
+                        const itemToProcess = filesToProcess[i]; 
+                        const serverProgressMessages = Array.from(messageAreaEl.querySelectorAll('.info-message'));
+                        serverProgressMessages.forEach(msg => {
+                            if (msg.textContent.includes("サーバー処理中")) {
+                                 messageAreaEl.removeChild(msg); 
+                            }
+                        });
+                        appendMessage(`${i + 1}/${filesToProcess.length}件目: ${itemToProcess.originalName} をサーバー処理中...`, 'info'); 
+                        
+                        try {
+                            const resultFromServer = await callGasProcessImage(itemToProcess.base64Data, itemToProcess.mimeType, includeHandwritingEl.checked);
+                            
+                            if (resultFromServer && resultFromServer.error) { 
+                                throw new Error(resultFromServer.error.message || "サーバー側でエラーが発生しました。");
+                            }
+                            if (resultFromServer && resultFromServer.candidates && resultFromServer.candidates[0]?.content?.parts?.[0]?.text) {
+                                const rawJsonText = resultFromServer.candidates[0].content.parts[0].text;
+                                try {
+                                    let parsedData = JSON.parse(rawJsonText);
+                                    if (!Array.isArray(parsedData)) { throw new Error("API応答が期待される配列形式ではありません。"); }
+                                    parsedData = parsedData.filter(item => !( (typeof item.出金額 === 'number' && item.出金額 === 0) && (typeof item.入金額 === 'number' && item.入金額 === 0) ));
+                                    parsedData = parsedData.map(entry => ({ ...entry, 元ファイル: itemToProcess.originalName, _originalIndex: allExtractedData.length + parsedData.indexOf(entry) }));
+                                    allExtractedData.push(...parsedData);
+                                    successfulFiles++;
+                                } catch (e) { throw new Error(`抽出データ解析エラー: ${e.message}`); }
+                            } else {
+                                console.warn("Server response structure not as expected:", resultFromServer);
+                                throw new Error(`予期しないサーバー応答形式`);
+                            }
+                        } catch (error) { 
+                            console.error(`アイテム「${itemToProcess.originalName}」の処理中にエラー:`, error);
+                            appendMessage(`アイテム「${itemToProcess.originalName}」の処理エラー: ${error.message || String(error)}`, 'error'); 
+                            failedFiles++;
+                        }
+                    } 
+
+                    if(loaderContainerEl) loaderContainerEl.classList.add('hidden');
+                    if(processButtonEl) processButtonEl.disabled = false; 
+                    clearMessages();  
+                    if (successfulFiles > 0) {
+                        displayMessage(`${successfulFiles}件のアイテムからデータを抽出しました。${failedFiles > 0 ? failedFiles + '件の処理に失敗しました。' : ''}`, 'success');
+                        filterAndDisplayData(); 
+                        if (allExtractedData.length > 0) { 
+                           if(downloadCsvButtonEl) downloadCsvButtonEl.classList.remove('hidden');
+                        } else {
+                           if(downloadCsvButtonEl) downloadCsvButtonEl.classList.add('hidden');
+                            displayMessage('有効な取引データが見つかりませんでした。', 'info');
+                        }
+                    } else {
+                        displayMessage(`データ抽出に失敗しました。${failedFiles > 0 ? failedFiles + '件の処理に失敗しました。' : ''}`, 'error');
+                    }
+                });
+            }
+
+            function filterAndDisplayData() {
+                let dataToDisplay = [...allExtractedData]; 
+                dataToDisplay = dataToDisplay.map(item => ({
+                    取引日: item.取引日 && isValidDate(item.取引日) ? item.取引日 : "不明",
+                    出金額: typeof item.出金額 === 'number' ? item.出金額 : 0,
+                    入金額: typeof item.入金額 === 'number' ? item.入金額 : 0,
+                    残高: typeof item.残高 === 'number' || (typeof item.残高 === 'string' && !isNaN(parseFloat(item.残高))) ? parseFloat(item.残高) : "不明",
+                    取引内容: typeof item.取引内容 === 'string' ? item.取引内容 : "",
+                    元ファイル: item.元ファイル || "不明", 
+                    _originalIndex: item._originalIndex 
+                })).filter(item => item !== null && item.取引日 !== "不明");
+                const start = startDateEl ? startDateEl.value : null; 
+                const end = endDateEl ? endDateEl.value : null; 
+                const startDateObj = start ? new Date(start) : null;
+                const endDateObj = end ? new Date(end) : null;
+                if (startDateObj) startDateObj.setHours(0, 0, 0, 0);
+                if (endDateObj) endDateObj.setHours(23, 59, 59, 999);
+                if (startDateObj || endDateObj) {
+                    dataToDisplay = dataToDisplay.filter(item => {
+                        if (item.取引日 === "不明") return false;
+                        try {
+                            const itemDate = new Date(item.取引日);
+                            if (isNaN(itemDate.getTime())) return false;
+                            let pass = true;
+                            if (startDateObj && itemDate < startDateObj) pass = false;
+                            if (endDateObj && itemDate > endDateObj) pass = false;
+                            return pass;
+                        } catch (e) { return false; }
+                    });
+                }
+                dataToDisplay.sort((a, b) => {
+                    const dateA = new Date(a.取引日);
+                    const dateB = new Date(b.取引日);
+                    if (dateA < dateB) return -1;
+                    if (dateA > dateB) return 1;
+                    return a._originalIndex - b._originalIndex; 
+                });
+                renderTable(dataToDisplay);
+            }
+            
+            function isValidDate(dateString) {
+                if (!dateString || typeof dateString !== 'string') return false;
+                const regex = /^\d{4}-\d{2}-\d{2}$/;
+                if (!regex.test(dateString)) return false;
+                const date = new Date(dateString);
+                const [year, month, day] = dateString.split('-').map(Number);
+                return date instanceof Date && !isNaN(date) && date.getFullYear() === year && date.getMonth() + 1 === month && date.getDate() === day;
+            }
+
+            function renderTable(data) {
+                if (!previewTableBodyEl || !previewTableEl || !downloadCsvButtonEl) return;
+                previewTableBodyEl.innerHTML = '';
+                if (data.length === 0) {
+                    previewTableEl.classList.add('hidden');
+                    downloadCsvButtonEl.classList.add('hidden');
+                    return;
+                }
+                data.forEach(item => {
+                    const row = previewTableBodyEl.insertRow();
+                    row.insertCell().textContent = item.取引日 !== "不明" ? item.取引日 : "---";
+                    row.insertCell().textContent = typeof item.出金額 === 'number' ? item.出金額.toLocaleString() : "0";
+                    row.insertCell().textContent = typeof item.入金額 === 'number' ? item.入金額.toLocaleString() : "0";
+                    row.insertCell().textContent = item.残高 !== "不明" && typeof item.残高 === 'number' ? item.残高.toLocaleString() : (item.残高 === "不明" ? "---" : String(item.残高));
+                    row.insertCell().textContent = item.取引内容;
+                    row.insertCell().textContent = item.元ファイル; 
+                });
+                previewTableEl.classList.remove('hidden');
+                downloadCsvButtonEl.classList.remove('hidden');
+            }
+
+            if (downloadCsvButtonEl) {
+                downloadCsvButtonEl.addEventListener('click', () => {
+                    let dataToDownload = [...allExtractedData]; 
+                    dataToDownload = dataToDownload.map(item => ({ 
+                        取引日: item.取引日 && isValidDate(item.取引日) ? item.取引日 : "不明",
+                        出金額: typeof item.出金額 === 'number' ? item.出金額 : 0,
+                        入金額: typeof item.入金額 === 'number' ? item.入金額 : 0,
+                        残高: typeof item.残高 === 'number' || (typeof item.残高 === 'string' && !isNaN(parseFloat(item.残高))) ? parseFloat(item.残高) : "不明",
+                        取引内容: typeof item.取引内容 === 'string' ? item.取引内容 : "",
+                        _originalIndex: item._originalIndex 
+                    })).filter(item => item !== null && item.取引日 !== "不明");
+                    const start = startDateEl ? startDateEl.value : null;
+                    const end = endDateEl ? endDateEl.value : null;
+                    const startDateObj = start ? new Date(start) : null;
+                    const endDateObj = end ? new Date(end) : null;
+                    if (startDateObj) startDateObj.setHours(0, 0, 0, 0);
+                    if (endDateObj) endDateObj.setHours(23, 59, 59, 999);
+                    if (startDateObj || endDateObj) { 
+                         dataToDownload = dataToDownload.filter(item => {
+                            if (item.取引日 === "不明") return false;
+                            try {
+                                const itemDate = new Date(item.取引日);
+                                if (isNaN(itemDate.getTime())) return false; 
+                                let pass = true;
+                                if (startDateObj && itemDate < startDateObj) pass = false;
+                                if (endDateObj && itemDate > endDateObj) pass = false;
+                                return pass;
+                            } catch (e) { return false; }
+                        });
+                    }
+                    dataToDownload.sort((a, b) => {
+                        const dateA = new Date(a.取引日);
+                        const dateB = new Date(b.取引日);
+                        if (dateA < dateB) return -1;
+                        if (dateA > dateB) return 1;
+                        return a._originalIndex - b._originalIndex;
+                    });
+                    if (dataToDownload.length === 0) {
+                        displayMessage('CSVに出力するデータがありません（0円取引除外後、または期間指定による）。', 'info');
+                        return;
+                    }
+                    const header = ["取引日", "出金額", "入金額", "残高", "取引内容"];
+                    const csvRows = [
+                        header.join(','),
+                        ...dataToDownload.map(item => [ 
+                            item.取引日 !== "不明" ? item.取引日 : "", 
+                            item.出金額,
+                            item.入金額,
+                            item.残高 !== "不明" && typeof item.残高 === 'number' ? item.残高 : "",
+                            `"${(item.取引内容 || "").replace(/"/g, '""')}"`
+                        ].join(','))
+                    ];
+                    const csvString = csvRows.join('\n');
+                    const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' }); 
+                    const link = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', '通帳明細.csv');
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    displayMessage('CSVファイルをダウンロードしました。', 'success');
+                });
+            }
+            
+            function clearMessages() { 
+                if (messageAreaEl) messageAreaEl.innerHTML = ''; 
+            }
+
+            function appendMessage(message, type = 'info') { 
+                if (!messageAreaEl) return;
+                const messageDiv = document.createElement('div');
+                messageDiv.textContent = message;
+                if (type === 'error') messageDiv.className = 'error-message message-base';
+                else if (type === 'success') messageDiv.className = 'success-message message-base';
+                else messageDiv.className = 'info-message message-base';
+                messageAreaEl.appendChild(messageDiv); 
+                if (messageAreaEl.classList.contains('hidden')) {
+                     messageAreaEl.classList.remove('hidden');
+                }
+            }
+
+            function displayMessage(message, type = 'info') { 
+                clearMessages(); 
+                appendMessage(message, type);
+            }
+            
+            if (startDateEl) {
+                startDateEl.addEventListener('change', () => { if(allExtractedData.length > 0) filterAndDisplayData(); });
+            }
+            if (endDateEl) {
+                endDateEl.addEventListener('change', () => { if(allExtractedData.length > 0) filterAndDisplayData(); });
+            }
+        }); 
+    </script>
+</body>
+</html>

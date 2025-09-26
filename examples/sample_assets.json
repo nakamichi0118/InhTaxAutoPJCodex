@@ -1,0 +1,68 @@
+﻿{
+  "assets": [
+    {
+      "category": "bank_deposit",
+      "type": "ordinary_deposit",
+      "source_document": "bankbook_001.pdf",
+      "owner_name": ["山田 太郎"],
+      "asset_name": "三菱UFJ銀行 普通預金",
+      "location": {
+        "prefecture": null,
+        "municipality": null,
+        "detail": null
+      },
+      "identifiers": {
+        "primary": "1234567",
+        "secondary": "渋谷支店"
+      },
+      "valuation": {
+        "basis": "残高証明",
+        "currency": "JPY",
+        "amount": "1,250,000",
+        "date": "2025/01/31"
+      },
+      "ownership_share": 100,
+      "notes": "OCR confidence 0.92",
+      "transactions": [
+        {
+          "transaction_date": "2025-01-05",
+          "description": "給与振込",
+          "deposit_amount": 350000,
+          "balance": 1250000,
+          "confidence": 0.88
+        },
+        {
+          "transaction_date": "2025年1月10日",
+          "description": "家賃支払",
+          "withdrawal_amount": 120000,
+          "balance": 1130000,
+          "confidence": 0.82
+        }
+      ]
+    },
+    {
+      "category": "land",
+      "type": "residential",
+      "source_document": "fixed_asset_tax_notice.pdf",
+      "owner_name": ["山田 花子", "山田 太郎"],
+      "asset_name": "渋谷区松濤 1-2-3",
+      "location": {
+        "prefecture": "東京都",
+        "municipality": "渋谷区",
+        "detail": "松濤1丁目2番3"
+      },
+      "identifiers": {
+        "primary": "渋谷区松濤1丁目2番3",
+        "secondary": "地番 1234-5"
+      },
+      "valuation": {
+        "basis": "固定資産税評価額",
+        "currency": "JPY",
+        "amount": 85600000,
+        "date": "令和6年1月1日"
+      },
+      "ownership_share": 50,
+      "notes": "共有持分 山田姉弟"
+    }
+  ]
+}
