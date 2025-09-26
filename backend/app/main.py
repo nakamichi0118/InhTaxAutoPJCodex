@@ -2,19 +2,21 @@
 
 import base64
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .exporter import export_to_csv_strings
+from .models import DocumentAnalyzeResponse, DocumentType
 from .ocr import AzureFormRecognizerClient, AzureFormRecognizerError
+from .parser import build_assets, detect_document_type
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="InhTaxAutoPJ Backend", version="0.1.0")
+app = FastAPI(title="InhTaxAutoPJ Backend", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +25,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+async def _load_file_bytes(file: UploadFile) -> tuple[bytes, str]:
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+    content_type = file.content_type or "application/pdf"
+    if content_type not in {"application/pdf"}:
+        logger.warning("Unexpected content type %s; defaulting to application/pdf", content_type)
+        content_type = "application/pdf"
+    return contents, content_type
+
+
+def _analyze_layout(contents: bytes, content_type: str) -> List[str]:
+    client = AzureFormRecognizerClient()
+    try:
+        raw_result = client.analyze_layout(contents, content_type=content_type)
+    except AzureFormRecognizerError as exc:
+        logger.exception("Azure Document Intelligence error: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    pages = extract_layout_pages(raw_result)
+    return [line for page in pages for line in page["lines"]]
 
 
 @app.get("/api/ping")
@@ -46,29 +71,30 @@ async def export_csv(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.post("/api/analyze/pdf")
 async def analyze_pdf(file: UploadFile = File(...)) -> Dict[str, Any]:
-    contents = await file.read()
-    if not contents:
-        raise HTTPException(status_code=400, detail="Empty file uploaded")
-    content_type = file.content_type or "application/pdf"
-    if content_type not in {"application/pdf"}:
-        logger.warning("Unexpected content type %s; defaulting to application/pdf", content_type)
-        content_type = "application/pdf"
-
-    client = AzureFormRecognizerClient()
-    try:
-        raw_result = client.analyze_layout(contents, content_type=content_type)
-    except AzureFormRecognizerError as exc:
-        logger.exception("Azure Document Intelligence error: %s", exc)
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    pages = extract_layout_pages(raw_result)
-    plain_text = ["\n".join(page["lines"]) for page in pages]
+    contents, content_type = await _load_file_bytes(file)
+    lines = _analyze_layout(contents, content_type)
     return {
         "status": "ok",
-        "page_count": len(pages),
-        "pages": pages,
-        "plain_text": plain_text,
+        "line_count": len(lines),
+        "lines": lines,
     }
+
+
+@app.post("/api/documents/analyze", response_model=DocumentAnalyzeResponse)
+async def analyze_document(
+    file: UploadFile = File(...),
+    document_type: Optional[DocumentType] = Form(None),
+) -> DocumentAnalyzeResponse:
+    contents, content_type = await _load_file_bytes(file)
+    lines = _analyze_layout(contents, content_type)
+    detected_type = document_type or detect_document_type(lines)
+    assets = build_assets(detected_type, lines, source_name=file.filename or "uploaded.pdf")
+    return DocumentAnalyzeResponse(
+        status="ok",
+        document_type=detected_type,
+        raw_lines=lines,
+        assets=assets,
+    )
 
 
 def extract_layout_pages(result: Dict[str, Any]) -> list[Dict[str, Any]]:

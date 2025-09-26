@@ -3,207 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>InhTaxAutoPJ CSV デモ</title>
+    <title>InhTaxAutoPJ ドキュメント処理</title>
     <style>
-        :root {
-            color-scheme: light;
-        }
-        body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f5f5f7;
-            color: #222;
-        }
-        header {
-            background: #1f2937;
-            color: white;
-            padding: 1.5rem 1rem;
-        }
-        header h1 {
-            margin: 0;
-            font-size: 1.4rem;
-        }
-        main {
-            max-width: 960px;
-            margin: 0 auto;
-            padding: 2rem 1rem 3rem;
-        }
-        section {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-            padding: 1.8rem;
-            margin-bottom: 1.8rem;
-        }
-        h2 {
-            margin-top: 0;
-            font-size: 1.2rem;
-            border-left: 4px solid #2563eb;
-            padding-left: 0.6rem;
-        }
-        .input-row {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-            margin-bottom: 1rem;
-            align-items: center;
-        }
-        .input-row label {
-            font-weight: 600;
-        }
-        textarea {
-            width: 100%;
-            min-height: 220px;
-            padding: 1rem;
-            border: 1px solid #cbd5f5;
-            border-radius: 10px;
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-            font-size: 0.95rem;
-            resize: vertical;
-            background: #f8fafc;
-        }
-        button, label.button {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.45rem;
-            padding: 0.55rem 1rem;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-            background: #2563eb;
-            color: white;
-            transition: transform 0.12s ease, box-shadow 0.12s ease;
-        }
-        button.secondary, label.button.secondary {
-            background: #4b5563;
-        }
-        button.link-like {
-            background: transparent;
-            color: #2563eb;
-            padding-left: 0;
-        }
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        button:hover:not(:disabled) {
-            transform: translateY(-1px);
-            box-shadow: 0 10px 18px rgba(37, 99, 235, 0.25);
-        }
-        .file-input {
-            display: none;
-        }
-        .text-input {
-            padding: 0.55rem 0.75rem;
-            border: 1px solid #cbd5f5;
-            border-radius: 8px;
-            background: #f8fafc;
-            min-width: 260px;
-        }
-        .status {
-            padding: 0.6rem 0.8rem;
-            border-radius: 8px;
-            background: #eff6ff;
-            border: 1px solid #bfdbfe;
-            color: #1e40af;
-            margin-bottom: 1rem;
-            font-size: 0.92rem;
-            white-space: pre-wrap;
-        }
-        .status.error {
-            background: #fef2f2;
-            border-color: #fecaca;
-            color: #b91c1c;
-        }
-        .results {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1rem;
-        }
-        .result-card {
-            background: #f8fafc;
-            border: 1px solid #dbeafe;
-            border-radius: 10px;
-            padding: 1rem;
-        }
-        .result-card h3 {
-            margin-top: 0;
-            font-size: 1rem;
-            color: #1d4ed8;
-        }
-        .preview {
-            overflow-x: auto;
-            max-height: 220px;
-            background: white;
-            border: 1px solid #cbd5f5;
-            border-radius: 8px;
-            padding: 0.6rem;
-            font-family: monospace;
-            font-size: 0.85rem;
-            white-space: pre;
-            margin-top: 0.6rem;
-        }
-        footer {
-            text-align: center;
-            padding: 2rem 1rem;
-            font-size: 0.85rem;
-            color: #6b7280;
-        }
+        :root { color-scheme: light; }
+        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin:0; padding:0; background:#f5f5f7; color:#222; }
+        header { background:#1f2937; color:white; padding:1.5rem 1rem; }
+        header h1 { margin:0; font-size:1.4rem; }
+        main { max-width:1100px; margin:0 auto; padding:2rem 1rem 3rem; }
+        section { background:white; border-radius:12px; box-shadow:0 10px 30px rgba(15,23,42,0.08); padding:1.8rem; margin-bottom:1.8rem; }
+        h2 { margin-top:0; font-size:1.2rem; border-left:4px solid #2563eb; padding-left:0.6rem; }
+        .input-row { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; margin-bottom:1rem; }
+        label { font-weight:600; }
+        textarea { width:100%; min-height:220px; padding:1rem; border:1px solid #cbd5f5; border-radius:10px; font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace; font-size:0.95rem; background:#f8fafc; }
+        button, label.button { display:inline-flex; align-items:center; gap:0.45rem; padding:0.55rem 1rem; border-radius:8px; border:none; cursor:pointer; font-weight:600; background:#2563eb; color:white; transition:transform 0.12s ease, box-shadow 0.12s ease; }
+        button.secondary, label.button.secondary { background:#4b5563; }
+        button.ghost { background:transparent; color:#2563eb; }
+        button:disabled { opacity:0.5; cursor:not-allowed; }
+        button:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 10px 18px rgba(37,99,235,0.25); }
+        .file-input { display:none; }
+        .text-input, select { padding:0.55rem 0.75rem; border:1px solid #cbd5f5; border-radius:8px; background:#f8fafc; min-width:240px; }
+        .status { padding:0.6rem 0.8rem; border-radius:8px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; margin-bottom:1rem; font-size:0.92rem; white-space:pre-wrap; }
+        .status.error { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+        .results { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; }
+        .result-card { background:#f8fafc; border:1px solid #dbeafe; border-radius:10px; padding:1rem; }
+        .result-card h3 { margin-top:0; font-size:1rem; color:#1d4ed8; }
+        .preview { overflow-x:auto; max-height:220px; background:white; border:1px solid #cbd5f5; border-radius:8px; padding:0.6rem; font-family:monospace; font-size:0.85rem; white-space:pre; margin-top:0.6rem; }
+        .asset-card { border:1px solid #e2e8f0; border-radius:10px; padding:1rem 1.2rem; margin-bottom:1rem; background:#fafbff; }
+        .asset-card h3 { margin-top:0; margin-bottom:0.8rem; font-size:1rem; color:#1e3a8a; }
+        .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:0.75rem 1rem; }
+        .form-grid label { font-size:0.85rem; color:#475569; display:flex; flex-direction:column; gap:0.3rem; }
+        .form-grid textarea { min-height:120px; }
+        .transactions-table { width:100%; border-collapse:collapse; margin-top:0.8rem; font-size:0.85rem; }
+        .transactions-table th, .transactions-table td { border:1px solid #e2e8f0; padding:0.45rem 0.6rem; text-align:left; }
+        footer { text-align:center; padding:2rem 1rem; font-size:0.85rem; color:#6b7280; }
         @media (max-width: 600px) {
-            section {
-                padding: 1.2rem;
-            }
-            textarea {
-                min-height: 180px;
-            }
-            .text-input {
-                min-width: 100%;
-            }
+            section { padding:1.2rem; }
+            textarea { min-height:180px; }
+            .text-input, select { min-width:100%; }
+            .form-grid { grid-template-columns:1fr; }
         }
     </style>
 </head>
 <body>
-    <header>
-        <h1>InhTaxAutoPJ CSV デモ</h1>
-        <p style="margin-top:0.4rem;font-size:0.9rem;color:#d1d5db;">相続書類の正規化JSONをバックエンドAPI経由でCSVに変換します。</p>
-    </header>
-    <main>
-        <section>
-            <h2>バックエンド設定</h2>
-            <div class="input-row">
-                <label for="apiBaseInput">APIエンドポイント</label>
-                <input class="text-input" type="url" id="apiBaseInput" placeholder="https://example.up.railway.app/api">
-                <button class="secondary" id="checkApiBtn">接続テスト</button>
-                <span id="apiStatus" style="font-size:0.9rem;color:#4b5563;"></span>
-            </div>
-            <p style="margin:0;font-size:0.85rem;color:#6b7280;">クエリパラメータ <code>?api=...</code> でもエンドポイントを指定できます。</p>
-        </section>
+<header>
+    <h1>InhTaxAutoPJ ドキュメント処理</h1>
+    <p style="margin-top:0.4rem;font-size:0.9rem;color:#d1d5db;">Railway バックエンドを呼び出して OCR→正規化→CSV 出力まで実行します。</p>
+</header>
+<main>
+    <section>
+        <h2>バックエンド設定</h2>
+        <div class="input-row">
+            <label for="apiBaseInput">APIエンドポイント</label>
+            <input class="text-input" type="url" id="apiBaseInput" placeholder="https://example.up.railway.app/api">
+            <button class="secondary" id="checkApiBtn">接続テスト</button>
+            <span id="apiStatus" style="font-size:0.9rem;color:#4b5563;"></span>
+        </div>
+        <p style="margin:0;font-size:0.85rem;color:#6b7280;">クエリ `?api=` でエンドポイントを差し替え可能です。</p>
+    </section>
 
-        <section>
-            <h2>JSON入力</h2>
-            <div class="input-row">
-                <label class="button secondary" for="inputFile">JSONファイルを選択</label>
-                <input type="file" id="inputFile" class="file-input" accept="application/json">
-                <button class="secondary" id="loadSample">サンプルJSONを読み込む</button>
-            </div>
-            <textarea id="jsonInput" placeholder="{\n  \"assets\": [ ... ]\n}"></textarea>
-            <div class="input-row" style="justify-content:flex-end;">
-                <button id="convertBtn">バックエンドでCSV生成</button>
-                <button class="secondary" id="clearBtn">クリア</button>
-            </div>
-            <div id="status" class="status" style="display:none;"></div>
-        </section>
+    <section>
+        <h2>書類アップロード</h2>
+        <div class="input-row">
+            <label class="button secondary" for="docFileInput">PDFを選択</label>
+            <input type="file" id="docFileInput" class="file-input" accept="application/pdf">
+            <select id="docTypeSelect" class="text-input">
+                <option value="">自動判定</option>
+                <option value="bank_deposit">通帳 (bank_deposit)</option>
+                <option value="land">固定資産税 / 土地 (land)</option>
+                <option value="building">家屋 (building)</option>
+            </select>
+            <button id="analyzeBtn">アップロードして解析</button>
+        </div>
+        <div id="analyzeStatus" class="status" style="display:none;"></div>
+    </section>
 
-        <section>
-            <h2>生成結果</h2>
-            <div class="results" id="results"></div>
-        </section>
-    </main>
-    <footer>
-        &copy; 2025 InhTaxAutoPJ Codex Demo
-    </footer>
+    <section>
+        <h2>正規化データ (編集可能)</h2>
+        <div class="input-row" style="justify-content:flex-end; gap:0.6rem;">
+            <button class="secondary" id="applyJsonBtn">JSONを反映</button>
+            <button class="ghost" id="downloadJsonBtn">JSONをダウンロード</button>
+        </div>
+        <textarea id="jsonInput" placeholder="{\n  \"assets\": []\n}"></textarea>
+        <div class="input-row" style="justify-content:flex-end; margin-top:0.6rem;">
+            <button id="generateCsvBtn">この内容でCSV生成</button>
+        </div>
+        <div id="assetEditor"></div>
+    </section>
+
+    <section>
+        <h2>生成結果</h2>
+        <div class="results" id="results"></div>
+    </section>
+</main>
+<footer>&copy; 2025 InhTaxAutoPJ Codex Demo</footer>
 
 <script>
 (() => {
@@ -211,132 +103,68 @@
     const urlParams = new URLSearchParams(window.location.search);
     const apiInput = document.getElementById('apiBaseInput');
     const apiStatus = document.getElementById('apiStatus');
+    const analyzeStatus = document.getElementById('analyzeStatus');
+    const jsonInput = document.getElementById('jsonInput');
+    const assetEditor = document.getElementById('assetEditor');
+    const resultsEl = document.getElementById('results');
+
     const initialApi = (urlParams.get('api') || DEFAULT_API_BASE).replace(/\/$/, '');
     apiInput.value = initialApi;
 
-    const eraBaseYear = {
-        '令和': 2018,
-        '平成': 1988,
-        '昭和': 1925,
-        '大正': 1911,
+    const elements = {
+        checkApiBtn: document.getElementById('checkApiBtn'),
+        analyzeBtn: document.getElementById('analyzeBtn'),
+        docFileInput: document.getElementById('docFileInput'),
+        docTypeSelect: document.getElementById('docTypeSelect'),
+        applyJsonBtn: document.getElementById('applyJsonBtn'),
+        generateCsvBtn: document.getElementById('generateCsvBtn'),
+        downloadJsonBtn: document.getElementById('downloadJsonBtn'),
     };
 
-    const assetColumns = [
-        'record_id',
-        'source_document',
-        'asset_category',
-        'asset_type',
-        'owner_name',
-        'asset_name',
-        'location_prefecture',
-        'location_municipality',
-        'location_detail',
-        'identifier_primary',
-        'identifier_secondary',
-        'valuation_basis',
-        'valuation_currency',
-        'valuation_amount',
-        'valuation_date',
-        'ownership_share',
-        'notes',
-    ];
-
-    const bankColumns = [
-        'record_id',
-        'transaction_id',
-        'transaction_date',
-        'value_date',
-        'description',
-        'withdrawal_amount',
-        'deposit_amount',
-        'balance',
-        'line_confidence',
-    ];
-
     const sampleJson = {
-        'assets': [
+        assets: [
             {
-                'category': 'bank_deposit',
-                'type': 'ordinary_deposit',
-                'source_document': 'bankbook_001.pdf',
-                'owner_name': ['山田 太郎'],
-                'asset_name': '三菱UFJ銀行 普通預金',
-                'identifiers': { 'primary': '1234567', 'secondary': '渋谷支店' },
-                'valuation': {
-                    'basis': '残高証明',
-                    'currency': 'JPY',
-                    'amount': '1,250,000',
-                    'date': '2025/01/31'
-                },
-                'ownership_share': 100,
-                'notes': 'OCR confidence 0.92',
-                'transactions': [
+                category: 'bank_deposit',
+                type: 'ordinary_deposit',
+                source_document: 'sample_bankbook.pdf',
+                owner_name: ['山田 太郎'],
+                asset_name: '三菱UFJ銀行 普通預金',
+                location_prefecture: null,
+                location_municipality: null,
+                location_detail: null,
+                identifier_primary: '1234567',
+                identifier_secondary: '渋谷支店',
+                valuation_basis: '残高証明',
+                valuation_currency: 'JPY',
+                valuation_amount: 1250000,
+                valuation_date: '2025-01-31',
+                ownership_share: 100,
+                notes: 'OCR confidence 0.92',
+                transactions: [
                     {
-                        'transaction_date': '2025-01-05',
-                        'description': '給与振込',
-                        'deposit_amount': 350000,
-                        'balance': 1250000,
-                        'confidence': 0.88
-                    },
-                    {
-                        'transaction_date': '2025年1月10日',
-                        'description': '家賃支払',
-                        'withdrawal_amount': 120000,
-                        'balance': 1130000,
-                        'confidence': 0.82
+                        transaction_date: '2025-01-05',
+                        description: '給与振込 350,000円',
+                        deposit_amount: 350000,
+                        balance: 1250000,
+                        withdrawal_amount: null,
+                        line_confidence: 0.88,
                     }
-                ]
-            },
-            {
-                'category': 'land',
-                'type': 'residential',
-                'source_document': 'fixed_asset_tax_notice.pdf',
-                'owner_name': ['山田 花子', '山田 太郎'],
-                'asset_name': '渋谷区松濤 1-2-3',
-                'location': {
-                    'prefecture': '東京都',
-                    'municipality': '渋谷区',
-                    'detail': '松濤1丁目2番3'
-                },
-                'identifiers': {
-                    'primary': '渋谷区松濤1丁目2番3',
-                    'secondary': '地番 1234-5'
-                },
-                'valuation': {
-                    'basis': '固定資産税評価額',
-                    'currency': 'JPY',
-                    'amount': 85600000,
-                    'date': '令和6年1月1日'
-                },
-                'ownership_share': 50,
-                'notes': '共有持分 山田姉弟'
+                ],
             }
         ]
     };
 
-    const elements = {
-        fileInput: document.getElementById('inputFile'),
-        loadSampleBtn: document.getElementById('loadSample'),
-        convertBtn: document.getElementById('convertBtn'),
-        clearBtn: document.getElementById('clearBtn'),
-        jsonInput: document.getElementById('jsonInput'),
-        status: document.getElementById('status'),
-        results: document.getElementById('results'),
-        checkApiBtn: document.getElementById('checkApiBtn'),
-    };
+    let currentAssets = [];
 
-    elements.fileInput.addEventListener('change', handleFileSelected);
-    elements.loadSampleBtn.addEventListener('click', () => {
-        elements.jsonInput.value = JSON.stringify(sampleJson, null, 2);
-        showStatus('サンプルJSONを読み込みました。', false);
-    });
-    elements.convertBtn.addEventListener('click', handleConvert);
-    elements.clearBtn.addEventListener('click', () => {
-        elements.jsonInput.value = '';
-        elements.results.innerHTML = '';
-        hideStatus();
-    });
     elements.checkApiBtn.addEventListener('click', handleApiCheck);
+    elements.analyzeBtn.addEventListener('click', handleAnalyze);
+    elements.applyJsonBtn.addEventListener('click', handleApplyJson);
+    elements.generateCsvBtn.addEventListener('click', handleGenerateCsv);
+    elements.downloadJsonBtn.addEventListener('click', handleDownloadJson);
+
+    document.addEventListener('DOMContentLoaded', () => {
+        setAssets(sampleJson.assets);
+    });
 
     function normalizedApiBase() {
         const value = (apiInput.value || DEFAULT_API_BASE).trim();
@@ -347,75 +175,234 @@
         const base = normalizedApiBase();
         apiStatus.textContent = '接続確認中...';
         try {
-            const response = await fetch(`${base}/ping`, { method: 'GET' });
-            if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-            const data = await response.json();
+            const res = await fetch(`${base}/ping`);
+            if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+            const data = await res.json();
             apiStatus.textContent = data.status === 'ok' ? '接続成功' : '応答が不正です';
             apiStatus.style.color = data.status === 'ok' ? '#16a34a' : '#b91c1c';
         } catch (error) {
-            console.error(error);
             apiStatus.textContent = `接続失敗: ${error.message}`;
             apiStatus.style.color = '#b91c1c';
         }
     }
 
-    function handleFileSelected() {
-        const file = elements.fileInput.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            elements.jsonInput.value = reader.result;
-            showStatus(`${file.name} を読み込みました。`, false);
-        };
-        reader.onerror = () => {
-            showStatus('ファイルの読み込みに失敗しました。', true);
-        };
-        reader.readAsText(file, 'utf-8');
-    }
-
-    async function handleConvert() {
-        hideStatus();
-        elements.results.innerHTML = '';
-        apiStatus.textContent = '';
-        const raw = elements.jsonInput.value.trim();
-        if (!raw) {
-            showStatus('JSONを入力してください。', true);
+    async function handleAnalyze() {
+        const file = elements.docFileInput.files?.[0];
+        if (!file) {
+            showStatus(analyzeStatus, 'PDFファイルを選択してください。', true);
             return;
         }
-        let parsed;
-        try {
-            parsed = JSON.parse(raw);
-        } catch (error) {
-            showStatus(`JSONの解析に失敗しました: ${error.message}`, true);
-            return;
+        const base = normalizedApiBase();
+        const form = new FormData();
+        form.append('file', file);
+        if (elements.docTypeSelect.value) {
+            form.append('document_type', elements.docTypeSelect.value);
         }
-
-        const apiBase = normalizedApiBase();
-        showStatus('バックエンドにリクエストしています...', false);
+        showStatus(analyzeStatus, 'アップロード中...', false);
         try {
-            const response = await fetch(`${apiBase}/export`, {
+            const res = await fetch(`${base}/documents/analyze`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(parsed),
+                body: form,
             });
-            if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`HTTP ${response.status}: ${text}`);
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`HTTP ${res.status}: ${text}`);
             }
-            const payload = await response.json();
-            if (!payload || payload.status !== 'ok' || !payload.files) {
-                throw new Error('バックエンドから期待した形式のレスポンスが得られませんでした。');
+            const payload = await res.json();
+            if (payload.status !== 'ok') {
+                throw new Error('解析に失敗しました。');
             }
-            renderBackendFiles(payload.files);
-            showStatus('CSVを生成しました（バックエンド）。', false);
+            currentAssets = payload.assets || [];
+            syncJsonInput();
+            renderAssets();
+            showStatus(analyzeStatus, `解析完了: ${currentAssets.length} 件の資産を検出`, false);
+            resultsEl.innerHTML = '';
         } catch (error) {
             console.error(error);
-            showStatus(error.message || 'バックエンド呼び出し中にエラーが発生しました。', true);
+            showStatus(analyzeStatus, error.message || 'アップロード中にエラーが発生しました。', true);
         }
+    }
+
+    function handleApplyJson() {
+        try {
+            const parsed = JSON.parse(jsonInput.value || '{}');
+            if (!parsed || !Array.isArray(parsed.assets)) {
+                throw new Error('assets 配列が見つかりません。');
+            }
+            currentAssets = parsed.assets;
+            renderAssets();
+            showStatus(analyzeStatus, 'JSONを反映しました。', false);
+        } catch (error) {
+            showStatus(analyzeStatus, `JSON解析エラー: ${error.message}`, true);
+        }
+    }
+
+    function handleDownloadJson() {
+        const blob = new Blob([JSON.stringify({ assets: currentAssets }, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'assets.json';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    async function handleGenerateCsv() {
+        if (!currentAssets.length) {
+            showStatus(analyzeStatus, '生成対象の資産がありません。', true);
+            return;
+        }
+        const base = normalizedApiBase();
+        showStatus(analyzeStatus, 'CSV生成中...', false);
+        try {
+            const payload = buildExportPayload();
+            const res = await fetch(`${base}/export`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`HTTP ${res.status}: ${text}`);
+            }
+            const data = await res.json();
+            if (!data.files) {
+                throw new Error('CSVレスポンスが不正です。');
+            }
+            renderBackendFiles(data.files);
+            showStatus(analyzeStatus, 'CSVを生成しました。', false);
+        } catch (error) {
+            console.error(error);
+            showStatus(analyzeStatus, error.message || 'CSV生成中にエラーが発生しました。', true);
+        }
+    }
+
+    function buildExportPayload() {
+        return {
+            assets: currentAssets.map((asset) => ({
+                category: asset.category || 'unknown',
+                type: asset.type || null,
+                source_document: asset.source_document || 'uploaded.pdf',
+                owner_name: Array.isArray(asset.owner_name)
+                    ? asset.owner_name
+                    : String(asset.owner_name || '').split(';').map((v) => v.trim()).filter(Boolean),
+                asset_name: asset.asset_name || null,
+                location: {
+                    prefecture: asset.location_prefecture || null,
+                    municipality: asset.location_municipality || null,
+                    detail: asset.location_detail || null,
+                },
+                identifiers: {
+                    primary: asset.identifier_primary || null,
+                    secondary: asset.identifier_secondary || null,
+                },
+                valuation: {
+                    basis: asset.valuation_basis || null,
+                    currency: asset.valuation_currency || 'JPY',
+                    amount: asset.valuation_amount ?? null,
+                    date: asset.valuation_date || null,
+                },
+                ownership_share: asset.ownership_share ?? null,
+                notes: asset.notes || null,
+                transactions: Array.isArray(asset.transactions) ? asset.transactions : [],
+            })),
+        };
+    }
+
+    function setAssets(assets) {
+        currentAssets = JSON.parse(JSON.stringify(assets || []));
+        syncJsonInput();
+        renderAssets();
+    }
+
+    function syncJsonInput() {
+        jsonInput.value = JSON.stringify({ assets: currentAssets }, null, 2);
+    }
+
+    function renderAssets() {
+        assetEditor.innerHTML = '';
+        currentAssets.forEach((asset, index) => {
+            const card = document.createElement('div');
+            card.className = 'asset-card';
+            card.innerHTML = `
+                <h3>資産 ${index + 1} — ${escapeHtml(asset.category || 'unknown')}</h3>
+                <div class="form-grid">
+                    ${fieldTemplate('カテゴリ', 'category', asset.category || '')}
+                    ${fieldTemplate('タイプ', 'type', asset.type || '')}
+                    ${fieldTemplate('資産名', 'asset_name', asset.asset_name || '')}
+                    ${fieldTemplate('所有者 (";"区切り)', 'owner_name', (asset.owner_name || []).join(';'))}
+                    ${fieldTemplate('支店/識別子', 'identifier_secondary', asset.identifier_secondary || '')}
+                    ${fieldTemplate('口座番号/識別子', 'identifier_primary', asset.identifier_primary || '')}
+                    ${fieldTemplate('評価額', 'valuation_amount', asset.valuation_amount ?? '')}
+                    ${fieldTemplate('評価日', 'valuation_date', asset.valuation_date || '')}
+                </div>
+                <div class="form-grid" style="margin-top:0.6rem;">
+                    ${fieldTemplate('所在地 都道府県', 'location_prefecture', asset.location_prefecture || '')}
+                    ${fieldTemplate('所在地 市区町村', 'location_municipality', asset.location_municipality || '')}
+                    ${fieldTemplate('所在地 詳細', 'location_detail', asset.location_detail || '')}
+                    ${fieldTemplate('評価根拠', 'valuation_basis', asset.valuation_basis || '')}
+                    ${fieldTemplate('通貨', 'valuation_currency', asset.valuation_currency || 'JPY')}
+                    ${fieldTemplate('持分 (%)', 'ownership_share', asset.ownership_share ?? '')}
+                    ${fieldTemplateArea('メモ', 'notes', asset.notes || '')}
+                </div>
+            `;
+            if (asset.transactions && asset.transactions.length) {
+                card.appendChild(buildTransactionTable(asset.transactions));
+            }
+            attachInputHandlers(card, index);
+            assetEditor.appendChild(card);
+        });
+    }
+
+    function fieldTemplate(labelText, field, value) {
+        return `<label>${labelText}<input data-field="${field}" class="text-input" value="${escapeHtml(value)}"></label>`;
+    }
+
+    function fieldTemplateArea(labelText, field, value) {
+        return `<label>${labelText}<textarea data-field="${field}" class="text-input" rows="3">${escapeHtml(value)}</textarea></label>`;
+    }
+
+    function buildTransactionTable(transactions) {
+        const table = document.createElement('table');
+        table.className = 'transactions-table';
+        table.innerHTML = '<thead><tr><th>日付</th><th>摘要</th><th>出金</th><th>入金</th><th>残高</th></tr></thead>';
+        const body = document.createElement('tbody');
+        transactions.forEach((txn) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${escapeHtml(txn.transaction_date || '')}</td>
+                <td>${escapeHtml(txn.description || '')}</td>
+                <td>${formatNumber(txn.withdrawal_amount)}</td>
+                <td>${formatNumber(txn.deposit_amount)}</td>
+                <td>${formatNumber(txn.balance)}</td>
+            `;
+            body.appendChild(row);
+        });
+        table.appendChild(body);
+        return table;
+    }
+
+    function attachInputHandlers(container, index) {
+        container.querySelectorAll('input[data-field], textarea[data-field]').forEach((input) => {
+            input.addEventListener('change', (event) => {
+                const field = event.target.getAttribute('data-field');
+                let value = event.target.value;
+                if (field === 'owner_name') {
+                    currentAssets[index][field] = value.split(';').map((v) => v.trim()).filter(Boolean);
+                } else if (['valuation_amount', 'ownership_share'].includes(field)) {
+                    currentAssets[index][field] = value === '' ? null : Number(value.replace(/,/g, ''));
+                } else {
+                    currentAssets[index][field] = value;
+                }
+                syncJsonInput();
+            });
+        });
     }
 
     function renderBackendFiles(fileMap) {
-        elements.results.innerHTML = '';
+        resultsEl.innerHTML = '';
         Object.entries(fileMap).forEach(([filename, base64]) => {
             try {
                 const csvText = decodeBase64Csv(base64);
@@ -426,16 +413,14 @@
                 heading.textContent = filename;
                 const downloadButton = document.createElement('button');
                 downloadButton.textContent = 'ダウンロード';
-                downloadButton.addEventListener('click', () => {
-                    triggerDownload(filename, csvText);
-                });
+                downloadButton.addEventListener('click', () => triggerDownload(filename, csvText));
                 const previewBox = document.createElement('div');
                 previewBox.className = 'preview';
                 previewBox.textContent = preview;
                 card.appendChild(heading);
                 card.appendChild(downloadButton);
                 card.appendChild(previewBox);
-                elements.results.appendChild(card);
+                resultsEl.appendChild(card);
             } catch (error) {
                 console.error(error);
             }
@@ -467,16 +452,24 @@
         URL.revokeObjectURL(url);
     }
 
-    function showStatus(message, isError) {
-        elements.status.textContent = message;
-        elements.status.classList.toggle('error', !!isError);
-        elements.status.style.display = 'block';
+    function showStatus(el, message, isError) {
+        el.textContent = message;
+        el.classList.toggle('error', !!isError);
+        el.style.display = 'block';
     }
 
-    function hideStatus() {
-        elements.status.style.display = 'none';
-        elements.status.textContent = '';
-        elements.status.classList.remove('error');
+    function formatNumber(value) {
+        if (value === null || value === undefined || value === '') return '';
+        return Number(value).toLocaleString('ja-JP');
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 })();
 </script>
