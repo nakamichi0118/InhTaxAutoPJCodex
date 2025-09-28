@@ -1,10 +1,9 @@
 ﻿"""Document parsers converting OCR output into normalized asset structures."""
 from __future__ import annotations
 
-import math
 import re
 from datetime import datetime
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Tuple
 
 from .models import AssetRecord, DocumentType, TransactionLine
 
@@ -25,6 +24,8 @@ HYPHENS = str.maketrans({
     "・": "",
 })
 
+DEPOSIT_KEYWORDS = ("振込", "入金", "預入", "配当")
+
 
 def detect_document_type(lines: Iterable[str]) -> DocumentType:
     joined = "\n".join(lines)
@@ -44,10 +45,24 @@ def parse_bankbook(lines: List[str], source_name: str) -> List[AssetRecord]:
     balance_amount = extract_amount(balance_line) if balance_line else None
 
     transactions: List[TransactionLine] = []
-    for line in normalized_lines:
-        txn = parse_transaction_line(line)
+    i = 0
+    while i < len(normalized_lines):
+        date_iso, remainder = extract_date_and_remainder(normalized_lines[i])
+        if not date_iso:
+            i += 1
+            continue
+        segments = [remainder.strip()] if remainder.strip() else []
+        j = i + 1
+        while j < len(normalized_lines):
+            next_date, _ = extract_date_and_remainder(normalized_lines[j])
+            if next_date:
+                break
+            segments.append(normalized_lines[j].strip())
+            j += 1
+        txn = build_transaction(date_iso, segments)
         if txn:
             transactions.append(txn)
+        i = j
 
     asset = AssetRecord(
         category="bank_deposit",
@@ -72,39 +87,50 @@ def normalize_line(line: str) -> str:
     text = text.replace(" -", "-").replace("- ", "-")
     text = text.replace("--", "-")
     text = text.replace(" :", ":")
+    text = text.replace(", ", ",")
     return text.strip()
 
 
-def parse_transaction_line(line: str) -> Optional[TransactionLine]:
-    date_iso = extract_date(line)
-    if not date_iso:
+def build_transaction(date_iso: str, segments: List[str]) -> Optional[TransactionLine]:
+    filtered_segments = [seg for seg in segments if seg and not seg.isdigit()]
+    if not filtered_segments:
         return None
-    amounts = [normalize_amount(match) for match in AMOUNT_PATTERN.findall(line)]
-    amounts = [amt for amt in amounts if amt is not None]
+    description = " ".join(filtered_segments).strip()
+    numbers = [normalize_amount(match) for match in AMOUNT_PATTERN.findall(description)]
+    numbers = [amt for amt in numbers if amt is not None]
+    numbers = [amt for amt in numbers if abs(amt) >= 10]
+
     withdrawal = deposit = balance = None
-    if amounts:
-        balance = amounts[-1]
-        if len(amounts) >= 2:
-            primary = amounts[0]
-            if any(keyword in line for keyword in ("振込", "入金", "預入", "配当")):
+    if numbers:
+        balance = numbers[-1]
+        if len(numbers) >= 2:
+            primary = numbers[0]
+            if any(keyword in description for keyword in DEPOSIT_KEYWORDS):
                 deposit = primary
             else:
                 withdrawal = primary
-    description = line.strip()
+    if not numbers and not description:
+        return None
     return TransactionLine(
         transaction_date=date_iso,
-        description=description,
+        description=description or date_iso,
         withdrawal_amount=withdrawal,
         deposit_amount=deposit,
         balance=balance,
     )
 
 
-def extract_date(text: str) -> Optional[str]:
+def extract_date_and_remainder(text: str) -> Tuple[Optional[str], str]:
     match = DATE_PATTERN.search(text)
     if not match:
-        return None
-    y, m, d = map(int, match.groups())
+        return None, text
+    date_iso = convert_to_iso(match.groups())
+    remainder = text[match.end():]
+    return date_iso, remainder
+
+
+def convert_to_iso(groups: Tuple[str, str, str]) -> Optional[str]:
+    y, m, d = map(int, groups)
     if m < 1 or m > 12 or d < 1 or d > 31:
         return None
     year = convert_year(y)
@@ -116,12 +142,12 @@ def extract_date(text: str) -> Optional[str]:
 
 def convert_year(value: int) -> int:
     if value >= 63:
-        return 1925 + value  # 昭和を想定
+        return 1925 + value  # 昭和
     if value >= 30:
         return 1988 + value  # 平成
     if value <= 5:
         return 2018 + value  # 令和
-    return 2000 + value  # fallback
+    return 2000 + value
 
 
 def normalize_amount(raw: str) -> Optional[float]:
