@@ -12,6 +12,8 @@ AMOUNT_PATTERN = re.compile(r"([+-]?[0-9][0-9,]*)")
 ACCOUNT_PATTERN = re.compile(r"([0-9]{6,10})")
 BRANCH_PATTERN = re.compile(r"([\w\u3040-\u30ff\u4e00-\u9faf]+)支店")
 OWNER_PATTERN = re.compile(r"\b(\S+\s*\S*)サマ")
+ACCOUNT_HINTS = ('口座番号', '店番号', '座番号')
+OWNER_SUFFIXES = ('様', 'サマ', 'さま')
 BALANCE_KEYWORDS = ["残高", "繰越残高"]
 
 HYPHENS = str.maketrans({
@@ -38,9 +40,9 @@ def detect_document_type(lines: Iterable[str]) -> DocumentType:
 
 def parse_bankbook(lines: List[str], source_name: str) -> List[AssetRecord]:
     normalized_lines = [normalize_line(line) for line in lines if line.strip()]
-    branch = find_first_match(BRANCH_PATTERN, normalized_lines)
-    account = find_first_match(ACCOUNT_PATTERN, normalized_lines)
-    owner = find_first_match(OWNER_PATTERN, normalized_lines)
+    branch = extract_branch_name(normalized_lines)
+    account = extract_account_number(normalized_lines)
+    owner = extract_owner_name(normalized_lines)
     balance_line = next((line for line in normalized_lines if any(key in line for key in BALANCE_KEYWORDS)), None)
     balance_amount = extract_amount(balance_line) if balance_line else None
 
@@ -64,6 +66,10 @@ def parse_bankbook(lines: List[str], source_name: str) -> List[AssetRecord]:
             transactions.append(txn)
         i = j
 
+    final_balance = balance_amount
+    if final_balance is None:
+        final_balance = next((txn.balance for txn in reversed(transactions) if txn.balance is not None), None)
+
     asset = AssetRecord(
         category="bank_deposit",
         type="ordinary_deposit",
@@ -72,8 +78,8 @@ def parse_bankbook(lines: List[str], source_name: str) -> List[AssetRecord]:
         asset_name="普通預金",
         identifier_primary=account,
         identifier_secondary=branch,
-        valuation_basis="通帳残高" if balance_amount is not None else None,
-        valuation_amount=balance_amount,
+        valuation_basis="最終残高" if final_balance is not None else None,
+        valuation_amount=final_balance,
         notes="\n".join(normalized_lines[:30]),
         transactions=transactions,
     )
@@ -141,11 +147,13 @@ def convert_to_iso(groups: Tuple[str, str, str]) -> Optional[str]:
 
 
 def convert_year(value: int) -> int:
-    if value >= 63:
+    if value >= 2000:
+        return value
+    if 32 <= value <= 64:
         return 1925 + value  # 昭和
-    if value >= 30:
+    if 6 <= value <= 31:
         return 1988 + value  # 平成
-    if value <= 5:
+    if 1 <= value <= 5:
         return 2018 + value  # 令和
     return 2000 + value
 
@@ -176,6 +184,69 @@ def find_first_match(pattern: re.Pattern[str], lines: Iterable[str]) -> Optional
             return match.group(1)
     return None
 
+
+
+def extract_branch_name(lines: List[str]) -> Optional[str]:
+    branch = find_first_match(BRANCH_PATTERN, lines)
+    if branch:
+        return branch
+    for idx, line in enumerate(lines):
+        if "支店" not in line:
+            continue
+        cleaned = line.replace("支店", "").strip()
+        if cleaned and cleaned != "お取引店":
+            return f"{cleaned}支店"
+        for back in range(idx - 1, -1, -1):
+            candidate = lines[back].strip()
+            if not candidate or candidate in {"お取引店", "店番号", "電話"} or candidate.isdigit():
+                continue
+            if candidate.endswith("支店") or "支店" in candidate:
+                return candidate
+            return f"{candidate}支店"
+    return None
+
+
+def extract_account_number(lines: List[str]) -> Optional[str]:
+    candidates: List[str] = []
+    for hint in ACCOUNT_HINTS:
+        for idx, line in enumerate(lines):
+            if hint not in line:
+                continue
+            for candidate in lines[idx: idx + 5]:
+                match = ACCOUNT_PATTERN.search(candidate)
+                if match:
+                    value = match.group(1)
+                    candidates.append(value)
+            if candidates:
+                break
+        if candidates:
+            break
+    if candidates:
+        for value in candidates:
+            if len(value) in (7, 8):
+                return value
+        return max(candidates, key=len)
+    return find_first_match(ACCOUNT_PATTERN, lines)
+
+
+def extract_owner_name(lines: List[str]) -> Optional[str]:
+    owner = find_first_match(OWNER_PATTERN, lines)
+    owner = owner.strip() if owner else None
+
+    candidates: List[str] = []
+    for line in lines:
+        for suffix in OWNER_SUFFIXES:
+            if suffix not in line:
+                continue
+            candidate = line.rsplit(suffix, 1)[0].strip()
+            if candidate:
+                candidates.append(candidate)
+                break
+    if candidates:
+        best = max(candidates, key=len)
+        if not owner or len(best) >= len(owner):
+            return best
+    return owner
 
 def build_assets(document_type: DocumentType, lines: List[str], source_name: str) -> List[AssetRecord]:
     if document_type == "bank_deposit":
