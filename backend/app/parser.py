@@ -47,24 +47,29 @@ def parse_bankbook(lines: List[str], source_name: str) -> List[AssetRecord]:
     balance_amount = extract_amount(balance_line) if balance_line else None
 
     transactions: List[TransactionLine] = []
-    i = 0
-    while i < len(normalized_lines):
-        date_iso, remainder = extract_date_and_remainder(normalized_lines[i])
-        if not date_iso:
-            i += 1
+    entries: List[tuple[Optional[str], str]] = []
+    for line in normalized_lines:
+        entries.extend(split_line_segments(line))
+
+    current_date: Optional[str] = None
+    segments: List[str] = []
+    for date_iso, fragment in entries:
+        fragment = fragment.strip()
+        if date_iso:
+            if current_date:
+                txn = build_transaction(current_date, segments)
+                if txn:
+                    transactions.append(txn)
+            current_date = date_iso
+            segments = [fragment] if fragment else []
             continue
-        segments = [remainder.strip()] if remainder.strip() else []
-        j = i + 1
-        while j < len(normalized_lines):
-            next_date, _ = extract_date_and_remainder(normalized_lines[j])
-            if next_date:
-                break
-            segments.append(normalized_lines[j].strip())
-            j += 1
-        txn = build_transaction(date_iso, segments)
+        if current_date and fragment:
+            segments.append(fragment)
+
+    if current_date:
+        txn = build_transaction(current_date, segments)
         if txn:
             transactions.append(txn)
-        i = j
 
     final_balance = balance_amount
     if final_balance is None:
@@ -185,6 +190,24 @@ def find_first_match(pattern: re.Pattern[str], lines: Iterable[str]) -> Optional
     return None
 
 
+def split_line_segments(line: str) -> List[tuple[Optional[str], str]]:
+    matches = list(DATE_PATTERN.finditer(line))
+    if not matches:
+        return [(None, line)]
+    entries: List[tuple[Optional[str], str]] = []
+    prefix = line[: matches[0].start()].strip()
+    if prefix:
+        entries.append((None, prefix))
+    for idx, match in enumerate(matches):
+        date_iso = convert_to_iso(match.groups())
+        next_start = matches[idx + 1].start() if idx + 1 < len(matches) else len(line)
+        remainder = line[match.end():next_start]
+        if date_iso:
+            entries.append((date_iso, remainder))
+        else:
+            segment = line[match.start():next_start]
+            entries.append((None, segment))
+    return entries
 
 def extract_branch_name(lines: List[str]) -> Optional[str]:
     branch = find_first_match(BRANCH_PATTERN, lines)
