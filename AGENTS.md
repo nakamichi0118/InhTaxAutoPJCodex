@@ -18,3 +18,4 @@ Follow the existing history by writing present-tense, imperative commit titles (
 ## 作業ログ
 - 2025-09-28 銀行通帳（きのくに）向けのOCR出力に対応するため、ackend/app/parser.pyを改修しました。
 - 作業完了後はgit pushまで実施してください。
+- 2025-09-30 通帳PDFの縦レイアウト（複数列が1行に集約されるケース）に対応できるようackend/app/parser.pyの行分割・日付復元ロジックを強化しました。

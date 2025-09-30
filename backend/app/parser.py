@@ -7,7 +7,7 @@ from typing import Iterable, List, Optional, Tuple
 
 from .models import AssetRecord, DocumentType, TransactionLine
 
-DATE_PATTERN = re.compile(r"(\d{1,2})[-/](\d{1,2})[-/](\d{1,2})")
+DATE_PATTERN = re.compile(r"(\d{1,4})[-/](\d{1,2})[-/](\d{1,2})")
 AMOUNT_PATTERN = re.compile(r"([+-]?[0-9][0-9,]*)")
 ACCOUNT_PATTERN = re.compile(r"([0-9]{6,10})")
 BRANCH_PATTERN = re.compile(r"([\w\u3040-\u30ff\u4e00-\u9faf]+)支店")
@@ -23,10 +23,17 @@ HYPHENS = str.maketrans({
     "–": "-",
     "—": "-",
     "／": "/",
+    "⁄": "/",
     "・": "",
+    "：": "-",
+    ";": "-",
+    ":": "-",
 })
 
-DEPOSIT_KEYWORDS = ("振込", "入金", "預入", "配当")
+DEPOSIT_KEYWORDS = ("振込", "入金", "預入", "配当", "振込入金", "定期積金")
+
+ROW_CODE_PATTERN = re.compile(r"^\d{3}$")
+NON_DATE_TOKEN = re.compile(r"[^\d\s:/\-.;]")
 
 
 def detect_document_type(lines: Iterable[str]) -> DocumentType:
@@ -46,30 +53,9 @@ def parse_bankbook(lines: List[str], source_name: str) -> List[AssetRecord]:
     balance_line = next((line for line in normalized_lines if any(key in line for key in BALANCE_KEYWORDS)), None)
     balance_amount = extract_amount(balance_line) if balance_line else None
 
-    transactions: List[TransactionLine] = []
-    entries: List[tuple[Optional[str], str]] = []
-    for line in normalized_lines:
-        entries.extend(split_line_segments(line))
-
-    current_date: Optional[str] = None
-    segments: List[str] = []
-    for date_iso, fragment in entries:
-        fragment = fragment.strip()
-        if date_iso:
-            if current_date:
-                txn = build_transaction(current_date, segments)
-                if txn:
-                    transactions.append(txn)
-            current_date = date_iso
-            segments = [fragment] if fragment else []
-            continue
-        if current_date and fragment:
-            segments.append(fragment)
-
-    if current_date:
-        txn = build_transaction(current_date, segments)
-        if txn:
-            transactions.append(txn)
+    transactions = build_transactions_from_rows(normalized_lines)
+    if not transactions:
+        transactions = build_transactions_from_entries(normalized_lines)
 
     final_balance = balance_amount
     if final_balance is None:
@@ -190,6 +176,130 @@ def find_first_match(pattern: re.Pattern[str], lines: Iterable[str]) -> Optional
     return None
 
 
+def build_transactions_from_rows(lines: List[str]) -> List[TransactionLine]:
+    rows = extract_transaction_rows(lines)
+    transactions: List[TransactionLine] = []
+    for row in rows:
+        if not row:
+            continue
+        code = row[0].strip()
+        if not ROW_CODE_PATTERN.fullmatch(code):
+            continue
+        date_iso, consumed = parse_row_date(row[1:])
+        if not date_iso:
+            continue
+        remainder = [part.strip() for part in row[1 + consumed:] if part.strip()]
+        if not remainder:
+            continue
+        txn = build_transaction(date_iso, remainder)
+        if txn:
+            transactions.append(txn)
+    return transactions
+
+
+
+def extract_transaction_rows(lines: List[str]) -> List[List[str]]:
+    rows: List[List[str]] = []
+    current: List[str] = []
+    for line in lines:
+        if ROW_CODE_PATTERN.fullmatch(line.strip()):
+            if current:
+                rows.append(current)
+            current = [line]
+        else:
+            if current:
+                current.append(line)
+    if current:
+        rows.append(current)
+    return rows
+
+
+
+def parse_row_date(tokens: List[str]) -> Tuple[Optional[str], int]:
+    consumed = 0
+    pieces: List[str] = []
+    for token in tokens:
+        cleaned = token.strip()
+        consumed += 1
+        if not cleaned:
+            continue
+        if NON_DATE_TOKEN.search(cleaned):
+            if not pieces:
+                return None, 0
+            consumed -= 1
+            break
+        pieces.append(cleaned)
+        digit_groups = re.findall(r"\d+", ''.join(pieces))
+        digits = ''.join(digit_groups)
+        if len(digit_groups) < 3 and len(digits) < 6:
+            continue
+        date_iso = parse_compact_date_digits(digits)
+        if date_iso:
+            return date_iso, consumed
+    return None, 0
+
+
+def parse_compact_date_digits(digits: str) -> Optional[str]:
+    digits = digits.strip()
+    if len(digits) < 3:
+        return None
+    for year_len in (4, 3, 2):
+        if len(digits) <= year_len:
+            continue
+        year_part = digits[:year_len]
+        rest = digits[year_len:]
+        for month_len in (2, 1):
+            if len(rest) < month_len + 1:
+                continue
+            month_part = rest[:month_len]
+            day_part = rest[month_len:]
+            if not day_part:
+                continue
+            day_part = day_part[:2]
+            try:
+                year_value = int(year_part)
+                if len(year_part) > 2 and year_value < 1900:
+                    year_value = int(year_part[-2:])
+                month_value = int(month_part)
+                day_value = int(day_part)
+            except ValueError:
+                continue
+            if year_value == 0 or not (1 <= month_value <= 12 and 1 <= day_value <= 31):
+                continue
+            iso = convert_to_iso((str(year_value), str(month_value), str(day_value)))
+            if iso:
+                return iso
+    return None
+
+
+def build_transactions_from_entries(lines: List[str]) -> List[TransactionLine]:
+    entries: List[tuple[Optional[str], str]] = []
+    for line in lines:
+        entries.extend(split_line_segments(line))
+
+    transactions: List[TransactionLine] = []
+    current_date: Optional[str] = None
+    segments: List[str] = []
+    for date_iso, fragment in entries:
+        fragment = fragment.strip()
+        if date_iso:
+            if current_date:
+                txn = build_transaction(current_date, segments)
+                if txn:
+                    transactions.append(txn)
+            current_date = date_iso
+            segments = [fragment] if fragment else []
+            continue
+        if current_date and fragment:
+            segments.append(fragment)
+
+    if current_date:
+        txn = build_transaction(current_date, segments)
+        if txn:
+            transactions.append(txn)
+    return transactions
+
+
 def split_line_segments(line: str) -> List[tuple[Optional[str], str]]:
     matches = list(DATE_PATTERN.finditer(line))
     if not matches:
@@ -212,18 +322,19 @@ def split_line_segments(line: str) -> List[tuple[Optional[str], str]]:
 def extract_branch_name(lines: List[str]) -> Optional[str]:
     branch = find_first_match(BRANCH_PATTERN, lines)
     if branch:
-        return branch
+        return branch.replace(' ', '')
     for idx, line in enumerate(lines):
-        if "支店" not in line:
+        normalized = line.replace(' ', '')
+        if '支店' not in normalized:
             continue
-        cleaned = line.replace("支店", "").strip()
-        if cleaned and cleaned != "お取引店":
+        cleaned = normalized.replace('支店', '')
+        if cleaned and cleaned != 'お取引店':
             return f"{cleaned}支店"
         for back in range(idx - 1, -1, -1):
-            candidate = lines[back].strip()
-            if not candidate or candidate in {"お取引店", "店番号", "電話"} or candidate.isdigit():
+            candidate = lines[back].replace(' ', '').strip()
+            if not candidate or candidate in {'お取引店', '店番号', '電話'} or candidate.isdigit():
                 continue
-            if candidate.endswith("支店") or "支店" in candidate:
+            if candidate.endswith('支店') or '支店' in candidate:
                 return candidate
             return f"{candidate}支店"
     return None
@@ -269,7 +380,41 @@ def extract_owner_name(lines: List[str]) -> Optional[str]:
         best = max(candidates, key=len)
         if not owner or len(best) >= len(owner):
             return best
+    if not owner:
+        owner = find_owner_from_labels(lines)
     return owner
+
+
+
+def find_owner_from_labels(lines: List[str]) -> Optional[str]:
+    skip_tokens = {'住所', '電話', '顧客番号', '受付番号', '支店', '信用金庫'}
+
+    def next_candidate(start: int) -> Optional[str]:
+        for candidate in lines[start:start + 5]:
+            stripped = candidate.strip()
+            if not stripped:
+                continue
+            if stripped.isdigit():
+                continue
+            if any(token in stripped for token in skip_tokens):
+                continue
+            if '非会員' in stripped:
+                continue
+            return stripped
+        return None
+
+    for idx, line in enumerate(lines):
+        if '非会員' in line:
+            candidate = next_candidate(idx + 1)
+            if candidate:
+                return candidate
+    for idx, line in enumerate(lines):
+        if '氏名' in line or '名義人' in line:
+            candidate = next_candidate(idx + 1)
+            if candidate:
+                return candidate
+    return None
+
 
 def build_assets(document_type: DocumentType, lines: List[str], source_name: str) -> List[AssetRecord]:
     if document_type == "bank_deposit":
