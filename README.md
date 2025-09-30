@@ -6,7 +6,8 @@
 - `examples/sample_assets.json` - sample JSON matching the spec.
 - `backend/app` - FastAPI backend (Azure Document Intelligence integration + CSV export API).
 - `backend/scripts/analyze_pdf.py` - CLI helper to run the Azure layout model against local PDFs.
-- `webapp/index.html` - Static Web UI that talks to the deployed API and downloads CSVs.
+- `webapp/index.html`
+ - Static Web UI that talks to the deployed API and downloads CSVs.
 
 ## CLI usage
 ```bash
@@ -39,4 +40,5 @@ python backend/scripts/analyze_pdf.py test/1組/touki_tate1.pdf --out tmp.json
 - `webapp/index.html` の UI からサンプル JSON を読み込んで動作確認できます。
 
 
-Large PDF uploads are automatically split before they reach Azure. Control chunking with `AZURE_DOCUMENT_MAX_MB` and per-chunk page count via `AZURE_CHUNK_PAGE_LIMIT`. Set `GEMINI_API_KEY` if you plan to route oversize documents to Gemini in the future.
+Large PDF uploads are automatically split before they reach Azure. Control chunking with `AZURE_DOCUMENT_MAX_MB` and per-chunk page count via `AZURE_CHUNK_PAGE_LIMIT`.
+Gemini-based analysis is enabled when `GEMINI_API_KEY` is present. Override the model with `GEMINI_MODEL` (default `gemini-1.5-flash-latest`). Gemini failures fall back to Azure automatically.

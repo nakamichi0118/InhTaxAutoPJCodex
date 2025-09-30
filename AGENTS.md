@@ -1,4 +1,4 @@
-# Repository Guidelines
+﻿# Repository Guidelines
 
 ## Project Structure & Module Organization
 The CLI exporter `src/export_csv.py` turns normalised JSON into `dist/assets.csv` and `dist/bank_transactions.csv`. FastAPI code lives in `backend/app` (`main.py`, `parser.py`, `exporter.py`), while shared Azure helpers sit in `backend/scripts`. Specifications are kept under `Docs/`, canonical payloads under `examples/`, static assets in `webapp/`, and sample PDFs inside `test/`.
@@ -17,5 +17,7 @@ Write imperative, present-tense commits (e.g., `Adjust bankbook parser for multi
 
 ## Security & Configuration Tips
 Store secrets in environment variables or Azure Key Vault instead of source control. Point the web client at alternate endpoints via the `?api=` query parameter during testing. Keep generated artifacts in `dist/` and clean temporary files before pushing. Always push your branch once assigned work is complete.
+
 ## Document Intelligence Handling
 Large PDFs are automatically split before hitting Azure. Tweak the thresholds via `AZURE_DOCUMENT_MAX_MB` (default 4 MB) and `AZURE_CHUNK_PAGE_LIMIT` (default 20 pages). If Azure still rejects a single page, the API returns HTTP 413 so we can consider compressing or routing to Gemini.
+Gemini analysis runs when `GEMINI_API_KEY` is present (override the model with `GEMINI_MODEL`, default `gemini-1.5-flash-latest`). If Gemini fails, the service automatically falls back to Azure.

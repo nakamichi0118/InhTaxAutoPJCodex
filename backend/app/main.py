@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .exporter import export_to_csv_strings
+from .gemini import GeminiClient, GeminiError
 from .models import DocumentAnalyzeResponse, DocumentType
 from .ocr import AzureFormRecognizerClient, AzureFormRecognizerError
 from .parser import build_assets, detect_document_type
@@ -17,7 +18,7 @@ from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="InhTaxAutoPJ Backend", version="0.2.0")
+app = FastAPI(title="InhTaxAutoPJ Backend", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,50 +40,83 @@ async def _load_file_bytes(file: UploadFile) -> tuple[bytes, str]:
     return contents, content_type
 
 
-def _analyze_layout(contents: bytes, content_type: str) -> List[str]:
+def _with_pdf_chunks(
+    payload: bytes,
+    plan: PdfChunkingPlan,
+    analyzer: Callable[[bytes], List[str]],
+) -> List[str]:
+    if len(payload) <= plan.max_bytes:
+        return analyzer(payload)
+    chunks = chunk_pdf_by_limits(payload, plan)
+    lines: List[str] = []
+    for chunk in chunks:
+        lines.extend(analyzer(chunk))
+    return lines
+
+
+def _analyze_with_gemini(contents: bytes, content_type: str, settings) -> List[str]:
+    if content_type != "application/pdf":
+        raise GeminiError("Gemini analysis currently supports PDF documents only")
+    if not settings.gemini_api_key:
+        raise GeminiError("Gemini API key not configured")
+
+    client = GeminiClient(api_key=settings.gemini_api_key, model=settings.gemini_model)
+    plan = PdfChunkingPlan(
+        max_bytes=settings.gemini_max_document_bytes,
+        max_pages=settings.gemini_chunk_page_limit,
+    )
+
+    def analyzer(blob: bytes) -> List[str]:
+        return client.extract_lines_from_pdf(blob)
+
+    return _with_pdf_chunks(contents, plan, analyzer)
+
+
+def _analyze_with_azure(contents: bytes, content_type: str, settings) -> List[str]:
     client = AzureFormRecognizerClient()
 
-    def run_single(payload: bytes) -> List[str]:
-        raw_result = client.analyze_layout(payload, content_type=content_type)
+    def analyzer(blob: bytes) -> List[str]:
+        raw_result = client.analyze_layout(blob, content_type=content_type)
         pages = extract_layout_pages(raw_result)
         return [line for page in pages for line in page["lines"]]
 
-    if content_type == "application/pdf":
-        plan = PdfChunkingPlan(
-            max_bytes=client.max_upload_bytes,
-            max_pages=client.chunk_page_limit,
-        )
-        try:
-            if len(contents) <= client.max_upload_bytes:
-                try:
-                    return run_single(contents)
-                except AzureFormRecognizerError as exc:
-                    if "InvalidContentLength" not in str(exc):
-                        raise
-                    logger.warning(
-                        "Azure rejected PDF due to size; falling back to chunked upload: %s",
-                        exc,
-                    )
-                    chunks = chunk_pdf_by_limits(contents, plan)
-                    return [line for chunk in chunks for line in run_single(chunk)]
-
-            chunks = chunk_pdf_by_limits(contents, plan)
-            results: List[str] = []
-            for chunk in chunks:
-                results.extend(run_single(chunk))
-            return results
-        except PdfChunkingError as exc:
-            logger.error("PDF chunking failed: %s", exc)
-            raise HTTPException(status_code=413, detail=str(exc)) from exc
-        except AzureFormRecognizerError as exc:
-            logger.exception("Azure Document Intelligence error: %s", exc)
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+    plan = PdfChunkingPlan(
+        max_bytes=settings.azure_max_document_bytes,
+        max_pages=settings.azure_chunk_page_limit,
+    )
 
     try:
-        return run_single(contents)
+        if content_type == "application/pdf":
+            try:
+                return _with_pdf_chunks(contents, plan, analyzer)
+            except AzureFormRecognizerError as exc:
+                if "InvalidContentLength" not in str(exc):
+                    raise
+                logger.warning("Azure reported InvalidContentLength; retrying with smaller chunks")
+                chunks = chunk_pdf_by_limits(contents, plan)
+                lines: List[str] = []
+                for chunk in chunks:
+                    lines.extend(analyzer(chunk))
+                return lines
+        return analyzer(contents)
+    except PdfChunkingError as exc:
+        logger.error("PDF chunking failed: %s", exc)
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except AzureFormRecognizerError as exc:
         logger.exception("Azure Document Intelligence error: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def _analyze_layout(contents: bytes, content_type: str) -> List[str]:
+    settings = get_settings()
+
+    if settings.gemini_api_key:
+        try:
+            return _analyze_with_gemini(contents, content_type, settings)
+        except (GeminiError, PdfChunkingError) as exc:
+            logger.warning("Gemini analysis failed, falling back to Azure: %s", exc)
+
+    return _analyze_with_azure(contents, content_type, settings)
 
 
 @app.get("/api/ping")
@@ -159,3 +193,5 @@ async def azure_error_handler(_, exc: AzureFormRecognizerError):
 def log_startup() -> None:
     settings = get_settings()
     logger.info("Azure endpoint: %s", settings.azure_endpoint)
+    if settings.gemini_api_key:
+        logger.info("Gemini model: %s", settings.gemini_model)

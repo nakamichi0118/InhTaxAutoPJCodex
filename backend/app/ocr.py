@@ -1,4 +1,4 @@
-"""Azure Document Intelligence integration."""
+﻿"""Azure Document Intelligence integration."""
 from __future__ import annotations
 
 import os
@@ -8,7 +8,6 @@ from typing import Any, Dict, Iterable, Optional
 import requests
 
 from .config import get_settings
-from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 
 DEFAULT_API_VERSIONS = [
     "2024-02-29-preview",
@@ -93,4 +92,3 @@ class AzureFormRecognizerClient:
             return str(error)
         except ValueError:
             return response.text
-
