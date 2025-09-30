@@ -103,8 +103,12 @@ def _analyze_with_azure(contents: bytes, content_type: str, settings) -> List[st
         logger.error("PDF chunking failed: %s", exc)
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except AzureFormRecognizerError as exc:
+        message = str(exc)
+        if "429" in message:
+            logger.warning("Azure returned rate limit response: %s", message)
+            raise HTTPException(status_code=429, detail=message) from exc
         logger.exception("Azure Document Intelligence error: %s", exc)
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=message) from exc
 
 
 def _analyze_layout(contents: bytes, content_type: str) -> List[str]:

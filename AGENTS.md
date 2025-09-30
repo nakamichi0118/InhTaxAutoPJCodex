@@ -21,3 +21,4 @@ Store secrets in environment variables or Azure Key Vault instead of source cont
 ## Document Intelligence Handling
 Large PDFs are automatically split before hitting Azure. Tweak the thresholds via `AZURE_DOCUMENT_MAX_MB` (default 4 MB) and `AZURE_CHUNK_PAGE_LIMIT` (default 20 pages). If Azure still rejects a single page, the API returns HTTP 413 so we can consider compressing or routing to Gemini.
 Gemini analysis runs when `GEMINI_API_KEY` is present (override the model with `GEMINI_MODEL`, default `gemini-1.5-flash-latest`). If Gemini fails, the service automatically falls back to Azure.
+Gemini uploads oversized PDFs automatically via the Files API, so keep the API key valid and rotate if quotas are exhausted.

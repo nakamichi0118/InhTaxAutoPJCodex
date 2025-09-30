@@ -42,3 +42,4 @@ python backend/scripts/analyze_pdf.py test/1組/touki_tate1.pdf --out tmp.json
 
 Large PDF uploads are automatically split before they reach Azure. Control chunking with `AZURE_DOCUMENT_MAX_MB` and per-chunk page count via `AZURE_CHUNK_PAGE_LIMIT`.
 Gemini-based analysis is enabled when `GEMINI_API_KEY` is present. Override the model with `GEMINI_MODEL` (default `gemini-1.5-flash-latest`). Gemini failures fall back to Azure automatically.
+Gemini runs large PDFs by uploading them through the Files API automatically; no manual preprocessing is needed.
