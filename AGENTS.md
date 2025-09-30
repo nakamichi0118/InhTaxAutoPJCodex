@@ -1,21 +1,19 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Core CSV generation logic lives in src/export_csv.py, which accepts normalized JSON and emits ssets.csv and ank_transactions.csv. The FastAPI service is under ackend/app; main.py wires routing, parser.py handles Document Intelligence payloads, and exporter.py bridges to the CLI module. API helpers and Azure integration scripts sit in ackend/scripts. Specification assets reside in Docs/CSV_SPEC.md, while canonical payloads are stored in examples/. Web delivery is handled by the static client in webapp/, and sample source documents live in 	est/. Generated CSVs should go to dist/.
+The CLI exporter `src/export_csv.py` turns normalised JSON into `dist/assets.csv` and `dist/bank_transactions.csv`. FastAPI code lives in `backend/app` (`main.py`, `parser.py`, `exporter.py`), while shared Azure helpers sit in `backend/scripts`. Specifications are kept under `Docs/`, canonical payloads under `examples/`, static assets in `webapp/`, and sample PDFs inside `test/`.
 
 ## Build, Test, and Development Commands
-Install dependencies with python -m venv .venv followed by pip install -r requirements.txt. Convert sample data locally via python src/export_csv.py examples/sample_assets.json --output-dir dist --force. Launch the API during development with uvicorn backend.app.main:app --reload; confirm readiness at GET /api/ping. Use python backend/scripts/analyze_pdf.py test/1号/touki_tate1.pdf --out tmp.json when validating the Azure layout pipeline against local PDFs.
+Create a virtual environment with `python -m venv .venv` and install dependencies via `pip install -r requirements.txt`. Validate CSV generation by running `python src/export_csv.py examples/sample_assets.json --output-dir dist --force`. Start the API locally with `uvicorn backend.app.main:app --reload` and confirm readiness at `GET /api/ping`. To inspect Azure layout output, execute `python backend/scripts/analyze_pdf.py "test/1号/touki_tate1.pdf" --out tmp.json`.
 
 ## Coding Style & Naming Conventions
-Use Python 3.11 or newer with 4-space indentation, snake_case for functions and variables, and PascalCase only for pydantic models. Keep modules cohesive—CSV formatting logic stays in export_csv.py; OCR parsing enhancements belong in ackend/app/parser.py. Prefer explicit type hints and dataclasses where appropriate, and keep environment-dependent values inside config.py.
+Target Python 3.11+, use four-space indentation, and follow `snake_case` for functions, variables, and modules. Reserve `PascalCase` for Pydantic models. Keep CSV formatting logic inside `export_csv.py`, parser improvements in `backend/app/parser.py`, and load environment-specific values from `backend/app/config.py`. Prefer explicit type hints and dataclasses where they clarify intent.
 
 ## Testing Guidelines
-There is no dedicated test harness yet; rely on fixture JSON in examples/ and test PDFs under 	est/ to exercise new parsing rules. When adjusting the exporter, regenerate CSVs into dist/ and diff against expected headers and row counts. For API work, hit /api/export with the sample payload and ensure the response bytes produce valid CSV when written to disk. Document any manual verification steps in the pull request.
+No automated suite exists yet. Use JSON fixtures in `examples/` and PDFs in `test/` for manual verification. After parser or exporter changes, regenerate CSVs into `dist/` and check headers, row counts, and BOM encoding. For API updates, post the sample payload to `/api/export` and ensure the response writes to valid CSV files.
 
 ## Commit & Pull Request Guidelines
-Follow the existing history by writing present-tense, imperative commit titles (e.g., "Adjust bankbook parser for multi-page statements"). Each pull request should describe the motivation, summarize functional changes, and list manual or automated checks performed. Link to tracking tickets where available, and attach before/after CSV snippets or API responses when behavior changes. Never commit .env or credential-bearing files.
+Write imperative, present-tense commits (e.g., `Adjust bankbook parser for multi-page statements`). Pull requests should call out motivation, summarize behaviour changes, list manual or automated checks, and reference related tickets. Include representative CSV or API snippets when behaviour changes, and never commit `.env` or credential material.
 
-## 作業ログ
-- 2025-09-28 銀行通帳（きのくに）向けのOCR出力に対応するため、ackend/app/parser.pyを改修しました。
-- 作業完了後はgit pushまで実施してください。
-- 2025-09-30 通帳PDFの縦レイアウト（複数列が1行に集約されるケース）に対応できるようackend/app/parser.pyの行分割・日付復元ロジックを強化しました。
+## Security & Configuration Tips
+Store secrets in environment variables or Azure Key Vault instead of source control. Point the web client at alternate endpoints via the `?api=` query parameter during testing. Keep generated artifacts in `dist/` and clean temporary files before pushing. Always push your branch once assigned work is complete.

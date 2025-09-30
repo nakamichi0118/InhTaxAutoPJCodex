@@ -89,11 +89,17 @@ def normalize_line(line: str) -> str:
 
 
 def build_transaction(date_iso: str, segments: List[str]) -> Optional[TransactionLine]:
-    filtered_segments = [seg for seg in segments if seg and not seg.isdigit()]
-    if not filtered_segments:
+    cleaned_segments = [seg.strip() for seg in segments if seg and seg.strip()]
+    if not cleaned_segments:
         return None
-    description = " ".join(filtered_segments).strip()
-    numbers = [normalize_amount(match) for match in AMOUNT_PATTERN.findall(description)]
+
+    text_segments = [seg for seg in cleaned_segments if not seg.isdigit()]
+    description = " ".join(text_segments).strip()
+    if not description:
+        description = " ".join(cleaned_segments).strip()
+
+    number_source = " ".join(cleaned_segments)
+    numbers = [normalize_amount(match) for match in AMOUNT_PATTERN.findall(number_source)]
     numbers = [amt for amt in numbers if amt is not None]
     numbers = [amt for amt in numbers if abs(amt) >= 10]
 
@@ -106,6 +112,7 @@ def build_transaction(date_iso: str, segments: List[str]) -> Optional[Transactio
                 deposit = primary
             else:
                 withdrawal = primary
+
     if not numbers and not description:
         return None
     return TransactionLine(
