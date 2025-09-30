@@ -1,4 +1,4 @@
-﻿"""Azure Document Intelligence integration."""
+"""Azure Document Intelligence integration."""
 from __future__ import annotations
 
 import os
@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, Optional
 import requests
 
 from .config import get_settings
+from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 
 DEFAULT_API_VERSIONS = [
     "2024-02-29-preview",
@@ -41,6 +42,8 @@ class AzureFormRecognizerClient:
         self.endpoint = (endpoint or settings.azure_endpoint).rstrip("/")
         self.api_key = api_key or settings.azure_key
         self.api_versions = list(_load_api_versions())
+        self.max_upload_bytes = settings.azure_max_document_bytes
+        self.chunk_page_limit = settings.azure_chunk_page_limit
 
     def analyze_layout(self, file_bytes: bytes, *, content_type: str = "application/pdf") -> Dict[str, Any]:
         last_error: Optional[str] = None
@@ -90,3 +93,4 @@ class AzureFormRecognizerClient:
             return str(error)
         except ValueError:
             return response.text
+

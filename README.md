@@ -37,3 +37,6 @@ python backend/scripts/analyze_pdf.py test/1組/touki_tate1.pdf --out tmp.json
 - API パラメータはクエリ `?api=` でも差し替え可能。
 - CSV は UTF-8 BOM 付きで出力され、Excel でも文字化けしません。
 - `webapp/index.html` の UI からサンプル JSON を読み込んで動作確認できます。
+
+
+Large PDF uploads are automatically split before they reach Azure. Control chunking with `AZURE_DOCUMENT_MAX_MB` and per-chunk page count via `AZURE_CHUNK_PAGE_LIMIT`. Set `GEMINI_API_KEY` if you plan to route oversize documents to Gemini in the future.

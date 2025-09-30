@@ -17,3 +17,5 @@ Write imperative, present-tense commits (e.g., `Adjust bankbook parser for multi
 
 ## Security & Configuration Tips
 Store secrets in environment variables or Azure Key Vault instead of source control. Point the web client at alternate endpoints via the `?api=` query parameter during testing. Keep generated artifacts in `dist/` and clean temporary files before pushing. Always push your branch once assigned work is complete.
+## Document Intelligence Handling
+Large PDFs are automatically split before hitting Azure. Tweak the thresholds via `AZURE_DOCUMENT_MAX_MB` (default 4 MB) and `AZURE_CHUNK_PAGE_LIMIT` (default 20 pages). If Azure still rejects a single page, the API returns HTTP 413 so we can consider compressing or routing to Gemini.

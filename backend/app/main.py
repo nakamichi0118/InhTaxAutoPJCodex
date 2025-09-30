@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import base64
 import logging
@@ -13,6 +13,7 @@ from .exporter import export_to_csv_strings
 from .models import DocumentAnalyzeResponse, DocumentType
 from .ocr import AzureFormRecognizerClient, AzureFormRecognizerError
 from .parser import build_assets, detect_document_type
+from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 
 logger = logging.getLogger(__name__)
 
@@ -40,14 +41,48 @@ async def _load_file_bytes(file: UploadFile) -> tuple[bytes, str]:
 
 def _analyze_layout(contents: bytes, content_type: str) -> List[str]:
     client = AzureFormRecognizerClient()
+
+    def run_single(payload: bytes) -> List[str]:
+        raw_result = client.analyze_layout(payload, content_type=content_type)
+        pages = extract_layout_pages(raw_result)
+        return [line for page in pages for line in page["lines"]]
+
+    if content_type == "application/pdf":
+        plan = PdfChunkingPlan(
+            max_bytes=client.max_upload_bytes,
+            max_pages=client.chunk_page_limit,
+        )
+        try:
+            if len(contents) <= client.max_upload_bytes:
+                try:
+                    return run_single(contents)
+                except AzureFormRecognizerError as exc:
+                    if "InvalidContentLength" not in str(exc):
+                        raise
+                    logger.warning(
+                        "Azure rejected PDF due to size; falling back to chunked upload: %s",
+                        exc,
+                    )
+                    chunks = chunk_pdf_by_limits(contents, plan)
+                    return [line for chunk in chunks for line in run_single(chunk)]
+
+            chunks = chunk_pdf_by_limits(contents, plan)
+            results: List[str] = []
+            for chunk in chunks:
+                results.extend(run_single(chunk))
+            return results
+        except PdfChunkingError as exc:
+            logger.error("PDF chunking failed: %s", exc)
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        except AzureFormRecognizerError as exc:
+            logger.exception("Azure Document Intelligence error: %s", exc)
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     try:
-        raw_result = client.analyze_layout(contents, content_type=content_type)
+        return run_single(contents)
     except AzureFormRecognizerError as exc:
         logger.exception("Azure Document Intelligence error: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    pages = extract_layout_pages(raw_result)
-    return [line for page in pages for line in page["lines"]]
 
 
 @app.get("/api/ping")
