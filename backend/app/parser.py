@@ -53,9 +53,10 @@ def parse_bankbook(lines: List[str], source_name: str) -> List[AssetRecord]:
     balance_line = next((line for line in normalized_lines if any(key in line for key in BALANCE_KEYWORDS)), None)
     balance_amount = extract_amount(balance_line) if balance_line else None
 
-    transactions = build_transactions_from_rows(normalized_lines)
+    transaction_lines = filter_transaction_lines(normalized_lines)
+    transactions = build_transactions_from_rows(transaction_lines)
     if not transactions:
-        transactions = build_transactions_from_entries(normalized_lines)
+        transactions = build_transactions_from_entries(transaction_lines)
 
     final_balance = balance_amount
     if final_balance is None:
@@ -79,7 +80,6 @@ def parse_bankbook(lines: List[str], source_name: str) -> List[AssetRecord]:
 
 def normalize_line(line: str) -> str:
     text = line.translate(HYPHENS)
-    text = text.replace("*", "")
     text = re.sub(r"\s+", " ", text)
     text = text.replace(" -", "-").replace("- ", "-")
     text = text.replace("--", "-")
@@ -88,33 +88,65 @@ def normalize_line(line: str) -> str:
     return text.strip()
 
 
+
+def filter_transaction_lines(lines: List[str]) -> List[str]:
+    filtered: List[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if len(stripped) == 1 and not stripped.isdigit():
+            continue
+        if stripped.isdigit() and len(stripped) <= 3:
+            continue
+        filtered.append(line)
+    return filtered
+
 def build_transaction(date_iso: str, segments: List[str]) -> Optional[TransactionLine]:
     cleaned_segments = [seg.strip() for seg in segments if seg and seg.strip()]
     if not cleaned_segments:
         return None
 
-    text_segments = [seg for seg in cleaned_segments if not seg.isdigit()]
-    description = " ".join(text_segments).strip()
+    numbers: List[float] = []
+    text_parts: List[str] = []
+    for segment in cleaned_segments:
+        matches = list(AMOUNT_PATTERN.findall(segment))
+        segment_text = segment
+        for raw_value in matches:
+            amount = normalize_amount(raw_value)
+            if amount is not None:
+                numbers.append(amount)
+            segment_text = segment_text.replace(raw_value, " ")
+        cleaned_text = segment_text.strip(" *:-/,")
+        if cleaned_text:
+            text_parts.append(cleaned_text)
+
+    description = " ".join(text_parts).strip()
     if not description:
         description = " ".join(cleaned_segments).strip()
 
-    number_source = " ".join(cleaned_segments)
-    numbers = [normalize_amount(match) for match in AMOUNT_PATTERN.findall(number_source)]
-    numbers = [amt for amt in numbers if amt is not None]
-    numbers = [amt for amt in numbers if abs(amt) >= 10]
-
-    withdrawal = deposit = balance = None
-    if numbers:
-        balance = numbers[-1]
-        if len(numbers) >= 2:
-            primary = numbers[0]
-            if any(keyword in description for keyword in DEPOSIT_KEYWORDS):
-                deposit = primary
-            else:
-                withdrawal = primary
-
     if not numbers and not description:
         return None
+
+    balance = None
+    withdrawal = deposit = None
+
+    if numbers:
+        balance = max(numbers, key=abs)
+        remaining: List[float] = []
+        removed_balance = False
+        for value in numbers:
+            if not removed_balance and value == balance:
+                removed_balance = True
+                continue
+            remaining.append(value)
+        amount_value = remaining[0] if remaining else None
+        if amount_value is not None:
+            if any(keyword in description for keyword in DEPOSIT_KEYWORDS):
+                deposit = amount_value
+            else:
+                withdrawal = amount_value
+
     return TransactionLine(
         transaction_date=date_iso,
         description=description or date_iso,
@@ -122,7 +154,6 @@ def build_transaction(date_iso: str, segments: List[str]) -> Optional[Transactio
         deposit_amount=deposit,
         balance=balance,
     )
-
 
 def extract_date_and_remainder(text: str) -> Tuple[Optional[str], str]:
     match = DATE_PATTERN.search(text)
