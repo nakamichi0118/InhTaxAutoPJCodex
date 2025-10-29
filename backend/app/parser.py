@@ -14,6 +14,7 @@ BRANCH_PATTERN = re.compile(r"([\w\u3040-\u30ff\u4e00-\u9faf]+)支店")
 OWNER_PATTERN = re.compile(r"\b(\S+\s*\S*)サマ")
 ACCOUNT_HINTS = ('口座番号', '店番号', '座番号')
 OWNER_SUFFIXES = ('様', 'サマ', 'さま')
+POST_BANK_ACCOUNT_PATTERN = re.compile(r"記号番号[:：\-]?\s*([\d-]{5,})")
 BALANCE_KEYWORDS = ["残高", "繰越残高"]
 
 HYPHENS = str.maketrans({
@@ -38,7 +39,8 @@ NON_DATE_TOKEN = re.compile(r"[^\d\s:/\-.;]")
 
 def detect_document_type(lines: Iterable[str]) -> DocumentType:
     joined = "\n".join(lines)
-    if any(keyword in joined for keyword in ("普通預金", "通帳", "預金", "入出金")):
+    bank_keywords = ("普通預金", "通帳", "預金", "入出金", "通常貯金", "預払状況調書", "ゆうちょ")
+    if any(keyword in joined for keyword in bank_keywords):
         return "bank_deposit"
     if any(keyword in joined for keyword in ("固定資産税", "地番", "家屋")):
         return "land"
@@ -107,15 +109,16 @@ def build_transaction(date_iso: str, segments: List[str]) -> Optional[Transactio
     if not cleaned_segments:
         return None
 
-    numbers: List[float] = []
+    number_entries: List[tuple[float, str]] = []
     text_parts: List[str] = []
     for segment in cleaned_segments:
+        segment = re.sub(r",\s+(?=\d)", ",", segment)
         matches = list(AMOUNT_PATTERN.findall(segment))
         segment_text = segment
         for raw_value in matches:
             amount = normalize_amount(raw_value)
             if amount is not None:
-                numbers.append(amount)
+                number_entries.append((amount, raw_value))
             segment_text = segment_text.replace(raw_value, " ")
         cleaned_text = segment_text.strip(" *:-/,")
         if cleaned_text:
@@ -124,12 +127,24 @@ def build_transaction(date_iso: str, segments: List[str]) -> Optional[Transactio
     description = " ".join(text_parts).strip()
     if not description:
         description = " ".join(cleaned_segments).strip()
+    description = re.sub(r"\s+", " ", description).strip()
 
-    if not numbers and not description:
+    if not number_entries and not description:
         return None
 
+    numbers = [item[0] for item in number_entries]
     balance = None
     withdrawal = deposit = None
+
+    if len(number_entries) >= 2:
+        _, first_raw = number_entries[0]
+        rest_pairs = number_entries[1:]
+        rest_values = [value for value, _ in rest_pairs]
+        rest_has_comma = any("," in raw for _, raw in rest_pairs)
+        has_large_rest = any(abs(value) >= 10000 for value in rest_values)
+        first_length = len(first_raw.replace(",", "").strip())
+        if (has_large_rest or rest_has_comma) and first_length <= 2 and "," not in first_raw:
+            numbers = rest_values
 
     if numbers:
         balance = max(numbers, key=abs)
@@ -190,7 +205,7 @@ def convert_year(value: int) -> int:
 def normalize_amount(raw: str) -> Optional[float]:
     if not raw:
         return None
-    cleaned = raw.replace(",", "")
+    cleaned = raw.replace(",", "").replace(" ", "")
     try:
         return float(cleaned)
     except ValueError:
@@ -326,7 +341,8 @@ def build_transactions_from_entries(lines: List[str]) -> List[TransactionLine]:
                 if txn:
                     transactions.append(txn)
             current_date = date_iso
-            segments = [fragment] if fragment else []
+            initial = strip_branch_prefix(fragment) if fragment else ""
+            segments = [initial] if initial else []
             continue
         if current_date and fragment:
             segments.append(fragment)
@@ -357,6 +373,19 @@ def split_line_segments(line: str) -> List[tuple[Optional[str], str]]:
             entries.append((None, segment))
     return entries
 
+
+def strip_branch_prefix(fragment: str) -> str:
+    if not fragment:
+        return fragment
+    tokens = fragment.split()
+    if len(tokens) < 2:
+        return fragment
+    first, second = tokens[0], tokens[1]
+    if first.isdigit() and len(first) <= 3:
+        if "," in second or re.search(r"\d{4,}", second):
+            return fragment[len(first):].lstrip()
+    return fragment
+
 def extract_branch_name(lines: List[str]) -> Optional[str]:
     branch = find_first_match(BRANCH_PATTERN, lines)
     if branch:
@@ -379,6 +408,12 @@ def extract_branch_name(lines: List[str]) -> Optional[str]:
 
 
 def extract_account_number(lines: List[str]) -> Optional[str]:
+    for line in lines:
+        match = POST_BANK_ACCOUNT_PATTERN.search(line)
+        if match:
+            value = match.group(1).replace(" ", "")
+            if value:
+                return value
     candidates: List[str] = []
     for hint in ACCOUNT_HINTS:
         for idx, line in enumerate(lines):
@@ -404,6 +439,8 @@ def extract_account_number(lines: List[str]) -> Optional[str]:
 def extract_owner_name(lines: List[str]) -> Optional[str]:
     owner = find_first_match(OWNER_PATTERN, lines)
     owner = owner.strip() if owner else None
+    if owner:
+        owner = owner.replace("お 名 前", "").replace("お名前", "").strip()
 
     candidates: List[str] = []
     for line in lines:
@@ -412,7 +449,8 @@ def extract_owner_name(lines: List[str]) -> Optional[str]:
                 continue
             candidate = line.rsplit(suffix, 1)[0].strip()
             if candidate:
-                candidates.append(candidate)
+                cleaned = candidate.replace("お 名 前", "").replace("お名前", "").strip()
+                candidates.append(cleaned or candidate.strip())
                 break
     if candidates:
         best = max(candidates, key=len)
@@ -420,7 +458,9 @@ def extract_owner_name(lines: List[str]) -> Optional[str]:
             return best
     if not owner:
         owner = find_owner_from_labels(lines)
-    return owner
+    if owner:
+        return owner.replace("お 名 前", "").replace("お名前", "").strip()
+    return None
 
 
 
