@@ -1,4 +1,4 @@
-﻿"""PDF helper utilities for preprocessing large documents."""
+"""PDF helper utilities for preprocessing large documents."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -32,51 +32,48 @@ def chunk_pdf_by_limits(pdf_bytes: bytes, plan: PdfChunkingPlan) -> List[bytes]:
         PdfChunkingError: If a single page exceeds the size limit and cannot be chunked.
     """
 
-    if len(pdf_bytes) <= plan.max_bytes:
-        return [pdf_bytes]
-
     reader = PdfReader(BytesIO(pdf_bytes))
     total_pages = len(reader.pages)
     if total_pages == 0:
         return [pdf_bytes]
 
-    def write_pages(pages: Iterable) -> bytes:
+    if len(pdf_bytes) <= plan.max_bytes and total_pages <= plan.max_pages:
+        return [pdf_bytes]
+
+    def write_pages(indices: Iterable[int]) -> bytes:
         writer = PdfWriter()
-        for page in pages:
-            writer.add_page(page)
+        for idx in indices:
+            writer.add_page(reader.pages[idx])
         buffer = BytesIO()
         writer.write(buffer)
         return buffer.getvalue()
 
     chunks: List[bytes] = []
-    current_pages: List = []
+    current_indices: List[int] = []
 
-    for page_index, page in enumerate(reader.pages):
-        tentative_pages = current_pages + [page]
-        tentative_blob = write_pages(tentative_pages)
+    for page_index in range(total_pages):
+        current_indices.append(page_index)
+        tentative_blob = write_pages(current_indices)
 
-        if len(tentative_blob) > plan.max_bytes and current_pages:
-            current_blob = write_pages(current_pages)
-            chunks.append(current_blob)
-            current_pages = [page]
-            single_blob = write_pages(current_pages)
-            if len(single_blob) > plan.max_bytes:
+        if len(tentative_blob) > plan.max_bytes:
+            if len(current_indices) == 1:
                 raise PdfChunkingError(
-                    "Single page exceeds Azure upload limit; compression required."
+                    "Single page exceeds analysis upload limit; compression required."
                 )
-            tentative_blob = single_blob
-        elif len(tentative_blob) > plan.max_bytes:
-            raise PdfChunkingError(
-                "Single page exceeds Azure upload limit; compression required."
-            )
+            last_index = current_indices.pop()
+            chunks.append(write_pages(current_indices))
+            current_indices = [last_index]
+            tentative_blob = write_pages(current_indices)
+            if len(tentative_blob) > plan.max_bytes:
+                raise PdfChunkingError(
+                    "Single page exceeds analysis upload limit; compression required."
+                )
 
-        current_pages.append(page)
-
-        if len(current_pages) >= plan.max_pages:
+        if len(current_indices) >= plan.max_pages:
             chunks.append(tentative_blob)
-            current_pages = []
+            current_indices = []
 
-    if current_pages:
-        chunks.append(write_pages(current_pages))
+    if current_indices:
+        chunks.append(write_pages(current_indices))
 
     return chunks

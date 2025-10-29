@@ -29,6 +29,12 @@
             font-size: 0.95rem;
             line-height: 1.6;
         }
+        .version {
+            margin-top: 0.6rem;
+            font-size: 0.85rem;
+            opacity: 0.85;
+            letter-spacing: 0.02em;
+        }
         main {
             max-width: 960px;
             margin: 0 auto;
@@ -211,8 +217,9 @@
 <header>
     <h1>通帳データ整理ツール</h1>
     <p>PDF を選ぶだけで、名義・口座番号・取引明細を読み取り、すぐに CSV ダウンロードまで進めます。専門的な操作は不要です。</p>
-</header>
-<main>
+            <p class="version">バージョン 0.4.0</p>
+        </header>
+        <main>
     <section class="card">
         <h2>STEP 1. 接続先の確認</h2>
         <p class="description">デプロイ済みのバックエンド URL を入力してください。空欄のままでもデフォルトの Railway 環境に接続します。</p>

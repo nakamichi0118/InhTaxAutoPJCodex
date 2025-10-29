@@ -63,7 +63,7 @@ class AssetRecord(BaseModel):
             "valuation": valuation,
             "ownership_share": self.ownership_share,
             "notes": self.notes,
-            "transactions": [txn.dict() for txn in self.transactions],
+            "transactions": [txn.model_dump() for txn in self.transactions],
         }
 
 
