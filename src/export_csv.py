@@ -317,7 +317,7 @@ def build_csv(columns: Sequence[str], rows: Iterable[Dict[str, str]]) -> str:
     for row in rows:
         values = [csv_escape(row.get(column, "")) for column in columns]
         lines.append(",".join(values))
-    return "\n".join(lines)
+    return "\r\n".join(lines) + "\r\n"
 
 
 def csv_escape(value: str) -> str:
