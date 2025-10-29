@@ -31,10 +31,11 @@ HYPHENS = str.maketrans({
     ":": "-",
 })
 
-DEPOSIT_KEYWORDS = ("振込", "入金", "預入", "配当", "振込入金", "定期積金")
+DEPOSIT_KEYWORDS = ("振込", "入金", "預入", "配当", "振込入金", "定期積金", "利子", "利息")
 
 ROW_CODE_PATTERN = re.compile(r"^\d{3}$")
 NON_DATE_TOKEN = re.compile(r"[^\d\s:/\-.;]")
+OWNER_PREFIX_TOKENS = ("お 名 前", "お名前", "名義人", "口座名義")
 
 
 def detect_document_type(lines: Iterable[str]) -> DocumentType:
@@ -49,6 +50,7 @@ def detect_document_type(lines: Iterable[str]) -> DocumentType:
 
 def parse_bankbook(lines: List[str], source_name: str) -> List[AssetRecord]:
     normalized_lines = [normalize_line(line) for line in lines if line.strip()]
+    normalized_lines = expand_lines_with_dates(normalized_lines)
     branch = extract_branch_name(normalized_lines)
     account = extract_account_number(normalized_lines)
     owner = extract_owner_name(normalized_lines)
@@ -91,6 +93,36 @@ def normalize_line(line: str) -> str:
 
 
 
+def expand_lines_with_dates(lines: List[str]) -> List[str]:
+    expanded: List[str] = []
+    for line in lines:
+        matches = list(DATE_PATTERN.finditer(line))
+        if len(matches) <= 1:
+            expanded.append(line)
+            continue
+        row_starts: List[int] = []
+        for match in matches:
+            idx = match.start()
+            look = idx
+            while look > 0 and line[look - 1].isspace():
+                look -= 1
+            while look > 0 and line[look - 1].isdigit():
+                look -= 1
+            row_starts.append(look)
+        if row_starts:
+            first_start = row_starts[0]
+            header = line[:first_start].strip()
+            if header:
+                expanded.append(header)
+            for i, row_start in enumerate(row_starts):
+                next_start = row_starts[i + 1] if i + 1 < len(row_starts) else len(line)
+                segment = line[row_start:next_start].strip()
+                expanded.append(segment)
+        else:
+            expanded.append(line)
+    return expanded
+
+
 def filter_transaction_lines(lines: List[str]) -> List[str]:
     filtered: List[str] = []
     for line in lines:
@@ -113,13 +145,19 @@ def build_transaction(date_iso: str, segments: List[str]) -> Optional[Transactio
     text_parts: List[str] = []
     for segment in cleaned_segments:
         segment = re.sub(r",\s+(?=\d)", ",", segment)
-        matches = list(AMOUNT_PATTERN.findall(segment))
-        segment_text = segment
-        for raw_value in matches:
+        matches = list(AMOUNT_PATTERN.finditer(segment))
+        for match in matches:
+            raw_value = match.group(1)
             amount = normalize_amount(raw_value)
             if amount is not None:
                 number_entries.append((amount, raw_value))
-            segment_text = segment_text.replace(raw_value, " ")
+        segment_text = segment
+        for match in reversed(matches):
+            start, end = match.span(1)
+            span_width = end - start
+            segment_text = (
+                segment_text[:start] + (" " * span_width) + segment_text[end:]
+            )
         cleaned_text = segment_text.strip(" *:-/,")
         if cleaned_text:
             text_parts.append(cleaned_text)
@@ -438,9 +476,7 @@ def extract_account_number(lines: List[str]) -> Optional[str]:
 
 def extract_owner_name(lines: List[str]) -> Optional[str]:
     owner = find_first_match(OWNER_PATTERN, lines)
-    owner = owner.strip() if owner else None
-    if owner:
-        owner = owner.replace("お 名 前", "").replace("お名前", "").strip()
+    owner = normalize_owner_candidate(owner) if owner else None
 
     candidates: List[str] = []
     for line in lines:
@@ -448,19 +484,18 @@ def extract_owner_name(lines: List[str]) -> Optional[str]:
             if suffix not in line:
                 continue
             candidate = line.rsplit(suffix, 1)[0].strip()
-            if candidate:
-                cleaned = candidate.replace("お 名 前", "").replace("お名前", "").strip()
-                candidates.append(cleaned or candidate.strip())
+            normalized = normalize_owner_candidate(candidate)
+            if normalized:
+                candidates.append(normalized)
                 break
     if candidates:
         best = max(candidates, key=len)
         if not owner or len(best) >= len(owner):
-            return best
+            owner = best
     if not owner:
-        owner = find_owner_from_labels(lines)
-    if owner:
-        return owner.replace("お 名 前", "").replace("お名前", "").strip()
-    return None
+        fallback = find_owner_from_labels(lines)
+        owner = normalize_owner_candidate(fallback)
+    return owner
 
 
 
@@ -492,6 +527,26 @@ def find_owner_from_labels(lines: List[str]) -> Optional[str]:
             if candidate:
                 return candidate
     return None
+
+
+def normalize_owner_candidate(candidate: Optional[str]) -> Optional[str]:
+    if not candidate:
+        return None
+    text = candidate
+    for token in OWNER_PREFIX_TOKENS:
+        text = text.replace(token, " ")
+    text = text.replace("　", " ")
+    tokens = [tok for tok in text.strip().split() if tok]
+    filtered: List[str] = []
+    for token in tokens:
+        if any(ch.isdigit() for ch in token):
+            continue
+        filtered.append(token)
+    if not filtered:
+        return None
+    if len(filtered) >= 2:
+        return " ".join(filtered[-2:])
+    return filtered[-1]
 
 
 def build_assets(document_type: DocumentType, lines: List[str], source_name: str) -> List[AssetRecord]:
