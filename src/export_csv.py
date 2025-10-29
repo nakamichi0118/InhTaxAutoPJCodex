@@ -111,7 +111,7 @@ class AssetRecord:
             "valuation_amount": normalize_decimal(valuation.get("amount")),
             "valuation_date": normalize_date(valuation.get("date")),
             "ownership_share": normalize_decimal(self.data.get("ownership_share")),
-            "notes": clean_text(self.data.get("notes")),
+            "notes": format_notes(self.data.get("notes")),
         }
 
     def iter_transactions(self) -> Iterator[Dict[str, str]]:
@@ -153,6 +153,18 @@ def join_names(value: Any) -> str:
         cleaned = [clean_text(v) for v in value if clean_text(v)]
         return ";".join(cleaned)
     return clean_text(value)
+
+
+def format_notes(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple, set)):
+        parts = [clean_text(item) for item in value if item]
+        return "\r\n".join(part for part in parts if part)
+    text = str(value)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [clean_text(line) for line in text.split("\n")]
+    return "\r\n".join(line for line in lines if line)
 
 
 def normalize_decimal(value: Any) -> str:
