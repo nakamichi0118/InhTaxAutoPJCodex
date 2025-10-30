@@ -9,6 +9,7 @@ import uuid
 from typing import Any, Dict, List
 
 import requests
+from requests import RequestException
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +44,14 @@ class GeminiClient:
             self._delete_file(file_name)
 
     def _invoke_generate(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        response = requests.post(
-            f"{self.endpoint}?key={self.api_key}",
-            json=payload,
-            timeout=120,
-        )
+        try:
+            response = requests.post(
+                f"{self.endpoint}?key={self.api_key}",
+                json=payload,
+                timeout=120,
+            )
+        except RequestException as exc:
+            raise GeminiError(f"Request to Gemini failed: {exc}") from exc
         if response.status_code >= 400:
             raise GeminiError(self._extract_error(response))
         return response.json()
