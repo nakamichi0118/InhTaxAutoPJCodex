@@ -7,9 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from azure.core.exceptions import HttpResponseError
-
-from .azure_analyzer import AzureAnalysisResult, AzureTransactionAnalyzer
+from .azure_analyzer import AzureAnalysisError, AzureAnalysisResult, AzureTransactionAnalyzer
 from .config import get_settings
 from .exporter import export_to_csv_strings
 from .gemini import GeminiClient, GeminiError
@@ -88,8 +86,8 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str) -> AzureAna
         api_key=settings.azure_form_recognizer_key,
     )
     plan = PdfChunkingPlan(
-        max_bytes=settings.gemini_max_document_bytes,
-        max_pages=max(1, min(2, settings.gemini_chunk_page_limit)),
+        max_bytes=min(settings.gemini_max_document_bytes, 2_000_000),
+        max_pages=1,
     )
     chunks = chunk_pdf_by_limits(contents, plan)
 
@@ -99,7 +97,7 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str) -> AzureAna
     for chunk in chunks:
         try:
             result = analyzer.analyze_pdf(chunk, source_name=source_name)
-        except HttpResponseError as exc:
+        except AzureAnalysisError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         combined_lines.extend(result.raw_lines)
         for asset in result.assets:
