@@ -5,7 +5,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-DocumentType = Literal["bank_deposit", "land", "building", "unknown"]
+DocumentType = Literal["bank_deposit", "land", "building", "transaction_history", "unknown"]
 
 
 class TransactionLine(BaseModel):

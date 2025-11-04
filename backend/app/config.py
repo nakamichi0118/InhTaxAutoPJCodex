@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -18,6 +19,8 @@ class Settings:
     gemini_model: str
     gemini_max_document_bytes: int
     gemini_chunk_page_limit: int
+    azure_form_recognizer_endpoint: Optional[str]
+    azure_form_recognizer_key: Optional[str]
 
 
 @lru_cache()
@@ -36,4 +39,6 @@ def get_settings() -> Settings:
         gemini_model=gemini_model,
         gemini_max_document_bytes=gemini_max_bytes,
         gemini_chunk_page_limit=gemini_chunk_page_limit,
+        azure_form_recognizer_endpoint=os.getenv("AZURE_FORM_RECOGNIZER_ENDPOINT"),
+        azure_form_recognizer_key=os.getenv("AZURE_FORM_RECOGNIZER_KEY"),
     )

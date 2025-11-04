@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from .azure_analyzer import AzureTransactionAnalyzer
 from .config import get_settings
 from .exporter import export_to_csv_strings
 from .gemini import GeminiClient, GeminiError
@@ -77,6 +78,16 @@ def _analyze_with_gemini(contents: bytes, settings) -> List[str]:
     return _with_pdf_chunks(contents, plan, analyzer)
 
 
+def _analyze_with_azure(contents: bytes, settings, source_name: str):
+    if not settings.azure_form_recognizer_endpoint or not settings.azure_form_recognizer_key:
+        raise HTTPException(status_code=503, detail="Azure Form Recognizer is not configured")
+    analyzer = AzureTransactionAnalyzer(
+        endpoint=settings.azure_form_recognizer_endpoint,
+        api_key=settings.azure_form_recognizer_key,
+    )
+    return analyzer.analyze_pdf(contents, source_name=source_name)
+
+
 def _analyze_layout(contents: bytes, content_type: str) -> List[str]:
     if content_type != "application/pdf":
         raise HTTPException(status_code=415, detail="Only PDF documents are supported")
@@ -128,9 +139,30 @@ async def analyze_document(
     document_type: Optional[DocumentType] = Form(None),
 ) -> DocumentAnalyzeResponse:
     contents, content_type = await _load_file_bytes(file)
+    settings = get_settings()
+    source_name = file.filename or "uploaded.pdf"
+
+    if document_type == "transaction_history":
+        azure_result = _analyze_with_azure(contents, settings, source_name)
+        return DocumentAnalyzeResponse(
+            status="ok",
+            document_type="transaction_history",
+            raw_lines=azure_result.raw_lines,
+            assets=azure_result.assets,
+        )
+
     lines = _analyze_layout(contents, content_type)
     detected_type = document_type or detect_document_type(lines)
-    assets = build_assets(detected_type, lines, source_name=file.filename or "uploaded.pdf")
+    if detected_type == "transaction_history":
+        azure_result = _analyze_with_azure(contents, settings, source_name)
+        return DocumentAnalyzeResponse(
+            status="ok",
+            document_type=detected_type,
+            raw_lines=azure_result.raw_lines,
+            assets=azure_result.assets,
+        )
+
+    assets = build_assets(detected_type, lines, source_name=source_name)
     return DocumentAnalyzeResponse(
         status="ok",
         document_type=detected_type,

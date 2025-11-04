@@ -42,6 +42,8 @@ OWNER_PREFIX_TOKENS = ("お 名 前", "お名前", "名義人", "口座名義")
 
 def detect_document_type(lines: Iterable[str]) -> DocumentType:
     joined = "\n".join(lines)
+    if any(keyword in joined for keyword in ("預金取引推移表", "取引推移表")):
+        return "transaction_history"
     bank_keywords = ("普通預金", "通帳", "預金", "入出金", "通常貯金", "預払状況調書", "ゆうちょ")
     if any(keyword in joined for keyword in bank_keywords):
         return "bank_deposit"
