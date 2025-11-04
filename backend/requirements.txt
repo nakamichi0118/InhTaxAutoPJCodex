@@ -4,3 +4,4 @@ python-dotenv==1.0.1
 requests==2.32.3
 python-multipart==0.0.9
 pypdf==4.2.0
+azure-ai-formrecognizer==3.3.3
