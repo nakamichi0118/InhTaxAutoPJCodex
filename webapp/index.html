@@ -211,6 +211,43 @@
             button { width: 100%; gap: 0.3rem; }
             .drop-area { padding: 1.8rem 1rem; }
         }
+        .tabs {
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+        }
+        .tab-headers {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+        }
+        .tab-headers button {
+            border: 1px solid #cbd5f5;
+            background: #f8fafc;
+            color: #1f2937;
+            padding: 0.45rem 0.85rem;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .tab-headers button.active {
+            background: #2563eb;
+            color: #fff;
+            box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+            border-color: #1d4ed8;
+        }
+        .tab-panels .tab-panel {
+            display: none;
+        }
+        .tab-panels .tab-panel.active {
+            display: block;
+        }
+        .tab-panel .summary-list {
+            margin-bottom: 1.2rem;
+        }
+        .tab-panel table.preview {
+            margin-top: 0;
+        }
     </style>
 </head>
 <body>
@@ -238,7 +275,7 @@
             <p style="font-size:0.85rem;color:#6b7280;">※ 横向きの PDF でも自動で読み取ります。</p>
             <div style="margin-top:1rem;">
                 <button id="chooseFile" class="primary">ファイルを選ぶ</button>
-                <input id="fileInput" type="file" accept="application/pdf" style="display:none;">
+                <input id="fileInput" type="file" accept="application/pdf" multiple style="display:none;">
             </div>
             <div style="margin-top:1rem;">
                 <label style="font-size:0.85rem;color:#4b5563;">資料の種類
@@ -254,21 +291,13 @@
         <div id="status" class="status info"></div>
     </section>
 
-    <section class="card" id="summarySection" style="display:none;">
-        <h2>読み取り結果の概要</h2>
-        <div id="summaryList" class="summary-list"></div>
-        <table id="previewTable" class="preview" style="display:none;">
-            <thead>
-                <tr>
-                    <th>日付</th>
-                    <th>内容</th>
-                    <th>出金</th>
-                    <th>入金</th>
-                    <th>残高</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+    <section class="card" id="resultsSection" style="display:none;">
+        <h2>読み取り結果</h2>
+        <div id="tabContainer" class="tabs" style="display:none;">
+            <div id="tabHeaders" class="tab-headers"></div>
+            <div id="tabPanels" class="tab-panels"></div>
+        </div>
+        <p id="tabEmptyMessage" style="margin:0;color:#4b5563;display:none;">読み取り結果がここに表示されます。</p>
     </section>
 
     <section class="card" id="downloadSection" style="display:none;">
@@ -295,18 +324,18 @@
     const fileInput = document.getElementById('fileInput');
     const docTypeSelect = document.getElementById('docType');
     const statusBox = document.getElementById('status');
-    const summarySection = document.getElementById('summarySection');
-    const summaryList = document.getElementById('summaryList');
-    const previewTable = document.getElementById('previewTable');
-    const previewBody = previewTable.querySelector('tbody');
+    const resultsSection = document.getElementById('resultsSection');
+    const tabContainer = document.getElementById('tabContainer');
+    const tabHeaders = document.getElementById('tabHeaders');
+    const tabPanels = document.getElementById('tabPanels');
+    const tabEmptyMessage = document.getElementById('tabEmptyMessage');
     const downloadSection = document.getElementById('downloadSection');
     const downloadList = document.getElementById('downloadList');
     const rawJson = document.getElementById('rawJson');
 
     const state = {
-        assets: [],
-        csvFiles: {},
-        lastFileName: '',
+        documents: [],
+        activeDocId: null,
     };
 
     init();
@@ -318,8 +347,9 @@
         pingButton.addEventListener('click', handlePing);
         chooseFileButton.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (event) => {
-            if (event.target.files && event.target.files[0]) {
-                processFile(event.target.files[0]);
+            if (event.target.files && event.target.files.length) {
+                processFiles(event.target.files);
+                fileInput.value = '';
             }
         });
         dropArea.addEventListener('dragover', (event) => {
@@ -330,71 +360,92 @@
         dropArea.addEventListener('drop', (event) => {
             event.preventDefault();
             dropArea.classList.remove('active');
-            if (event.dataTransfer.files && event.dataTransfer.files[0]) {
-                processFile(event.dataTransfer.files[0]);
+            if (event.dataTransfer.files && event.dataTransfer.files.length) {
+                processFiles(event.dataTransfer.files);
             }
         });
     }
 
-    function normalizedApiBase() {
-        const raw = (apiInput.value || DEFAULT_API).trim();
-        if (!raw) return DEFAULT_API;
-        const base = raw.endsWith('/api') ? raw : `${raw.replace(/\/$/, '')}/api`;
-        return base.replace(/\/$/, '');
+    function resetState() {
+        state.documents = [];
+        state.activeDocId = null;
     }
 
-    async function handlePing() {
-        const base = normalizedApiBase();
-        pingResult.textContent = '接続を確認しています…';
-        pingResult.style.color = '#4b5563';
-        try {
-            const res = await fetch(`${base}/ping`);
-            if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-            const data = await res.json();
-            if (data.status === 'ok') {
-                pingResult.textContent = '接続できました。';
-                pingResult.style.color = '#047857';
-            } else {
-                pingResult.textContent = '応答が想定外です。';
-                pingResult.style.color = '#b91c1c';
-            }
-        } catch (error) {
-            pingResult.textContent = `接続できませんでした: ${error.message}`;
-            pingResult.style.color = '#b91c1c';
+    async function processFiles(fileList) {
+        const files = Array.from(fileList || []).filter((file) => {
+            if (!file) return false;
+            if (file.type === 'application/pdf') return true;
+            return (file.name || '').toLowerCase().endsWith('.pdf');
+        });
+        if (!files.length) {
+            setStatus('PDF ファイルが見つかりませんでした。', 'error');
+            return;
         }
-    }
 
-    async function processFile(file) {
-        state.lastFileName = file.name;
-        setStatus(`「${file.name}」を読み取っています…`, 'info');
-        summarySection.style.display = 'none';
+        resetState();
+        resultsSection.style.display = 'none';
+        tabContainer.style.display = 'none';
+        tabEmptyMessage.style.display = 'block';
         downloadSection.style.display = 'none';
-        summaryList.innerHTML = '';
-        previewBody.innerHTML = '';
-        state.assets = [];
-        state.csvFiles = {};
+        downloadList.innerHTML = '';
+        rawJson.textContent = '';
 
-        try {
-            const analyzePayload = await analyzeDocument(file);
-            state.assets = Array.isArray(analyzePayload.assets) ? analyzePayload.assets : [];
-            if (!state.assets.length) {
-                throw new Error('取引情報が見つかりませんでした。');
+        setStatus(`${files.length} 件の読み取りを開始します…`, 'info');
+        const selectedDocType = docTypeSelect.value;
+
+        for (let index = 0; index < files.length; index += 1) {
+            const file = files[index];
+            try {
+                const doc = await handleSingleFile(file, selectedDocType);
+                state.documents.push(doc);
+                setStatus(`(${index + 1}/${files.length}) 「${file.name}」の読み取りが完了しました。`, 'info');
+            } catch (error) {
+                console.error(error);
+                state.documents.push({
+                    id: createDocId(),
+                    name: file.name,
+                    error: error.message || '読み取りに失敗しました。',
+                });
+                setStatus(`(${index + 1}/${files.length}) 「${file.name}」でエラーが発生しました。`, 'error');
             }
-            updateSummary();
-            await createCsvFiles();
-            setStatus('CSV を作成しました。ダウンロードボタンから保存できます。', 'success');
-        } catch (error) {
-            console.error(error);
-            setStatus(error.message || '読み取りに失敗しました。PDF を確認してください。', 'error');
         }
+
+        renderDocuments();
+        renderDownloads();
+        renderRawJson();
+
+        const hasError = state.documents.some((doc) => doc.error);
+        setStatus(
+            hasError
+                ? '一部のファイルでエラーが発生しました。各タブから詳細をご確認ください。'
+                : 'すべての処理が完了しました。',
+            hasError ? 'error' : 'success'
+        );
     }
 
-    async function analyzeDocument(file) {
+    async function handleSingleFile(file, docType) {
+        setStatus(`「${file.name}」を解析中です…`, 'info');
+        const payload = await analyzeDocument(file, docType);
+        const assets = Array.isArray(payload.assets) ? payload.assets : [];
+        if (!assets.length) {
+            throw new Error('取引情報が見つかりませんでした。');
+        }
+        const csvFiles = await exportCsv(assets);
+        return {
+            id: createDocId(),
+            name: file.name,
+            assets,
+            csvFiles,
+            raw: payload,
+        };
+    }
+
+    async function analyzeDocument(file, docType) {
         const base = normalizedApiBase();
         const form = new FormData();
         form.append('file', file);
-        if (docTypeSelect.value) {
-            form.append('document_type', docTypeSelect.value);
+        if (docType) {
+            form.append('document_type', docType);
         }
         const res = await fetch(`${base}/documents/analyze`, {
             method: 'POST',
@@ -411,13 +462,12 @@
         return payload;
     }
 
-    async function createCsvFiles() {
+    async function exportCsv(assets) {
         const base = normalizedApiBase();
-        const exportPayload = { assets: state.assets };
         const res = await fetch(`${base}/export`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(exportPayload),
+            body: JSON.stringify({ assets }),
         });
         if (!res.ok) {
             const text = await res.text();
@@ -427,57 +477,132 @@
         if (!data.files) {
             throw new Error('CSV ファイルが取得できませんでした。');
         }
-        state.csvFiles = data.files;
-        renderDownloads();
-        renderRawJson();
+        return data.files;
     }
 
-    function updateSummary() {
+    function renderDocuments() {
+        if (!state.documents.length) {
+            resultsSection.style.display = 'none';
+            tabContainer.style.display = 'none';
+            tabEmptyMessage.style.display = 'block';
+            return;
+        }
+
+        resultsSection.style.display = 'block';
+        tabEmptyMessage.style.display = 'none';
+        tabContainer.style.display = 'flex';
+        tabHeaders.innerHTML = '';
+        tabPanels.innerHTML = '';
+
+        state.documents.forEach((doc) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.dataset.docId = doc.id;
+            button.textContent = doc.name;
+            button.addEventListener('click', () => setActiveDoc(doc.id));
+            tabHeaders.appendChild(button);
+
+            const panel = document.createElement('div');
+            panel.className = 'tab-panel';
+            panel.dataset.docId = doc.id;
+            panel.appendChild(buildDocumentPanel(doc));
+            tabPanels.appendChild(panel);
+        });
+
+        const defaultId =
+            state.activeDocId && state.documents.some((doc) => doc.id === state.activeDocId)
+                ? state.activeDocId
+                : state.documents[0].id;
+        setActiveDoc(defaultId);
+    }
+
+    function buildDocumentPanel(doc) {
+        const container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.gap = '1.2rem';
+
+        if (doc.error) {
+            const alert = document.createElement('div');
+            alert.className = 'status error';
+            alert.style.display = 'block';
+            alert.textContent = doc.error;
+            container.appendChild(alert);
+            return container;
+        }
+
+        const summaryList = document.createElement('div');
+        summaryList.className = 'summary-list';
+        computeSummaryItems(doc.assets).forEach((item) => {
+            const div = document.createElement('div');
+            div.innerHTML = `<strong>${item.label}</strong><div style="margin-top:0.4rem;">${escapeHtml(item.value)}</div>`;
+            summaryList.appendChild(div);
+        });
+        container.appendChild(summaryList);
+
+        const previewTable = buildPreviewTable(doc.assets);
+        if (previewTable) {
+            container.appendChild(previewTable);
+        } else {
+            const note = document.createElement('p');
+            note.style.margin = '0';
+            note.style.color = '#4b5563';
+            note.textContent = '表示できる取引が見つかりませんでした。';
+            container.appendChild(note);
+        }
+
+        return container;
+    }
+
+    function computeSummaryItems(assets) {
         const owners = new Set();
         const accounts = new Set();
         let totalTransactions = 0;
         let latestBalance = null;
 
-        state.assets.forEach((asset) => {
+        assets.forEach((asset) => {
             (asset.owner_name || []).forEach((name) => owners.add(name));
             if (asset.identifier_primary) {
                 accounts.add(asset.identifier_primary);
             }
             const transactions = Array.isArray(asset.transactions) ? asset.transactions : [];
             totalTransactions += transactions.length;
-            for (const txn of transactions) {
+            transactions.forEach((txn) => {
                 if (txn.balance !== undefined && txn.balance !== null) {
                     latestBalance = txn.balance;
                 }
-            }
+            });
         });
 
-        summaryList.innerHTML = '';
-        const summaryItems = [
+        return [
             { label: '名義人', value: owners.size ? Array.from(owners).join('、') : '未検出' },
             { label: '口座番号', value: accounts.size ? Array.from(accounts).join('、') : '未検出' },
             { label: '取引件数', value: `${totalTransactions} 件` },
-            { label: '最終残高', value: latestBalance !== null ? `${Number(latestBalance).toLocaleString('ja-JP')} 円` : '未検出' },
+            { label: '最終残高', value: latestBalance !== null ? `${formatNumber(latestBalance)} 円` : '未検出' },
         ];
-
-        summaryItems.forEach((item) => {
-            const div = document.createElement('div');
-            div.innerHTML = `<strong>${item.label}</strong><div style="margin-top:0.4rem;">${escapeHtml(item.value)}</div>`;
-            summaryList.appendChild(div);
-        });
-
-        renderPreview();
-        summarySection.style.display = 'block';
     }
 
-    function renderPreview() {
-        previewBody.innerHTML = '';
-        const firstAsset = state.assets[0];
+    function buildPreviewTable(assets) {
+        const firstAsset = assets[0];
         const transactions = Array.isArray(firstAsset?.transactions) ? firstAsset.transactions.slice(0, 12) : [];
         if (!transactions.length) {
-            previewTable.style.display = 'none';
-            return;
+            return null;
         }
+        const table = document.createElement('table');
+        table.className = 'preview';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>日付</th>
+                    <th>内容</th>
+                    <th>出金</th>
+                    <th>入金</th>
+                    <th>残高</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+        const tbody = table.querySelector('tbody');
         transactions.forEach((txn) => {
             const row = document.createElement('tr');
             row.innerHTML = `
@@ -487,29 +612,53 @@
                 <td>${formatNumber(txn.deposit_amount)}</td>
                 <td>${formatNumber(txn.balance)}</td>
             `;
-            previewBody.appendChild(row);
+            tbody.appendChild(row);
         });
-        previewTable.style.display = 'table';
+        return table;
+    }
+
+    function setActiveDoc(docId) {
+        state.activeDocId = docId;
+        Array.from(tabHeaders.children).forEach((button) => {
+            button.classList.toggle('active', button.dataset.docId === docId);
+        });
+        Array.from(tabPanels.children).forEach((panel) => {
+            panel.classList.toggle('active', panel.dataset.docId === docId);
+        });
     }
 
     function renderDownloads() {
         downloadList.innerHTML = '';
-        Object.entries(state.csvFiles).forEach(([filename, base64]) => {
-            const card = document.createElement('div');
-            card.className = 'download-card';
-            card.innerHTML = `<h3>${escapeHtml(filename)}</h3><p style="margin:0;font-size:0.85rem;color:#4b5563;">CSV を確認して問題なければ保存してください。</p>`;
-            const button = document.createElement('button');
-            button.className = 'primary small';
-            button.textContent = 'ダウンロード';
-            button.addEventListener('click', () => downloadCsv(filename, base64));
-            card.appendChild(button);
-            downloadList.appendChild(card);
+        state.documents.forEach((doc) => {
+            if (doc.error || !doc.csvFiles) {
+                return;
+            }
+            Object.entries(doc.csvFiles).forEach(([filename, base64]) => {
+                const card = document.createElement('div');
+                card.className = 'download-card';
+                card.innerHTML = `<h3>${escapeHtml(doc.name)} - ${escapeHtml(filename)}</h3><p style="margin:0;font-size:0.85rem;color:#4b5563;">CSV を確認して問題なければ保存してください。</p>`;
+                const button = document.createElement('button');
+                button.className = 'primary small';
+                button.textContent = 'ダウンロード';
+                button.addEventListener('click', () => downloadCsv(`${doc.name}-${filename}`, base64));
+                card.appendChild(button);
+                downloadList.appendChild(card);
+            });
         });
-        downloadSection.style.display = 'block';
+        downloadSection.style.display = downloadList.childElementCount ? 'block' : 'none';
     }
 
     function renderRawJson() {
-        rawJson.textContent = JSON.stringify({ assets: state.assets }, null, 2);
+        if (!state.documents.length) {
+            rawJson.textContent = '';
+            return;
+        }
+        const payload = state.documents.map((doc) =>
+            doc.error
+                ? { name: doc.name, error: doc.error }
+                : { name: doc.name, assets: doc.assets }
+        );
+        rawJson.textContent = JSON.stringify(payload, null, 2);
     }
 
     function downloadCsv(filename, base64) {
@@ -544,6 +693,34 @@
         statusBox.style.display = 'block';
     }
 
+    function normalizedApiBase() {
+        const raw = (apiInput.value || DEFAULT_API).trim();
+        if (!raw) return DEFAULT_API;
+        const base = raw.endsWith('/api') ? raw : `${raw.replace(/\/$/, '')}/api`;
+        return base.replace(/\/$/, '');
+    }
+
+    async function handlePing() {
+        const base = normalizedApiBase();
+        pingResult.textContent = '接続を確認しています…';
+        pingResult.style.color = '#4b5563';
+        try {
+            const res = await fetch(`${base}/ping`);
+            if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+            const data = await res.json();
+            if (data.status === 'ok') {
+                pingResult.textContent = '接続できました。';
+                pingResult.style.color = '#047857';
+            } else {
+                pingResult.textContent = '応答が想定外です。';
+                pingResult.style.color = '#b91c1c';
+            }
+        } catch (error) {
+            pingResult.textContent = `接続できませんでした: ${error.message}`;
+            pingResult.style.color = '#b91c1c';
+        }
+    }
+
     function formatNumber(value) {
         if (value === null || value === undefined || value === '') return '';
         const num = Number(value);
@@ -558,6 +735,13 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    function createDocId() {
+        if (window.crypto?.randomUUID) {
+            return window.crypto.randomUUID();
+        }
+        return `doc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     }
 })();
 </script>
