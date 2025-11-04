@@ -7,11 +7,13 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .azure_analyzer import AzureTransactionAnalyzer
+from azure.core.exceptions import HttpResponseError
+
+from .azure_analyzer import AzureAnalysisResult, AzureTransactionAnalyzer
 from .config import get_settings
 from .exporter import export_to_csv_strings
 from .gemini import GeminiClient, GeminiError
-from .models import DocumentAnalyzeResponse, DocumentType
+from .models import AssetRecord, DocumentAnalyzeResponse, DocumentType
 from .parser import build_assets, detect_document_type
 from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 
@@ -78,14 +80,40 @@ def _analyze_with_gemini(contents: bytes, settings) -> List[str]:
     return _with_pdf_chunks(contents, plan, analyzer)
 
 
-def _analyze_with_azure(contents: bytes, settings, source_name: str):
+def _analyze_with_azure(contents: bytes, settings, source_name: str) -> AzureAnalysisResult:
     if not settings.azure_form_recognizer_endpoint or not settings.azure_form_recognizer_key:
         raise HTTPException(status_code=503, detail="Azure Form Recognizer is not configured")
     analyzer = AzureTransactionAnalyzer(
         endpoint=settings.azure_form_recognizer_endpoint,
         api_key=settings.azure_form_recognizer_key,
     )
-    return analyzer.analyze_pdf(contents, source_name=source_name)
+    plan = PdfChunkingPlan(
+        max_bytes=settings.gemini_max_document_bytes,
+        max_pages=max(1, min(2, settings.gemini_chunk_page_limit)),
+    )
+    chunks = chunk_pdf_by_limits(contents, plan)
+
+    combined_lines: List[str] = []
+    combined_transactions: List[Any] = []
+
+    for chunk in chunks:
+        try:
+            result = analyzer.analyze_pdf(chunk, source_name=source_name)
+        except HttpResponseError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        combined_lines.extend(result.raw_lines)
+        for asset in result.assets:
+            combined_transactions.extend(asset.transactions)
+
+    asset = AssetRecord(
+        category="bank_deposit",
+        type="transaction_history",
+        source_document=source_name,
+        asset_name="預金取引推移表",
+        transactions=combined_transactions,
+    )
+
+    return AzureAnalysisResult(raw_lines=combined_lines, assets=[asset])
 
 
 def _analyze_layout(contents: bytes, content_type: str) -> List[str]:
