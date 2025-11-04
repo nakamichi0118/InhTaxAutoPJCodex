@@ -43,13 +43,25 @@ def _with_pdf_chunks(
     plan: PdfChunkingPlan,
     analyzer: Callable[[bytes], List[str]],
 ) -> List[str]:
-    if len(payload) <= plan.max_bytes:
-        return analyzer(payload)
-    chunks = chunk_pdf_by_limits(payload, plan)
-    lines: List[str] = []
-    for chunk in chunks:
-        lines.extend(analyzer(chunk))
-    return lines
+    current_plan = plan
+    while True:
+        chunks = chunk_pdf_by_limits(payload, current_plan)
+        try:
+            lines: List[str] = []
+            for chunk in chunks:
+                lines.extend(analyzer(chunk))
+            return lines
+        except GeminiError as exc:
+            if current_plan.max_pages <= 1:
+                raise
+            logger.warning(
+                "Gemini processing timed out for plan max_pages=%s; retrying with smaller chunks",
+                current_plan.max_pages,
+            )
+            current_plan = PdfChunkingPlan(
+                max_bytes=current_plan.max_bytes,
+                max_pages=max(1, current_plan.max_pages // 2),
+            )
 
 
 def _analyze_with_gemini(contents: bytes, settings) -> List[str]:
