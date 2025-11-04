@@ -19,11 +19,11 @@ FIXTURE_DIR = Path("test/fixtures/ocr_lines")
 
 
 EXPECTED_TRANSACTION_COUNTS = {
-    "三井住友銀行": 293,
+    "三井住友銀行": 292,
     "取引履歴　きのくに": 5,
     "取引履歴　きのくに2": 0,
-    "取引履歴（ゆうちょ銀行／14340-84250031）": 15,
-    "通帳（南都銀行）": 152,
+    "取引履歴（ゆうちょ銀行／14340-84250031）": 14,
+    "通帳（南都銀行）": 150,
 }
 
 
@@ -72,3 +72,10 @@ def test_exporter_preserves_multiline_notes() -> None:
     bank_csv = csv_map["bank_transactions.csv"]
     transactions = list(csv.DictReader(io.StringIO(bank_csv)))
     assert len(transactions) == len(asset.transactions)
+
+
+def test_nanto_contains_both_deposits_and_withdrawals() -> None:
+    lines = load_fixture("通帳（南都銀行）")
+    asset = parse_bankbook(lines, "通帳（南都銀行）.pdf")[0]
+    assert any(txn.deposit_amount for txn in asset.transactions)
+    assert any(txn.withdrawal_amount for txn in asset.transactions)

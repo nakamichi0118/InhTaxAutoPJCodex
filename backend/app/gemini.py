@@ -5,6 +5,7 @@ import base64
 import json
 import logging
 import re
+import time
 import uuid
 from typing import Any, Dict, List
 
@@ -44,17 +45,28 @@ class GeminiClient:
             self._delete_file(file_name)
 
     def _invoke_generate(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            response = requests.post(
-                f"{self.endpoint}?key={self.api_key}",
-                json=payload,
-                timeout=120,
-            )
-        except RequestException as exc:
-            raise GeminiError(f"Request to Gemini failed: {exc}") from exc
-        if response.status_code >= 400:
-            raise GeminiError(self._extract_error(response))
-        return response.json()
+        last_error: RequestException | None = None
+        for attempt in range(3):
+            try:
+                response = requests.post(
+                    f"{self.endpoint}?key={self.api_key}",
+                    json=payload,
+                    timeout=120,
+                )
+            except RequestException as exc:
+                last_error = exc
+                sleep_for = 1.5 * (attempt + 1)
+                time.sleep(sleep_for)
+                continue
+            if response.status_code < 400:
+                return response.json()
+            error_payload = self._extract_error(response)
+            # 429 や 5xx の場合はリトライ、それ以外は即時エラー
+            if response.status_code in {429, 500, 502, 503} and attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise GeminiError(error_payload)
+        raise GeminiError(f"Request to Gemini failed: {last_error}")
 
     def _upload_file(self, pdf_bytes: bytes, *, mime_type: str) -> str:
         metadata = {

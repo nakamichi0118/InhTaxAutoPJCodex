@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Iterable, List, Optional, Tuple
 
 from .models import AssetRecord, DocumentType, TransactionLine
@@ -16,6 +17,7 @@ ACCOUNT_HINTS = ('口座番号', '店番号', '座番号')
 OWNER_SUFFIXES = ('様', 'サマ', 'さま')
 POST_BANK_ACCOUNT_PATTERN = re.compile(r"記号番号[:：\-]?\s*([\d-]{5,})")
 BALANCE_KEYWORDS = ["残高", "繰越残高"]
+MAX_BALANCE_JUMP = Decimal("10000000")
 
 HYPHENS = str.maketrans({
     "−": "-",
@@ -31,7 +33,7 @@ HYPHENS = str.maketrans({
     ":": "-",
 })
 
-DEPOSIT_KEYWORDS = ("振込", "入金", "預入", "配当", "振込入金", "定期積金", "利子", "利息")
+DEPOSIT_KEYWORDS = ("振込", "入金", "預入", "配当", "振込入金", "定期積金", "利子", "利息", "年金")
 
 ROW_CODE_PATTERN = re.compile(r"^\d{3}$")
 NON_DATE_TOKEN = re.compile(r"[^\d\s:/\-.;]")
@@ -61,6 +63,7 @@ def parse_bankbook(lines: List[str], source_name: str) -> List[AssetRecord]:
     transactions = build_transactions_from_rows(transaction_lines)
     if not transactions:
         transactions = build_transactions_from_entries(transaction_lines)
+    transactions = reconcile_transactions(transactions)
 
     final_balance = balance_amount
     if final_balance is None:
@@ -91,6 +94,56 @@ def normalize_line(line: str) -> str:
     text = text.replace(", ", ",")
     return text.strip()
 
+
+
+def _to_decimal(value: Optional[float]) -> Optional[Decimal]:
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def reconcile_transactions(transactions: List[TransactionLine]) -> List[TransactionLine]:
+    reconciled: List[TransactionLine] = []
+    previous_balance: Optional[Decimal] = None
+
+    for txn in transactions:
+        balance = _to_decimal(txn.balance)
+        deposit = _to_decimal(txn.deposit_amount)
+        withdrawal = _to_decimal(txn.withdrawal_amount)
+
+        if balance is not None and previous_balance is not None:
+            delta = balance - previous_balance
+            if delta == 0 and deposit is None and withdrawal is None:
+                previous_balance = balance
+                continue
+            if delta != 0 and abs(delta) <= MAX_BALANCE_JUMP:
+                adjust = False
+                if deposit is None and withdrawal is None:
+                    adjust = True
+                elif delta > 0 and withdrawal is not None and deposit is None:
+                    adjust = True
+                elif delta < 0 and deposit is not None and withdrawal is None:
+                    adjust = True
+                if adjust:
+                    amount = abs(delta)
+                    if delta > 0:
+                        deposit = amount
+                        withdrawal = None
+                    else:
+                        withdrawal = amount
+                        deposit = None
+
+        txn.deposit_amount = float(deposit) if deposit is not None else None
+        txn.withdrawal_amount = float(withdrawal) if withdrawal is not None else None
+
+        reconciled.append(txn)
+        if balance is not None:
+            previous_balance = balance
+
+    return reconciled
 
 
 def expand_lines_with_dates(lines: List[str]) -> List[str]:
