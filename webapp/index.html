@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>相続ドキュメントインサイトハブ</title>
+    <title>SOROBOCR｜相続書類OCR</title>
     <style>
         :root { color-scheme: light; }
         body {
@@ -268,40 +268,61 @@
         .asset-tabs {
             display: flex;
             flex-direction: column;
-            gap: 1rem;
+            gap: 1.2rem;
         }
-        .asset-tab-list {
+        .asset-layout {
+            display: grid;
+            grid-template-columns: 240px minmax(0, 1fr);
+            gap: 1.4rem;
+        }
+        .asset-nav {
             display: flex;
-            flex-wrap: wrap;
-            gap: 0.6rem;
+            flex-direction: column;
+            gap: 0.45rem;
+            padding: 1rem;
+            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.04);
+            border: 1px solid rgba(59, 130, 246, 0.08);
         }
-        .asset-tab-button {
-            border: 1px solid #cbd5f5;
-            background: #f8fafc;
+        .asset-nav-button {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.65rem 0.9rem;
+            border-radius: 12px;
+            border: none;
+            background: transparent;
             color: #1f2937;
-            padding: 0.45rem 0.85rem;
-            border-radius: 999px;
+            font-size: 0.95rem;
+            font-weight: 600;
             cursor: pointer;
             transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
         }
-        .asset-tab-button.active {
-            background: #2563eb;
-            color: #fff;
-            box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
-            border-color: #1d4ed8;
+        .asset-nav-button .coming {
+            font-size: 0.72rem;
+            color: #6b7280;
         }
-        .asset-tab-button:disabled {
+        .asset-nav-button.active {
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(37, 99, 235, 0.28));
+            color: #1d4ed8;
+            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
+        }
+        .asset-nav-button[aria-disabled="true"] {
             cursor: not-allowed;
             opacity: 0.6;
         }
-        .asset-tab-panels {
-            border: 1px solid #dbeafe;
-            border-radius: 16px;
-            background: #f8fbff;
+        .asset-panels {
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(59, 130, 246, 0.12);
+            border-radius: 18px;
+            box-shadow: 0 16px 36px rgba(15, 23, 42, 0.1);
+            min-height: 260px;
+            display: flex;
+            flex-direction: column;
         }
         .asset-panel {
             display: none;
-            padding: 1.4rem;
+            padding: 1.6rem;
         }
         .asset-panel.active {
             display: block;
@@ -324,34 +345,38 @@
             color: #92400e;
             border: 1px solid #fcd34d;
         }
-        details summary {
-            cursor: pointer;
+        .doc-type-toggle {
+            display: inline-flex;
+            gap: 0.5rem;
+            padding: 0.35rem;
+            background: rgba(37, 99, 235, 0.08);
+            border-radius: 999px;
+            margin-bottom: 1rem;
+        }
+        .doc-type-option {
+            border: none;
+            background: transparent;
+            padding: 0.35rem 0.9rem;
+            border-radius: 999px;
+            font-size: 0.9rem;
             font-weight: 600;
-            color: #2563eb;
-            margin-top: 1rem;
+            color: #1f3b8c;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease;
         }
-        pre {
-            background: #0f172a;
-            color: #e2e8f0;
-            padding: 1rem;
-            border-radius: 12px;
-            overflow-x: auto;
-            font-size: 0.82rem;
+        .doc-type-option.active {
+            background: #1d4ed8;
+            color: #fff;
+            box-shadow: 0 8px 16px rgba(29, 78, 216, 0.25);
         }
-        footer {
-            text-align: center;
-            padding: 2.4rem 1rem;
-            font-size: 0.85rem;
-            color: #6b7280;
+        .asset-panel-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+            margin-bottom: 1rem;
         }
-        @media (max-width: 640px) {
-            section.card { padding: 1.4rem; }
-            .input-row { flex-direction: column; align-items: flex-start; }
-            .text-input, select { width: 100%; }
-            button { width: 100%; gap: 0.3rem; }
-            .drop-area { padding: 1.8rem 1rem; }
-            .hero-brand { flex-direction: column; text-align: center; }
-            .hero-copy { text-align: center; }
+        .asset-panel-controls .input-row {
+            margin: 0;
         }
         .tabs {
             display: flex;
@@ -378,6 +403,7 @@
             box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
             border-color: #1d4ed8;
         }
+
         .tab-panels .tab-panel {
             display: none;
         }
@@ -390,6 +416,19 @@
         .tab-panel table.preview {
             margin-top: 0;
         }
+        @media (max-width: 640px) {
+            section.card { padding: 1.4rem; }
+            .input-row { flex-direction: column; align-items: flex-start; }
+            .text-input, select { width: 100%; }
+            button { width: 100%; gap: 0.3rem; }
+            .drop-area { padding: 1.8rem 1rem; }
+            .hero-brand { flex-direction: column; text-align: center; }
+            .hero-copy { text-align: center; }
+            .asset-layout { grid-template-columns: minmax(0, 1fr); }
+            .asset-nav { flex-direction: row; overflow-x: auto; padding: 0.75rem; }
+            .asset-nav-button { flex: 0 0 auto; min-width: 160px; }
+        }
+
     </style>
 </head>
 <body>
@@ -397,8 +436,8 @@
     <div class="hero-brand">
         <img src="image/iucglog.png" alt="IUCG ロゴ" class="hero-logo">
         <div class="hero-copy">
-            <h1>相続ドキュメントインサイトハブ</h1>
-            <p class="tagline">相続に関わる通帳・取引履歴・各種資産書類をまとめて解析し、<strong>整った CSV とインサイト</strong>を最短で導出するための業務ダッシュボードです。</p>
+            <h1>SOROBOCR</h1>
+            <p class="tagline">相続に関わる通帳・取引履歴・各種資産書類をまとめて解析し、<strong>整った CSV とレポート</strong>を最短で導出する専門家向け OCR プラットフォームです。</p>
         </div>
     </div>
     <p class="version">バージョン 0.5.0</p>
@@ -440,7 +479,7 @@
     </section>
 </main>
 <footer>
-    &copy; 2025 InhTaxAutoPJ Codex
+    &copy; 2025 IU Consulting group.
 </footer>
 
 <script>
@@ -468,25 +507,9 @@
 
     const TAB_DEFINITIONS = [
         {
-            id: 'bankbook',
-            label: '通帳',
-            description: '普通預金の通帳 PDF をアップロードしてください。',
-            docType: 'bank_deposit',
-            allowUpload: true,
-            allowDateFormat: false,
-        },
-        {
-            id: 'history',
-            label: '取引履歴',
-            description: '預金取引推移表など、一覧形式の取引履歴をアップロードしてください。',
-            docType: 'transaction_history',
-            allowUpload: true,
-            allowDateFormat: true,
-        },
-        {
             id: 'land',
             label: '土地',
-            description: '土地の書類アップロードは近日対応予定です。',
+            description: '土地に関する評価・登記簿は現在準備中です。',
             docType: 'land',
             allowUpload: false,
         },
@@ -500,32 +523,51 @@
         {
             id: 'securities',
             label: '有価証券',
-            description: '有価証券の書類アップロードは近日対応予定です。',
-            docType: 'securities',
+            description: '上場株式・投資信託などの評価は順次対応予定です。',
+            docType: 'unknown',
+            allowUpload: false,
+        },
+        {
+            id: 'deposits',
+            label: '預貯金',
+            description: '預貯金の詳細管理は通帳・取引履歴タブで対応しています。',
+            docType: 'unknown',
             allowUpload: false,
         },
         {
             id: 'insurance',
             label: '生命保険',
-            description: '生命保険の書類アップロードは近日対応予定です。',
-            docType: 'insurance',
+            description: '生命保険証券の解析は現在準備中です。',
+            docType: 'unknown',
             allowUpload: false,
         },
         {
             id: 'others',
             label: 'その他財産',
-            description: 'その他財産の書類アップロードは近日対応予定です。',
-            docType: 'others',
+            description: 'その他の財産種別については今後追加予定です。',
+            docType: 'unknown',
             allowUpload: false,
+        },
+        {
+            id: 'bank_documents',
+            label: '通帳・取引履歴',
+            description: '預貯金通帳や取引履歴の PDF をアップロードし、用途に応じた読み取り種別を選択してください。',
+            docType: 'bank_deposit',
+            allowUpload: true,
+            allowDateFormat: true,
+            docTypeOptions: [
+                { value: 'bank_deposit', label: '通帳（預貯金）' },
+                { value: 'transaction_history', label: '取引履歴' },
+            ],
         },
     ];
 
     const DOC_TYPE_LABELS = {
         '': '自動判定',
-        bank_deposit: '通帳（預金）',
-        transaction_history: '取引履歴（推移表）',
-        land: '登記簿（地目）',
-        building: '登記簿（家屋）',
+        bank_deposit: '通帳（預貯金）',
+        transaction_history: '取引履歴',
+        land: '土地',
+        building: '家屋',
         securities: '有価証券',
         insurance: '生命保険',
         others: 'その他財産',
@@ -549,11 +591,13 @@
     function init() {
         const queryApi = new URLSearchParams(window.location.search).get('api');
         apiInput.value = (queryApi || DEFAULT_API).replace(/\/$/, '');
-        state.activeAssetTabId = TAB_DEFINITIONS[0]?.id || null;
+        const defaultTab = TAB_DEFINITIONS.find((tab) => tab.allowUpload) || TAB_DEFINITIONS[0];
+        state.activeAssetTabId = defaultTab ? defaultTab.id : null;
         renderAssetTabs();
         setupRevealAnimations();
         pingButton.addEventListener('click', handlePing);
         statusBox.style.display = 'none';
+        statusBox.classList.remove('visible');
     }
 
     function setupRevealAnimations() {
@@ -579,27 +623,41 @@
             return;
         }
 
-        const tabList = document.createElement('div');
-        tabList.className = 'asset-tab-list';
+        if (!state.activeAssetTabId) {
+            const defaultTab = TAB_DEFINITIONS.find((tab) => tab.allowUpload) || TAB_DEFINITIONS[0];
+            state.activeAssetTabId = defaultTab ? defaultTab.id : null;
+        }
 
-        const panels = document.createElement('div');
-        panels.className = 'asset-tab-panels';
+        const layout = document.createElement('div');
+        layout.className = 'asset-layout';
+
+        const nav = document.createElement('nav');
+        nav.className = 'asset-nav';
+
+        const panelsWrapper = document.createElement('div');
+        panelsWrapper.className = 'asset-panels';
 
         TAB_DEFINITIONS.forEach((tab) => {
-            if (!state.activeAssetTabId) {
-                state.activeAssetTabId = tab.id;
-            }
-
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'asset-tab-button';
+            button.className = 'asset-nav-button';
             button.dataset.tabId = tab.id;
-            button.textContent = tab.label;
+            button.setAttribute('aria-disabled', tab.allowUpload ? 'false' : 'true');
+
+            const labelSpan = document.createElement('span');
+            labelSpan.textContent = tab.label;
+            button.appendChild(labelSpan);
+            button.title = tab.description || tab.label;
+
             if (!tab.allowUpload) {
-                button.title = '近日対応予定';
+                const coming = document.createElement('span');
+                coming.className = 'coming';
+                coming.textContent = '準備中';
+                button.appendChild(coming);
             }
+
             button.addEventListener('click', () => setActiveAssetTab(tab.id));
-            tabList.appendChild(button);
+            nav.appendChild(button);
 
             const panel = document.createElement('div');
             panel.className = 'asset-panel';
@@ -611,7 +669,7 @@
 
             const description = document.createElement('p');
             description.className = 'panel-description';
-            description.textContent = tab.description || tab.message || '順次対応予定です。';
+            description.textContent = tab.description || '順次対応予定です。';
             panel.appendChild(description);
 
             if (tab.allowUpload) {
@@ -621,6 +679,34 @@
                 hiddenInput.multiple = true;
                 hiddenInput.style.display = 'none';
                 panel.appendChild(hiddenInput);
+
+                const controlsContainer = document.createElement('div');
+                controlsContainer.className = 'asset-panel-controls';
+
+                let selectedDocType = (tab.docTypeOptions && tab.docTypeOptions[0]?.value) || tab.docType || 'bank_deposit';
+                const getDocType = () => selectedDocType;
+
+                if (Array.isArray(tab.docTypeOptions) && tab.docTypeOptions.length) {
+                    const toggle = document.createElement('div');
+                    toggle.className = 'doc-type-toggle';
+                    tab.docTypeOptions.forEach((option) => {
+                        const optBtn = document.createElement('button');
+                        optBtn.type = 'button';
+                        optBtn.className = 'doc-type-option';
+                        optBtn.textContent = option.label;
+                        if (option.value === selectedDocType) {
+                            optBtn.classList.add('active');
+                        }
+                        optBtn.addEventListener('click', () => {
+                            selectedDocType = option.value;
+                            toggle.querySelectorAll('.doc-type-option').forEach((btn) => btn.classList.remove('active'));
+                            optBtn.classList.add('active');
+                            updateDropCopy();
+                        });
+                        toggle.appendChild(optBtn);
+                    });
+                    controlsContainer.appendChild(toggle);
+                }
 
                 let dateSelect = null;
                 if (tab.allowDateFormat) {
@@ -644,33 +730,43 @@
                     dateSelect.value = 'auto';
                     dateControls.appendChild(dateSelect);
 
-                    panel.appendChild(dateControls);
+                    controlsContainer.appendChild(dateControls);
                 }
 
-                const controls = document.createElement('div');
-                controls.className = 'input-row';
+                const uploadRow = document.createElement('div');
+                uploadRow.className = 'input-row';
 
                 const uploadButton = document.createElement('button');
                 uploadButton.type = 'button';
                 uploadButton.className = 'primary';
                 uploadButton.textContent = 'PDF ファイルを選択';
                 uploadButton.addEventListener('click', () => hiddenInput.click());
-                controls.appendChild(uploadButton);
+                uploadRow.appendChild(uploadButton);
 
                 const hint = document.createElement('span');
                 hint.style.fontSize = '0.85rem';
                 hint.style.color = '#4b5563';
                 hint.textContent = '複数ファイルの一括読み取りに対応しています。';
-                controls.appendChild(hint);
+                uploadRow.appendChild(hint);
 
-                panel.appendChild(controls);
+                controlsContainer.appendChild(uploadRow);
+                panel.appendChild(controlsContainer);
 
                 const dropArea = document.createElement('div');
                 dropArea.className = 'drop-area';
-                dropArea.innerHTML = `
-                    <strong>ここに PDF をドラッグ＆ドロップ</strong>
-                    <p>${escapeHtml(tab.label)}の書類を読み取ります。</p>
-                `;
+                const dropTitle = document.createElement('strong');
+                dropTitle.textContent = 'ここに PDF をドラッグ＆ドロップ';
+                const dropMessage = document.createElement('p');
+                dropArea.appendChild(dropTitle);
+                dropArea.appendChild(dropMessage);
+                panel.appendChild(dropArea);
+
+                function updateDropCopy() {
+                    const labelText = describeDocType(selectedDocType);
+                    dropMessage.textContent = `${labelText}の書類を読み取ります。`;
+                }
+                updateDropCopy();
+
                 dropArea.addEventListener('dragover', (event) => {
                     event.preventDefault();
                     dropArea.classList.add('active');
@@ -680,37 +776,46 @@
                     event.preventDefault();
                     dropArea.classList.remove('active');
                     if (event.dataTransfer.files && event.dataTransfer.files.length) {
-                        handleTabFiles(tab, event.dataTransfer.files, () => dateSelect?.value || 'auto');
+                        handleTabFiles(
+                            tab,
+                            event.dataTransfer.files,
+                            () => dateSelect?.value || 'auto',
+                            getDocType
+                        );
                     }
                 });
-                panel.appendChild(dropArea);
 
                 hiddenInput.addEventListener('change', (event) => {
                     if (event.target.files && event.target.files.length) {
-                        handleTabFiles(tab, event.target.files, () => dateSelect?.value || 'auto');
+                        handleTabFiles(tab, event.target.files, () => dateSelect?.value || 'auto', getDocType);
                         hiddenInput.value = '';
                     }
                 });
             } else {
                 const notice = document.createElement('p');
                 notice.className = 'coming-soon';
-                notice.textContent = tab.message || '近日対応予定です。';
+                notice.textContent = tab.description || '近日対応予定です。';
                 panel.appendChild(notice);
             }
 
-            panels.appendChild(panel);
+            panelsWrapper.appendChild(panel);
         });
 
-        assetTabsRoot.appendChild(tabList);
-        assetTabsRoot.appendChild(panels);
-        setActiveAssetTab(state.activeAssetTabId || TAB_DEFINITIONS[0].id);
+        layout.appendChild(nav);
+        layout.appendChild(panelsWrapper);
+        assetTabsRoot.appendChild(layout);
+
+        const fallbackTabId = state.activeAssetTabId || (TAB_DEFINITIONS[0] && TAB_DEFINITIONS[0].id);
+        setActiveAssetTab(fallbackTabId);
     }
 
     function setActiveAssetTab(tabId) {
         state.activeAssetTabId = tabId;
-        const buttons = assetTabsRoot.querySelectorAll('.asset-tab-button');
+        const buttons = assetTabsRoot.querySelectorAll('.asset-nav-button');
         buttons.forEach((button) => {
-            button.classList.toggle('active', button.dataset.tabId === tabId);
+            const isActive = button.dataset.tabId === tabId;
+            button.classList.toggle('active', isActive);
+            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
         const panels = assetTabsRoot.querySelectorAll('.asset-panel');
         panels.forEach((panel) => {
@@ -718,11 +823,12 @@
         });
     }
 
-    function handleTabFiles(tab, fileList, getDateFormat) {
+    function handleTabFiles(tab, fileList, getDateFormat, getDocType) {
         processFiles(fileList, {
             tabId: tab.id,
             label: tab.label,
             docType: tab.docType,
+            getDocType,
             dateFormat: getDateFormat ? getDateFormat() : 'auto',
         });
     }
@@ -738,17 +844,29 @@
             return;
         }
 
-        const docType = tabConfig.docType || '';
+        const docTypeGetter = typeof tabConfig.getDocType === 'function'
+            ? tabConfig.getDocType
+            : () => tabConfig.docType || '';
         const label = tabConfig.label || '';
         const dateFormat = normalizeDateFormat(tabConfig.dateFormat);
-        const prefix = label ? `${label}の` : '';
+        const initialDocType = docTypeGetter() || '';
+        const docTypeLabel = describeDocType(initialDocType);
+        const prefixParts = [];
+        if (label) {
+            prefixParts.push(label);
+        }
+        if (docTypeLabel && docTypeLabel !== DOC_TYPE_LABELS['']) {
+            prefixParts.push(docTypeLabel);
+        }
+        const prefix = prefixParts.length ? `${prefixParts.join(' / ')}の` : '';
 
         setStatus(`${prefix}${files.length} 件の読み取りを開始します…`, 'info');
 
         for (let index = 0; index < files.length; index += 1) {
             const file = files[index];
+            const currentDocType = docTypeGetter() || '';
             try {
-                const doc = await handleSingleFile(file, docType, dateFormat);
+                const doc = await handleSingleFile(file, currentDocType, dateFormat);
                 state.documents.push(doc);
                 state.activeDocId = doc.id;
                 setStatus(`(${index + 1}/${files.length}) 「${file.name}」の読み取りが完了しました。`, 'info');
@@ -757,7 +875,7 @@
                 state.documents.push({
                     id: createDocId(),
                     name: file.name,
-                    docType,
+                    docType: currentDocType,
                     dateFormat,
                     error: error.message || '読み取りに失敗しました。',
                 });
