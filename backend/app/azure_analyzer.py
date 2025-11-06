@@ -45,6 +45,45 @@ DESCRIPTION_CLEANUPS = (
 )
 
 
+DEPOSIT_KEYWORDS = (
+    "入金",
+    "振込",
+    "振替",
+    "利息",
+    "配当",
+    "給付",
+    "カンプ",
+    "キャンプ",
+    "返金",
+    "返戻",
+    "還付",
+    "補助",
+    "保険金",
+    "保険料",
+    "入庫",
+    "ATM入金",
+)
+
+
+WITHDRAWAL_KEYWORDS = (
+    "支払",
+    "支払い",
+    "引落",
+    "引き落と",
+    "引去",
+    "ガス",
+    "水道",
+    "電気",
+    "オリコ",
+    "カード",
+    "手数料",
+    "公共料金",
+    "納付",
+    "ATM支払",
+    "ATM出金",
+)
+
+
 class AzureAnalysisError(RuntimeError):
     pass
 
@@ -159,7 +198,10 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
                 candidate = candidate.model_copy(update={"balance": projected})
                 balance_value = projected
 
+        classification = _classify_description(desc_cleaned)
+
         delta_updates: Dict[str, Any] = {}
+        delta = None
         if balance_value is not None and last_balance is not None:
             delta = round(balance_value - last_balance, 2)
             if abs(delta) <= 0.01:
@@ -171,9 +213,23 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
             elif delta < 0:
                 expected_withdrawal = float(-delta)
 
-            if _needs_amount_override(candidate, expected_withdrawal, expected_deposit):
-                delta_updates["withdrawal_amount"] = expected_withdrawal
-                delta_updates["deposit_amount"] = expected_deposit
+            if classification == "deposit" and delta is not None and delta != 0:
+                expected_deposit = float(abs(delta))
+                expected_withdrawal = None
+            elif classification == "withdrawal" and delta is not None and delta != 0:
+                expected_withdrawal = float(abs(delta))
+                expected_deposit = None
+
+            if expected_withdrawal is not None:
+                if candidate.withdrawal_amount is None or abs(candidate.withdrawal_amount - expected_withdrawal) > 0.5:
+                    delta_updates["withdrawal_amount"] = expected_withdrawal
+                if candidate.deposit_amount not in (None, 0.0):
+                    delta_updates["deposit_amount"] = None
+            elif expected_deposit is not None:
+                if candidate.deposit_amount is None or abs(candidate.deposit_amount - expected_deposit) > 0.5:
+                    delta_updates["deposit_amount"] = expected_deposit
+                if candidate.withdrawal_amount not in (None, 0.0):
+                    delta_updates["withdrawal_amount"] = None
 
         candidate = candidate.model_copy(update=delta_updates) if delta_updates else candidate
 
@@ -243,37 +299,6 @@ def _normalize_amount(value: Optional[float], *, reference: Optional[float]) -> 
         while abs(normalized) > limit:
             normalized /= 10
     return round(normalized, 2)
-
-
-def _needs_amount_override(
-    candidate: TransactionLine,
-    expected_withdrawal: Optional[float],
-    expected_deposit: Optional[float],
-) -> bool:
-    current_withdrawal = None if candidate.withdrawal_amount is None else round(candidate.withdrawal_amount, 2)
-    current_deposit = None if candidate.deposit_amount is None else round(candidate.deposit_amount, 2)
-
-    if expected_withdrawal is None and expected_deposit is None:
-        return False
-
-    if expected_withdrawal is not None:
-        if current_withdrawal is None or abs(current_withdrawal - expected_withdrawal) > 0.5:
-            return True
-        if current_deposit not in (None, 0.0):
-            return True
-
-    if expected_deposit is not None:
-        if current_deposit is None or abs(current_deposit - expected_deposit) > 0.5:
-            return True
-        if current_withdrawal not in (None, 0.0):
-            return True
-
-    if expected_withdrawal is None and current_withdrawal not in (None, 0.0):
-        return True
-    if expected_deposit is None and current_deposit not in (None, 0.0):
-        return True
-
-    return False
 
 
 def _map_headers(columns: Dict[int, str]) -> Dict[int, str]:
@@ -355,6 +380,19 @@ def _clean_description(text: Optional[str]) -> str:
     return cleaned.strip()
 
 
+def _classify_description(text: str) -> str:
+    if not text:
+        return "unknown"
+    lowered = text.lower()
+    for keyword in DEPOSIT_KEYWORDS:
+        if keyword.lower() in lowered:
+            return "deposit"
+    for keyword in WITHDRAWAL_KEYWORDS:
+        if keyword.lower() in lowered:
+            return "withdrawal"
+    return "unknown"
+
+
 def _parse_amount(text: Optional[str]) -> Optional[float]:
     if not text:
         return None
@@ -383,7 +421,8 @@ def _parse_amount(text: Optional[str]) -> Optional[float]:
         return None
     if negative:
         value = -value
-    return float(value)
+    normalized = _normalize_amount(float(value), reference=None)
+    return normalized if normalized is not None else float(value)
 
 
 WAREKI_BOUNDARIES = [
