@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -184,6 +184,65 @@
             font-size: 1rem;
             color: #1d4ed8;
         }
+        .asset-tabs {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .asset-tab-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+        }
+        .asset-tab-button {
+            border: 1px solid #cbd5f5;
+            background: #f8fafc;
+            color: #1f2937;
+            padding: 0.45rem 0.85rem;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .asset-tab-button.active {
+            background: #2563eb;
+            color: #fff;
+            box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+            border-color: #1d4ed8;
+        }
+        .asset-tab-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .asset-tab-panels {
+            border: 1px solid #dbeafe;
+            border-radius: 16px;
+            background: #f8fbff;
+        }
+        .asset-panel {
+            display: none;
+            padding: 1.4rem;
+        }
+        .asset-panel.active {
+            display: block;
+        }
+        .asset-panel h3 {
+            margin: 0 0 0.6rem;
+            font-size: 1.05rem;
+            color: #1f3b8c;
+        }
+        .asset-panel p.panel-description {
+            margin: 0 0 1rem;
+            font-size: 0.92rem;
+            color: #4b5563;
+        }
+        .asset-panel .coming-soon {
+            margin: 0;
+            padding: 1rem;
+            border-radius: 12px;
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fcd34d;
+        }
         details summary {
             cursor: pointer;
             font-weight: 600;
@@ -254,9 +313,9 @@
 <header>
     <h1>通帳データ整理ツール</h1>
     <p>PDF を選ぶだけで、名義・口座番号・取引明細を読み取り、すぐに CSV ダウンロードまで進めます。専門的な操作は不要です。</p>
-            <p class="version">バージョン 0.4.0</p>
-        </header>
-        <main>
+    <p class="version">バージョン 0.5.0</p>
+</header>
+<main>
     <section class="card">
         <h2>STEP 1. 接続先の確認</h2>
         <p class="description">デプロイ済みのバックエンド URL を入力してください。空欄のままでもデフォルトの Railway 環境に接続します。</p>
@@ -267,37 +326,10 @@
         </div>
     </section>
 
-    <section class="card">
-        <h2>STEP 2. 通帳 PDF をアップロード</h2>
-        <p class="description">ファイルをドラッグ＆ドロップするか、「ファイルを選ぶ」を押してください。読み取りが完了すると、自動的に CSV を作成します。</p>
-        <div id="dropArea" class="drop-area">
-            <p>ここに PDF をドロップ</p>
-            <p style="font-size:0.85rem;color:#6b7280;">※ 横向きの PDF でも自動で読み取ります。</p>
-            <div style="margin-top:1rem;">
-                <button id="chooseFile" class="primary">ファイルを選ぶ</button>
-                <input id="fileInput" type="file" accept="application/pdf" multiple style="display:none;">
-            </div>
-            <div style="margin-top:1rem;">
-                <label style="font-size:0.85rem;color:#4b5563;">資料の種類
-                    <select id="docType" class="text-input" style="min-width:180px;margin-left:0.6rem;">
-                        <option value="">自動判定</option>
-                        <option value="bank_deposit">通帳（預金）</option>
-                        <option value="transaction_history">取引履歴（推移表）</option>
-                        <option value="land">登記簿（地目）</option>
-                        <option value="building">登記簿（家屋）</option>
-                    </select>
-                </label>
-            </div>
-            <div style="margin-top:0.6rem;">
-                <label style="font-size:0.85rem;color:#4b5563;">日付形式
-                    <select id="dateFormat" class="text-input" style="min-width:180px;margin-left:0.6rem;">
-                        <option value="auto">自動判定</option>
-                        <option value="western">西暦（YYYY/MM/DD）</option>
-                        <option value="wareki">和暦（例: 31/01/04）</option>
-                    </select>
-                </label>
-            </div>
-        </div>
+    <section class="card" id="uploadSection">
+        <h2>STEP 2. 書類をアップロード</h2>
+        <p class="description">対象の財産タブを選び、該当する PDF をアップロードしてください。取引履歴では日付形式も指定できます。</p>
+        <div id="assetTabsRoot" class="asset-tabs"></div>
         <div id="status" class="status info"></div>
     </section>
 
@@ -329,11 +361,7 @@
     const apiInput = document.getElementById('apiBase');
     const pingButton = document.getElementById('pingButton');
     const pingResult = document.getElementById('pingResult');
-    const dropArea = document.getElementById('dropArea');
-    const chooseFileButton = document.getElementById('chooseFile');
-    const fileInput = document.getElementById('fileInput');
-    const docTypeSelect = document.getElementById('docType');
-    const dateFormatSelect = document.getElementById('dateFormat');
+    const assetTabsRoot = document.getElementById('assetTabsRoot');
     const statusBox = document.getElementById('status');
     const resultsSection = document.getElementById('resultsSection');
     const tabContainer = document.getElementById('tabContainer');
@@ -347,7 +375,62 @@
     const state = {
         documents: [],
         activeDocId: null,
+        activeAssetTabId: null,
     };
+
+    const TAB_DEFINITIONS = [
+        {
+            id: 'bankbook',
+            label: '通帳',
+            description: '普通預金の通帳 PDF をアップロードしてください。',
+            docType: 'bank_deposit',
+            allowUpload: true,
+            allowDateFormat: false,
+        },
+        {
+            id: 'history',
+            label: '取引履歴',
+            description: '預金取引推移表など、一覧形式の取引履歴をアップロードしてください。',
+            docType: 'transaction_history',
+            allowUpload: true,
+            allowDateFormat: true,
+        },
+        {
+            id: 'land',
+            label: '土地',
+            description: '土地の書類アップロードは近日対応予定です。',
+            docType: 'land',
+            allowUpload: false,
+        },
+        {
+            id: 'building',
+            label: '家屋',
+            description: '家屋の書類アップロードは近日対応予定です。',
+            docType: 'building',
+            allowUpload: false,
+        },
+        {
+            id: 'securities',
+            label: '有価証券',
+            description: '有価証券の書類アップロードは近日対応予定です。',
+            docType: 'securities',
+            allowUpload: false,
+        },
+        {
+            id: 'insurance',
+            label: '生命保険',
+            description: '生命保険の書類アップロードは近日対応予定です。',
+            docType: 'insurance',
+            allowUpload: false,
+        },
+        {
+            id: 'others',
+            label: 'その他財産',
+            description: 'その他財産の書類アップロードは近日対応予定です。',
+            docType: 'others',
+            allowUpload: false,
+        },
+    ];
 
     const DOC_TYPE_LABELS = {
         '': '自動判定',
@@ -355,8 +438,17 @@
         transaction_history: '取引履歴（推移表）',
         land: '登記簿（地目）',
         building: '登記簿（家屋）',
+        securities: '有価証券',
+        insurance: '生命保険',
+        others: 'その他財産',
         unknown: '未分類',
     };
+
+    const DATE_FORMAT_OPTIONS = [
+        { value: 'auto', label: '自動判定' },
+        { value: 'western', label: '西暦 (YYYY/MM/DD)' },
+        { value: 'wareki', label: '和暦 (令和/平成)' },
+    ];
 
     const DATE_FORMAT_LABELS = {
         auto: '自動判定',
@@ -369,36 +461,167 @@
     function init() {
         const queryApi = new URLSearchParams(window.location.search).get('api');
         apiInput.value = (queryApi || DEFAULT_API).replace(/\/$/, '');
-        dateFormatSelect.value = 'auto';
-
+        state.activeAssetTabId = TAB_DEFINITIONS[0]?.id || null;
+        renderAssetTabs();
         pingButton.addEventListener('click', handlePing);
-        chooseFileButton.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', (event) => {
-            if (event.target.files && event.target.files.length) {
-                processFiles(event.target.files);
-                fileInput.value = '';
+        statusBox.style.display = 'none';
+    }
+
+    function renderAssetTabs() {
+        assetTabsRoot.innerHTML = '';
+        if (!TAB_DEFINITIONS.length) {
+            return;
+        }
+
+        const tabList = document.createElement('div');
+        tabList.className = 'asset-tab-list';
+
+        const panels = document.createElement('div');
+        panels.className = 'asset-tab-panels';
+
+        TAB_DEFINITIONS.forEach((tab) => {
+            if (!state.activeAssetTabId) {
+                state.activeAssetTabId = tab.id;
             }
-        });
-        dropArea.addEventListener('dragover', (event) => {
-            event.preventDefault();
-            dropArea.classList.add('active');
-        });
-        dropArea.addEventListener('dragleave', () => dropArea.classList.remove('active'));
-        dropArea.addEventListener('drop', (event) => {
-            event.preventDefault();
-            dropArea.classList.remove('active');
-            if (event.dataTransfer.files && event.dataTransfer.files.length) {
-                processFiles(event.dataTransfer.files);
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'asset-tab-button';
+            button.dataset.tabId = tab.id;
+            button.textContent = tab.label;
+            if (!tab.allowUpload) {
+                button.title = '近日対応予定';
             }
+            button.addEventListener('click', () => setActiveAssetTab(tab.id));
+            tabList.appendChild(button);
+
+            const panel = document.createElement('div');
+            panel.className = 'asset-panel';
+            panel.dataset.tabId = tab.id;
+
+            const heading = document.createElement('h3');
+            heading.textContent = `${tab.label}の読み取り`;
+            panel.appendChild(heading);
+
+            const description = document.createElement('p');
+            description.className = 'panel-description';
+            description.textContent = tab.description || tab.message || '順次対応予定です。';
+            panel.appendChild(description);
+
+            if (tab.allowUpload) {
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'file';
+                hiddenInput.accept = 'application/pdf';
+                hiddenInput.multiple = true;
+                hiddenInput.style.display = 'none';
+                panel.appendChild(hiddenInput);
+
+                let dateSelect = null;
+                if (tab.allowDateFormat) {
+                    const dateControls = document.createElement('div');
+                    dateControls.className = 'input-row';
+
+                    const dateLabel = document.createElement('label');
+                    dateLabel.style.fontSize = '0.9rem';
+                    dateLabel.style.color = '#1f3b8c';
+                    dateLabel.textContent = '日付の読み取り形式';
+                    dateControls.appendChild(dateLabel);
+
+                    dateSelect = document.createElement('select');
+                    dateSelect.className = 'text-input';
+                    DATE_FORMAT_OPTIONS.forEach((option) => {
+                        const opt = document.createElement('option');
+                        opt.value = option.value;
+                        opt.textContent = option.label;
+                        dateSelect.appendChild(opt);
+                    });
+                    dateSelect.value = 'auto';
+                    dateControls.appendChild(dateSelect);
+
+                    panel.appendChild(dateControls);
+                }
+
+                const controls = document.createElement('div');
+                controls.className = 'input-row';
+
+                const uploadButton = document.createElement('button');
+                uploadButton.type = 'button';
+                uploadButton.className = 'primary';
+                uploadButton.textContent = 'PDF ファイルを選択';
+                uploadButton.addEventListener('click', () => hiddenInput.click());
+                controls.appendChild(uploadButton);
+
+                const hint = document.createElement('span');
+                hint.style.fontSize = '0.85rem';
+                hint.style.color = '#4b5563';
+                hint.textContent = '複数ファイルの一括読み取りに対応しています。';
+                controls.appendChild(hint);
+
+                panel.appendChild(controls);
+
+                const dropArea = document.createElement('div');
+                dropArea.className = 'drop-area';
+                dropArea.innerHTML = `
+                    <strong>ここに PDF をドラッグ＆ドロップ</strong>
+                    <p>${escapeHtml(tab.label)}の書類を読み取ります。</p>
+                `;
+                dropArea.addEventListener('dragover', (event) => {
+                    event.preventDefault();
+                    dropArea.classList.add('active');
+                });
+                dropArea.addEventListener('dragleave', () => dropArea.classList.remove('active'));
+                dropArea.addEventListener('drop', (event) => {
+                    event.preventDefault();
+                    dropArea.classList.remove('active');
+                    if (event.dataTransfer.files && event.dataTransfer.files.length) {
+                        handleTabFiles(tab, event.dataTransfer.files, () => dateSelect?.value || 'auto');
+                    }
+                });
+                panel.appendChild(dropArea);
+
+                hiddenInput.addEventListener('change', (event) => {
+                    if (event.target.files && event.target.files.length) {
+                        handleTabFiles(tab, event.target.files, () => dateSelect?.value || 'auto');
+                        hiddenInput.value = '';
+                    }
+                });
+            } else {
+                const notice = document.createElement('p');
+                notice.className = 'coming-soon';
+                notice.textContent = tab.message || '近日対応予定です。';
+                panel.appendChild(notice);
+            }
+
+            panels.appendChild(panel);
+        });
+
+        assetTabsRoot.appendChild(tabList);
+        assetTabsRoot.appendChild(panels);
+        setActiveAssetTab(state.activeAssetTabId || TAB_DEFINITIONS[0].id);
+    }
+
+    function setActiveAssetTab(tabId) {
+        state.activeAssetTabId = tabId;
+        const buttons = assetTabsRoot.querySelectorAll('.asset-tab-button');
+        buttons.forEach((button) => {
+            button.classList.toggle('active', button.dataset.tabId === tabId);
+        });
+        const panels = assetTabsRoot.querySelectorAll('.asset-panel');
+        panels.forEach((panel) => {
+            panel.classList.toggle('active', panel.dataset.tabId === tabId);
         });
     }
 
-    function resetState() {
-        state.documents = [];
-        state.activeDocId = null;
+    function handleTabFiles(tab, fileList, getDateFormat) {
+        processFiles(fileList, {
+            tabId: tab.id,
+            label: tab.label,
+            docType: tab.docType,
+            dateFormat: getDateFormat ? getDateFormat() : 'auto',
+        });
     }
 
-    async function processFiles(fileList) {
+    async function processFiles(fileList, tabConfig = {}) {
         const files = Array.from(fileList || []).filter((file) => {
             if (!file) return false;
             if (file.type === 'application/pdf') return true;
@@ -409,35 +632,31 @@
             return;
         }
 
-        resetState();
-        resultsSection.style.display = 'none';
-        tabContainer.style.display = 'none';
-        tabEmptyMessage.style.display = 'block';
-        downloadSection.style.display = 'none';
-        downloadList.innerHTML = '';
-        rawJson.textContent = '';
+        const docType = tabConfig.docType || '';
+        const label = tabConfig.label || '';
+        const dateFormat = normalizeDateFormat(tabConfig.dateFormat);
+        const prefix = label ? `${label}の` : '';
 
-        setStatus(`${files.length} 件の読み取りを開始します…`, 'info');
-        const selectedDocType = docTypeSelect.value;
-        const selectedDateFormat = dateFormatSelect.value || 'auto';
+        setStatus(`${prefix}${files.length} 件の読み取りを開始します…`, 'info');
 
         for (let index = 0; index < files.length; index += 1) {
             const file = files[index];
             try {
-                const doc = await handleSingleFile(file, selectedDocType, selectedDateFormat);
+                const doc = await handleSingleFile(file, docType, dateFormat);
                 state.documents.push(doc);
+                state.activeDocId = doc.id;
                 setStatus(`(${index + 1}/${files.length}) 「${file.name}」の読み取りが完了しました。`, 'info');
-        } catch (error) {
-            console.error(error);
-            state.documents.push({
-                id: createDocId(),
-                name: file.name,
-                docType: selectedDocType,
-                dateFormat: selectedDateFormat,
-                error: error.message || '読み取りに失敗しました。',
-            });
-            setStatus(`(${index + 1}/${files.length}) 「${file.name}」でエラーが発生しました。`, 'error');
-        }
+            } catch (error) {
+                console.error(error);
+                state.documents.push({
+                    id: createDocId(),
+                    name: file.name,
+                    docType,
+                    dateFormat,
+                    error: error.message || '読み取りに失敗しました。',
+                });
+                setStatus(`(${index + 1}/${files.length}) 「${file.name}」でエラーが発生しました。`, 'error');
+            }
         }
 
         renderDocuments();
@@ -480,7 +699,7 @@
             form.append('document_type', docType);
         }
         if (dateFormat) {
-            form.append('date_format', dateFormat);
+            form.append('date_format', normalizeDateFormat(dateFormat));
         }
         const res = await fetch(`${base}/documents/analyze`, {
             method: 'POST',
@@ -554,7 +773,7 @@
         const defaultId =
             state.activeDocId && state.documents.some((doc) => doc.id === state.activeDocId)
                 ? state.activeDocId
-                : state.documents[0].id;
+                : state.documents[state.documents.length - 1].id;
         setActiveDoc(defaultId);
     }
 
@@ -596,42 +815,55 @@
         return container;
     }
 
-function computeSummaryItems(doc) {
-    const assets = doc.assets || [];
-    const owners = new Set();
-    const accounts = new Set();
-    let totalTransactions = 0;
-    let latestBalance = null;
+    function computeSummaryItems(doc) {
+        const assets = Array.isArray(doc.assets) ? doc.assets : [];
+        const owners = new Set();
+        const accounts = new Set();
+        let totalTransactions = 0;
+        let latestBalance = null;
 
         assets.forEach((asset) => {
-            (asset.owner_name || []).forEach((name) => owners.add(name));
+            const ownerValues = Array.isArray(asset.owner_name)
+                ? asset.owner_name
+                : asset?.owner_name
+                ? [asset.owner_name]
+                : [];
+            ownerValues
+                .map((name) => (name || '').toString().trim())
+                .filter(Boolean)
+                .forEach((name) => owners.add(name));
+
             if (asset.identifier_primary) {
                 accounts.add(asset.identifier_primary);
             }
+
             const transactions = Array.isArray(asset.transactions) ? asset.transactions : [];
-            totalTransactions += transactions.length;
             transactions.forEach((txn) => {
-                if (txn.balance !== undefined && txn.balance !== null) {
+                totalTransactions += 1;
+                if (txn && txn.balance !== undefined && txn.balance !== null && txn.balance !== '') {
                     latestBalance = txn.balance;
                 }
             });
         });
 
-    const items = [
-        { label: '資料種別', value: describeDocType(doc.docType) },
-        { label: '名義人', value: owners.size ? Array.from(owners).join('、') : '未検出' },
-        { label: '口座番号', value: accounts.size ? Array.from(accounts).join('、') : '未検出' },
-        { label: '取引件数', value: `${totalTransactions} 件` },
-        { label: '最終残高', value: latestBalance !== null ? `${formatNumber(latestBalance)} 円` : '未検出' },
-    ];
+        const formattedBalance = latestBalance !== null ? formatNumber(latestBalance) : '';
 
-    items.push({ label: '日付形式', value: describeDateFormat(doc.dateFormat) });
-    return items;
-}
+        return [
+            { label: '資料種別', value: describeDocType(doc.docType) },
+            { label: '名義人', value: owners.size ? Array.from(owners).join('、') : '未検出' },
+            { label: '口座番号', value: accounts.size ? Array.from(accounts).join('、') : '未検出' },
+            { label: '取引件数', value: `${totalTransactions} 件` },
+            { label: '最終残高', value: formattedBalance ? `${formattedBalance} 円` : '未検出' },
+            { label: '日付形式', value: describeDateFormat(doc.dateFormat) },
+        ];
+    }
 
-function buildPreviewTable(assets) {
-        const firstAsset = assets[0];
-        const transactions = Array.isArray(firstAsset?.transactions) ? firstAsset.transactions.slice(0, 12) : [];
+    function buildPreviewTable(assets) {
+        const assetList = Array.isArray(assets) ? assets : [];
+        const firstAssetWithTransactions = assetList.find(
+            (asset) => Array.isArray(asset.transactions) && asset.transactions.length
+        );
+        const transactions = firstAssetWithTransactions?.transactions?.slice(0, 12) || [];
         if (!transactions.length) {
             return null;
         }
@@ -661,7 +893,7 @@ function buildPreviewTable(assets) {
             const row = document.createElement('tr');
             columns.forEach((col) => {
                 const cell = document.createElement('td');
-                const value = txn[col.key];
+                const value = txn?.[col.key];
                 if (col.type === 'number') {
                     cell.textContent = formatNumber(value);
                 } else {
@@ -735,7 +967,7 @@ function buildPreviewTable(assets) {
 
     function downloadCsv(filename, base64) {
         const text = decodeBase64(base64);
-        const blob = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -761,8 +993,8 @@ function buildPreviewTable(assets) {
 
     function setStatus(message, type) {
         statusBox.textContent = message;
-        statusBox.className = `status ${type}`;
-        statusBox.style.display = 'block';
+        statusBox.className = type ? `status ${type}` : 'status';
+        statusBox.style.display = message ? 'block' : 'none';
     }
 
     function describeDocType(value) {
@@ -771,8 +1003,16 @@ function buildPreviewTable(assets) {
     }
 
     function describeDateFormat(value) {
-        if (!value) return DATE_FORMAT_LABELS.auto;
-        return DATE_FORMAT_LABELS[value] || value;
+        const normalized = normalizeDateFormat(value);
+        return DATE_FORMAT_LABELS[normalized] || normalized || DATE_FORMAT_LABELS.auto;
+    }
+
+    function normalizeDateFormat(value) {
+        const normalized = (value || '').toString().toLowerCase();
+        if (normalized === 'western' || normalized === 'wareki') {
+            return normalized;
+        }
+        return 'auto';
     }
 
     function normalizedApiBase() {
@@ -827,5 +1067,6 @@ function buildPreviewTable(assets) {
     }
 })();
 </script>
+
 </body>
 </html>

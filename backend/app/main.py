@@ -17,7 +17,7 @@ from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="InhTaxAutoPJ Backend", version="0.4.0")
+app = FastAPI(title="InhTaxAutoPJ Backend", version="0.5.0")
 
 app.add_middleware(
     CORSMiddleware,
