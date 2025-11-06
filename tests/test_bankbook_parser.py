@@ -67,11 +67,12 @@ def test_exporter_preserves_multiline_notes() -> None:
     assets_csv = csv_map["assets.csv"]
     reader = csv.DictReader(io.StringIO(assets_csv))
     row = next(reader)
-    assert row["notes"].count("\n") > 1
+    assert row["備考"].count("\n") > 1
 
     bank_csv = csv_map["bank_transactions.csv"]
     transactions = list(csv.DictReader(io.StringIO(bank_csv)))
     assert len(transactions) == len(asset.transactions)
+    assert {"取引日", "摘要", "出金", "入金", "残高"}.issubset(transactions[0].keys())
 
 
 def test_nanto_contains_both_deposits_and_withdrawals() -> None:

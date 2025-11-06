@@ -78,7 +78,7 @@ def _analyze_with_gemini(contents: bytes, settings) -> List[str]:
     return _with_pdf_chunks(contents, plan, analyzer)
 
 
-def _analyze_with_azure(contents: bytes, settings, source_name: str) -> AzureAnalysisResult:
+def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_format: str) -> AzureAnalysisResult:
     if not settings.azure_form_recognizer_endpoint or not settings.azure_form_recognizer_key:
         raise HTTPException(status_code=503, detail="Azure Form Recognizer is not configured")
     analyzer = AzureTransactionAnalyzer(
@@ -96,7 +96,7 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str) -> AzureAna
 
     for chunk in chunks:
         try:
-            result = analyzer.analyze_pdf(chunk, source_name=source_name)
+        result = analyzer.analyze_pdf(chunk, source_name=source_name, date_format=date_format)
         except AzureAnalysisError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         combined_lines.extend(result.raw_lines)
@@ -163,13 +163,17 @@ async def analyze_pdf(file: UploadFile = File(...)) -> Dict[str, Any]:
 async def analyze_document(
     file: UploadFile = File(...),
     document_type: Optional[DocumentType] = Form(None),
+    date_format: Optional[str] = Form("auto"),
 ) -> DocumentAnalyzeResponse:
     contents, content_type = await _load_file_bytes(file)
     settings = get_settings()
     source_name = file.filename or "uploaded.pdf"
+    date_format_normalized = (date_format or "auto").lower()
+    if date_format_normalized not in {"auto", "western", "wareki"}:
+        date_format_normalized = "auto"
 
     if document_type == "transaction_history":
-        azure_result = _analyze_with_azure(contents, settings, source_name)
+        azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
         return DocumentAnalyzeResponse(
             status="ok",
             document_type="transaction_history",
@@ -180,7 +184,7 @@ async def analyze_document(
     lines = _analyze_layout(contents, content_type)
     detected_type = document_type or detect_document_type(lines)
     if detected_type == "transaction_history":
-        azure_result = _analyze_with_azure(contents, settings, source_name)
+        azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
         return DocumentAnalyzeResponse(
             status="ok",
             document_type=detected_type,

@@ -12,36 +12,24 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
-ASSET_COLUMNS: Sequence[str] = (
-    "record_id",
-    "source_document",
-    "asset_category",
-    "asset_type",
-    "owner_name",
-    "asset_name",
-    "location_prefecture",
-    "location_municipality",
-    "location_detail",
-    "identifier_primary",
-    "identifier_secondary",
-    "valuation_basis",
-    "valuation_currency",
-    "valuation_amount",
-    "valuation_date",
-    "ownership_share",
-    "notes",
+ASSET_EXPORT_COLUMNS: Sequence[Tuple[str, str]] = (
+    ("source_document", "書類名"),
+    ("asset_category", "カテゴリ"),
+    ("asset_type", "種別"),
+    ("owner_name", "名義人"),
+    ("asset_name", "資産名"),
+    ("identifier_primary", "識別子"),
+    ("valuation_amount", "評価額"),
+    ("valuation_date", "評価日"),
+    ("notes", "備考"),
 )
 
-BANK_TRANSACTION_COLUMNS: Sequence[str] = (
-    "record_id",
-    "transaction_id",
-    "transaction_date",
-    "value_date",
-    "description",
-    "withdrawal_amount",
-    "deposit_amount",
-    "balance",
-    "line_confidence",
+TRANSACTION_EXPORT_COLUMNS: Sequence[Tuple[str, str]] = (
+    ("transaction_date", "取引日"),
+    ("description", "摘要"),
+    ("withdrawal_amount", "出金"),
+    ("deposit_amount", "入金"),
+    ("balance", "残高"),
 )
 
 JAPANESE_ERA_BASE_YEAR = {
@@ -274,15 +262,26 @@ def ensure_output_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def write_csv(path: Path, columns: Sequence[str], rows: Iterable[Dict[str, str]], *, overwrite: bool) -> bool:
+def write_csv(
+    path: Path,
+    columns: Sequence[Any],
+    rows: Iterable[Dict[str, Any]],
+    *,
+    overwrite: bool,
+) -> bool:
     if path.exists() and not overwrite:
         raise FileExistsError(f"Output file already exists: {path}")
     wrote_any = False
+    keys, headers = _resolve_columns(columns)
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(columns), extrasaction="ignore")
+        writer = csv.DictWriter(fh, fieldnames=headers)
         writer.writeheader()
         for row in rows:
-            writer.writerow(row)
+            prepared = {
+                header: _stringify(row.get(key, ""))
+                for key, header in zip(keys, headers)
+            }
+            writer.writerow(prepared)
             wrote_any = True
     return wrote_any
 
@@ -293,7 +292,7 @@ def export_csv_files(input_path: Path, output_dir: Path, *, overwrite: bool = Fa
 
     asset_rows = [asset.to_asset_row() for asset in payload_assets]
     assets_csv_path = output_dir / "assets.csv"
-    write_csv(assets_csv_path, ASSET_COLUMNS, asset_rows, overwrite=overwrite)
+    write_csv(assets_csv_path, ASSET_EXPORT_COLUMNS, asset_rows, overwrite=overwrite)
 
     transaction_rows: List[Dict[str, str]] = []
     for asset in payload_assets:
@@ -303,7 +302,7 @@ def export_csv_files(input_path: Path, output_dir: Path, *, overwrite: bool = Fa
 
     if transaction_rows:
         bank_csv_path = output_dir / "bank_transactions.csv"
-        write_csv(bank_csv_path, BANK_TRANSACTION_COLUMNS, transaction_rows, overwrite=overwrite)
+        write_csv(bank_csv_path, TRANSACTION_EXPORT_COLUMNS, transaction_rows, overwrite=overwrite)
         exported_files["bank_transactions"] = bank_csv_path
 
     return exported_files
@@ -324,16 +323,34 @@ def convert_assets_payload(payload: Dict[str, Any]) -> Tuple[List[Dict[str, str]
     return asset_rows, transaction_rows
 
 
-def build_csv(columns: Sequence[str], rows: Iterable[Dict[str, str]]) -> str:
-    lines = [",".join(columns)]
+def build_csv(columns: Sequence[Any], rows: Iterable[Dict[str, Any]]) -> str:
+    keys, headers = _resolve_columns(columns)
+    header_line = ",".join(csv_escape(header) for header in headers)
+    output_lines = [header_line]
     for row in rows:
-        values = [csv_escape(row.get(column, "")) for column in columns]
-        lines.append(",".join(values))
-    return "\r\n".join(lines) + "\r\n"
+        values = [csv_escape(_stringify(row.get(key, ""))) for key in keys]
+        output_lines.append(",".join(values))
+    return "\r\n".join(output_lines) + "\r\n"
+
+
+def _resolve_columns(columns: Sequence[Any]) -> Tuple[List[str], List[str]]:
+    if columns and isinstance(columns[0], tuple):
+        keys = [str(key) for key, _ in columns]
+        headers = [str(header) for _, header in columns]
+    else:
+        keys = [str(key) for key in columns]
+        headers = [str(header) for header in columns]
+    return keys, headers
+
+
+def _stringify(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
 
 
 def csv_escape(value: str) -> str:
-    text = str(value)
+    text = "" if value is None else str(value)
     if text == "":
         return ""
     if any(ch in text for ch in ('"', ',', '\n')):

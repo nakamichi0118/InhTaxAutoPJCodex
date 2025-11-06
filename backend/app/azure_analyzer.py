@@ -44,7 +44,7 @@ class AzureTransactionAnalyzer:
         credential = AzureKeyCredential(api_key)
         self.client = DocumentAnalysisClient(endpoint=endpoint, credential=credential)
 
-    def analyze_pdf(self, pdf_bytes: bytes, *, source_name: str) -> AzureAnalysisResult:
+    def analyze_pdf(self, pdf_bytes: bytes, *, source_name: str, date_format: str = "auto") -> AzureAnalysisResult:
         try:
             poller = self.client.begin_analyze_document("prebuilt-document", pdf_bytes)
             result = poller.result()
@@ -54,7 +54,7 @@ class AzureTransactionAnalyzer:
         raw_lines = result.content.splitlines() if result.content else []
         transactions: List[TransactionLine] = []
         for table in result.tables or []:
-            transactions.extend(_extract_transactions_from_table(table))
+            transactions.extend(_extract_transactions_from_table(table, date_format=date_format))
 
         asset = AssetRecord(
             category="bank_deposit",
@@ -67,7 +67,7 @@ class AzureTransactionAnalyzer:
         return AzureAnalysisResult(raw_lines=raw_lines, assets=[asset])
 
 
-def _extract_transactions_from_table(table, pages=None) -> List[TransactionLine]:
+def _extract_transactions_from_table(table, *, date_format: str) -> List[TransactionLine]:
     if not table.cells:
         return []
 
@@ -91,7 +91,7 @@ def _extract_transactions_from_table(table, pages=None) -> List[TransactionLine]
         values: Dict[str, List[Optional[str]]] = {}
         for column_index, field in header_map.items():
             values.setdefault(field, []).append(row_cells.get(column_index))
-        txn = _build_transaction(values)
+        txn = _build_transaction(values, date_format=date_format)
         if txn:
             transactions.append(txn)
     return transactions
@@ -138,7 +138,7 @@ def _merge_parts(parts: Optional[List[Optional[str]]]) -> Optional[str]:
     return merged or None
 
 
-def _build_transaction(values: Dict[str, List[Optional[str]]]) -> Optional[TransactionLine]:
+def _build_transaction(values: Dict[str, List[Optional[str]]], *, date_format: str) -> Optional[TransactionLine]:
     date_text = _merge_parts(values.get("transaction_date"))
     description = _clean_text(_merge_parts(values.get("description")))
     withdrawal = _parse_amount(_merge_parts(values.get("withdrawal")))
@@ -148,7 +148,7 @@ def _build_transaction(values: Dict[str, List[Optional[str]]]) -> Optional[Trans
     if not any([date_text, description, withdrawal, deposit, balance]):
         return None
 
-    transaction_date = _parse_date(date_text)
+    transaction_date = _parse_date(date_text, date_format=date_format)
     return TransactionLine(
         transaction_date=transaction_date,
         description=description or None,
@@ -186,27 +186,65 @@ def _parse_amount(text: Optional[str]) -> Optional[float]:
     return float(value)
 
 
-DATE_PATTERN = re.compile(r"(\d{4}|\d{2})-(\d{1,2})-(\d{1,2})")
+WAREKI_BOUNDARIES = [
+    (5, 2018),   # Reiwa 1-5 -> 2019-2023
+    (31, 1988),  # Heisei 1-31 -> 1989-2019
+    (64, 1925),  # Showa 1-64 -> 1926-1989
+]
 
 
-def _parse_date(text: Optional[str]) -> Optional[str]:
+def _parse_date(text: Optional[str], *, date_format: str) -> Optional[str]:
     if not text:
         return None
-    cleaned = text.strip().replace(":", "-").replace("/", "-").replace(",", "-")
+    cleaned = text.strip()
+    cleaned = cleaned.replace("：", "-").replace(":", "-")
+    cleaned = cleaned.replace("/", "-").replace(".", "-").replace(",", "-")
     cleaned = re.sub(r"\s+", "-", cleaned)
-    match = DATE_PATTERN.search(cleaned)
-    if not match:
+    cleaned = re.sub(r"[^0-9-]", "", cleaned)
+    cleaned = cleaned.strip("-")
+    if not cleaned:
         return None
-    year, month, day = match.groups()
-    year_value = int(year)
-    if year_value < 100:
-        if 6 <= year_value <= 31:
-            year_value = 1988 + year_value
-        elif 32 <= year_value <= 64:
-            year_value = 1925 + year_value
-        else:
-            year_value += 2000 if year_value < 50 else 1900
-    try:
-        return f"{year_value:04d}-{int(month):02d}-{int(day):02d}"
-    except ValueError:
-        return None
+
+    year: Optional[int] = None
+    month: Optional[int] = None
+    day: Optional[int] = None
+
+    def build(year_value: int, month_value: int, day_value: int) -> Optional[str]:
+        try:
+            return f"{year_value:04d}-{month_value:02d}-{day_value:02d}"
+        except ValueError:
+            return None
+
+    # Try YYYY-MM-DD first
+    match = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", cleaned)
+    if match:
+        year, month, day = map(int, match.groups())
+        return build(year, month, day)
+
+    match = re.fullmatch(r"(\d{4})(\d{2})(\d{2})", cleaned)
+    if match:
+        year, month, day = map(int, match.groups())
+        return build(year, month, day)
+
+    # Handle two-digit years
+    match = re.fullmatch(r"(\d{1,2})-(\d{1,2})-(\d{1,2})", cleaned)
+    if match:
+        y, m, d = match.groups()
+        return build(_resolve_two_digit_year(int(y), date_format), int(m), int(d))
+
+    match = re.fullmatch(r"(\d{2})(\d{2})(\d{2})", cleaned)
+    if match:
+        y, m, d = match.groups()
+        return build(_resolve_two_digit_year(int(y), date_format), int(m), int(d))
+
+    return None
+
+
+def _resolve_two_digit_year(two_digit: int, date_format: str) -> int:
+    if date_format == "western":
+        return 2000 + two_digit if two_digit < 50 else 1900 + two_digit
+    # default or wareki
+    for boundary, offset in WAREKI_BOUNDARIES:
+        if two_digit <= boundary:
+            return offset + two_digit
+    return 2000 + two_digit

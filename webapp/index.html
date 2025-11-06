@@ -288,6 +288,15 @@
                     </select>
                 </label>
             </div>
+            <div style="margin-top:0.6rem;">
+                <label style="font-size:0.85rem;color:#4b5563;">日付形式
+                    <select id="dateFormat" class="text-input" style="min-width:180px;margin-left:0.6rem;">
+                        <option value="auto">自動判定</option>
+                        <option value="western">西暦（YYYY/MM/DD）</option>
+                        <option value="wareki">和暦（例: 31/01/04）</option>
+                    </select>
+                </label>
+            </div>
         </div>
         <div id="status" class="status info"></div>
     </section>
@@ -324,6 +333,7 @@
     const chooseFileButton = document.getElementById('chooseFile');
     const fileInput = document.getElementById('fileInput');
     const docTypeSelect = document.getElementById('docType');
+    const dateFormatSelect = document.getElementById('dateFormat');
     const statusBox = document.getElementById('status');
     const resultsSection = document.getElementById('resultsSection');
     const tabContainer = document.getElementById('tabContainer');
@@ -339,11 +349,27 @@
         activeDocId: null,
     };
 
+    const DOC_TYPE_LABELS = {
+        '': '自動判定',
+        bank_deposit: '通帳（預金）',
+        transaction_history: '取引履歴（推移表）',
+        land: '登記簿（地目）',
+        building: '登記簿（家屋）',
+        unknown: '未分類',
+    };
+
+    const DATE_FORMAT_LABELS = {
+        auto: '自動判定',
+        western: '西暦 (YYYY/MM/DD)',
+        wareki: '和暦 (令和/平成)',
+    };
+
     init();
 
     function init() {
         const queryApi = new URLSearchParams(window.location.search).get('api');
         apiInput.value = (queryApi || DEFAULT_API).replace(/\/$/, '');
+        dateFormatSelect.value = 'auto';
 
         pingButton.addEventListener('click', handlePing);
         chooseFileButton.addEventListener('click', () => fileInput.click());
@@ -393,22 +419,25 @@
 
         setStatus(`${files.length} 件の読み取りを開始します…`, 'info');
         const selectedDocType = docTypeSelect.value;
+        const selectedDateFormat = dateFormatSelect.value || 'auto';
 
         for (let index = 0; index < files.length; index += 1) {
             const file = files[index];
             try {
-                const doc = await handleSingleFile(file, selectedDocType);
+                const doc = await handleSingleFile(file, selectedDocType, selectedDateFormat);
                 state.documents.push(doc);
                 setStatus(`(${index + 1}/${files.length}) 「${file.name}」の読み取りが完了しました。`, 'info');
-            } catch (error) {
-                console.error(error);
-                state.documents.push({
-                    id: createDocId(),
-                    name: file.name,
-                    error: error.message || '読み取りに失敗しました。',
-                });
-                setStatus(`(${index + 1}/${files.length}) 「${file.name}」でエラーが発生しました。`, 'error');
-            }
+        } catch (error) {
+            console.error(error);
+            state.documents.push({
+                id: createDocId(),
+                name: file.name,
+                docType: selectedDocType,
+                dateFormat: selectedDateFormat,
+                error: error.message || '読み取りに失敗しました。',
+            });
+            setStatus(`(${index + 1}/${files.length}) 「${file.name}」でエラーが発生しました。`, 'error');
+        }
         }
 
         renderDocuments();
@@ -424,9 +453,9 @@
         );
     }
 
-    async function handleSingleFile(file, docType) {
+    async function handleSingleFile(file, docType, dateFormat) {
         setStatus(`「${file.name}」を解析中です…`, 'info');
-        const payload = await analyzeDocument(file, docType);
+        const payload = await analyzeDocument(file, docType, dateFormat);
         const assets = Array.isArray(payload.assets) ? payload.assets : [];
         if (!assets.length) {
             throw new Error('取引情報が見つかりませんでした。');
@@ -435,18 +464,23 @@
         return {
             id: createDocId(),
             name: file.name,
+            docType: docType || payload.document_type,
+            dateFormat,
             assets,
             csvFiles,
             raw: payload,
         };
     }
 
-    async function analyzeDocument(file, docType) {
+    async function analyzeDocument(file, docType, dateFormat) {
         const base = normalizedApiBase();
         const form = new FormData();
         form.append('file', file);
         if (docType) {
             form.append('document_type', docType);
+        }
+        if (dateFormat) {
+            form.append('date_format', dateFormat);
         }
         const res = await fetch(`${base}/documents/analyze`, {
             method: 'POST',
@@ -499,7 +533,14 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.dataset.docId = doc.id;
-            button.textContent = doc.name;
+            const labelParts = [doc.name];
+            if (doc.docType) {
+                labelParts.push(describeDocType(doc.docType));
+            }
+            if (doc.dateFormat) {
+                labelParts.push(describeDateFormat(doc.dateFormat));
+            }
+            button.textContent = labelParts.join(' / ');
             button.addEventListener('click', () => setActiveDoc(doc.id));
             tabHeaders.appendChild(button);
 
@@ -534,7 +575,7 @@
 
         const summaryList = document.createElement('div');
         summaryList.className = 'summary-list';
-        computeSummaryItems(doc.assets).forEach((item) => {
+        computeSummaryItems(doc).forEach((item) => {
             const div = document.createElement('div');
             div.innerHTML = `<strong>${item.label}</strong><div style="margin-top:0.4rem;">${escapeHtml(item.value)}</div>`;
             summaryList.appendChild(div);
@@ -555,11 +596,12 @@
         return container;
     }
 
-    function computeSummaryItems(assets) {
-        const owners = new Set();
-        const accounts = new Set();
-        let totalTransactions = 0;
-        let latestBalance = null;
+function computeSummaryItems(doc) {
+    const assets = doc.assets || [];
+    const owners = new Set();
+    const accounts = new Set();
+    let totalTransactions = 0;
+    let latestBalance = null;
 
         assets.forEach((asset) => {
             (asset.owner_name || []).forEach((name) => owners.add(name));
@@ -575,46 +617,61 @@
             });
         });
 
-        return [
-            { label: '名義人', value: owners.size ? Array.from(owners).join('、') : '未検出' },
-            { label: '口座番号', value: accounts.size ? Array.from(accounts).join('、') : '未検出' },
-            { label: '取引件数', value: `${totalTransactions} 件` },
-            { label: '最終残高', value: latestBalance !== null ? `${formatNumber(latestBalance)} 円` : '未検出' },
-        ];
-    }
+    const items = [
+        { label: '資料種別', value: describeDocType(doc.docType) },
+        { label: '名義人', value: owners.size ? Array.from(owners).join('、') : '未検出' },
+        { label: '口座番号', value: accounts.size ? Array.from(accounts).join('、') : '未検出' },
+        { label: '取引件数', value: `${totalTransactions} 件` },
+        { label: '最終残高', value: latestBalance !== null ? `${formatNumber(latestBalance)} 円` : '未検出' },
+    ];
 
-    function buildPreviewTable(assets) {
+    items.push({ label: '日付形式', value: describeDateFormat(doc.dateFormat) });
+    return items;
+}
+
+function buildPreviewTable(assets) {
         const firstAsset = assets[0];
         const transactions = Array.isArray(firstAsset?.transactions) ? firstAsset.transactions.slice(0, 12) : [];
         if (!transactions.length) {
             return null;
         }
+        const columns = [
+            { key: 'transaction_date', label: '取引日', type: 'text' },
+            { key: 'description', label: '摘要', type: 'text' },
+            { key: 'withdrawal_amount', label: '出金', type: 'number' },
+            { key: 'deposit_amount', label: '入金', type: 'number' },
+            { key: 'balance', label: '残高', type: 'number' },
+        ];
+
         const table = document.createElement('table');
         table.className = 'preview';
-        table.innerHTML = `
-            <thead>
-                <tr>
-                    <th>日付</th>
-                    <th>内容</th>
-                    <th>出金</th>
-                    <th>入金</th>
-                    <th>残高</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        `;
-        const tbody = table.querySelector('tbody');
+
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        columns.forEach((col) => {
+            const th = document.createElement('th');
+            th.textContent = col.label;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
         transactions.forEach((txn) => {
             const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${escapeHtml(txn.transaction_date || '')}</td>
-                <td>${escapeHtml(txn.description || '')}</td>
-                <td>${formatNumber(txn.withdrawal_amount)}</td>
-                <td>${formatNumber(txn.deposit_amount)}</td>
-                <td>${formatNumber(txn.balance)}</td>
-            `;
+            columns.forEach((col) => {
+                const cell = document.createElement('td');
+                const value = txn[col.key];
+                if (col.type === 'number') {
+                    cell.textContent = formatNumber(value);
+                } else {
+                    cell.textContent = escapeHtml(value || '');
+                }
+                row.appendChild(cell);
+            });
             tbody.appendChild(row);
         });
+        table.appendChild(tbody);
         return table;
     }
 
@@ -637,7 +694,11 @@
             Object.entries(doc.csvFiles).forEach(([filename, base64]) => {
                 const card = document.createElement('div');
                 card.className = 'download-card';
-                card.innerHTML = `<h3>${escapeHtml(doc.name)} - ${escapeHtml(filename)}</h3><p style="margin:0;font-size:0.85rem;color:#4b5563;">CSV を確認して問題なければ保存してください。</p>`;
+                card.innerHTML = `
+                    <h3>${escapeHtml(doc.name)} - ${escapeHtml(filename)}</h3>
+                    <p style="margin:0;font-size:0.85rem;color:#4b5563;">CSV を確認して問題なければ保存してください。</p>
+                    <p style="margin:0;font-size:0.8rem;color:#6b7280;">資料種別: ${escapeHtml(describeDocType(doc.docType))} ／ 日付形式: ${escapeHtml(describeDateFormat(doc.dateFormat))}</p>
+                `;
                 const button = document.createElement('button');
                 button.className = 'primary small';
                 button.textContent = 'ダウンロード';
@@ -656,8 +717,18 @@
         }
         const payload = state.documents.map((doc) =>
             doc.error
-                ? { name: doc.name, error: doc.error }
-                : { name: doc.name, assets: doc.assets }
+                ? {
+                      name: doc.name,
+                      error: doc.error,
+                      documentType: doc.docType,
+                      dateFormat: doc.dateFormat,
+                  }
+                : {
+                      name: doc.name,
+                      documentType: doc.docType,
+                      dateFormat: doc.dateFormat,
+                      assets: doc.assets,
+                  }
         );
         rawJson.textContent = JSON.stringify(payload, null, 2);
     }
@@ -692,6 +763,16 @@
         statusBox.textContent = message;
         statusBox.className = `status ${type}`;
         statusBox.style.display = 'block';
+    }
+
+    function describeDocType(value) {
+        if (!value) return DOC_TYPE_LABELS[''];
+        return DOC_TYPE_LABELS[value] || value;
+    }
+
+    function describeDateFormat(value) {
+        if (!value) return DATE_FORMAT_LABELS.auto;
+        return DATE_FORMAT_LABELS[value] || value;
     }
 
     function normalizedApiBase() {
