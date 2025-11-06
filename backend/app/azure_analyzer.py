@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
@@ -109,23 +109,38 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
         if not adjusted:
             continue
 
-        balance_candidate = adjusted.balance
+        updates: Dict[str, Any] = {}
+
+        desc_cleaned = _clean_description(adjusted.description)
+        if desc_cleaned != (adjusted.description or ""):
+            updates["description"] = desc_cleaned or None
+
+        if not adjusted.transaction_date and enriched:
+            updates.setdefault("transaction_date", enriched[-1].transaction_date)
+
+        if desc_cleaned and any(keyword in desc_cleaned for keyword in BALANCE_ONLY_KEYWORDS):
+            updates["withdrawal_amount"] = None
+            updates["deposit_amount"] = None
+
+        candidate = adjusted.model_copy(update=updates) if updates else adjusted
+
+        balance_candidate = candidate.balance
         if balance_candidate is None and last_balance is not None:
             projected = last_balance
-            if adjusted.withdrawal_amount is not None:
-                projected -= adjusted.withdrawal_amount
-            if adjusted.deposit_amount is not None:
-                projected += adjusted.deposit_amount
+            if candidate.withdrawal_amount is not None:
+                projected -= candidate.withdrawal_amount
+            if candidate.deposit_amount is not None:
+                projected += candidate.deposit_amount
             if abs(projected - last_balance) > 1e-6:
-                adjusted = adjusted.model_copy(update={"balance": projected})
+                candidate = candidate.model_copy(update={"balance": projected})
                 balance_candidate = projected
 
-        enriched.append(adjusted)
+        enriched.append(candidate)
 
         if balance_candidate is not None:
             last_balance = balance_candidate
         else:
-            delta = (adjusted.deposit_amount or 0.0) - (adjusted.withdrawal_amount or 0.0)
+            delta = (candidate.deposit_amount or 0.0) - (candidate.withdrawal_amount or 0.0)
             if last_balance is None:
                 last_balance = delta if delta else None
             else:
@@ -241,6 +256,15 @@ def _clean_text(text: Optional[str]) -> str:
     return re.sub(r"\s+", " ", text.strip())
 
 
+def _clean_description(text: Optional[str]) -> str:
+    cleaned = _clean_text(text)
+    if not cleaned:
+        return ""
+    for target, replacement in DESCRIPTION_CLEANUPS:
+        cleaned = cleaned.replace(target, replacement)
+    return cleaned.strip()
+
+
 def _parse_amount(text: Optional[str]) -> Optional[float]:
     if not text:
         return None
@@ -261,6 +285,17 @@ def _parse_amount(text: Optional[str]) -> Optional[float]:
     if negative:
         value = -value
     return float(value)
+
+
+BALANCE_ONLY_KEYWORDS = (
+    "繰越",
+    "繰り越し",
+    "前日残高",
+)
+
+DESCRIPTION_CLEANUPS = (
+    (":selected:", ""),
+)
 
 
 WAREKI_BOUNDARIES = [

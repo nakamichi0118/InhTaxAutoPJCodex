@@ -71,12 +71,13 @@
             color: rgba(255, 255, 255, 0.7);
         }
         .hero-logo {
-            width: 82px;
+            width: 120px;
             height: auto;
             border-radius: 20px;
             background: rgba(255, 255, 255, 0.2);
             padding: 0.55rem;
             box-shadow: 0 16px 36px rgba(15, 23, 42, 0.35);
+            object-fit: contain;
         }
         .tagline strong {
             font-weight: 600;
@@ -552,12 +553,12 @@
             id: 'bank_documents',
             label: '通帳・取引履歴',
             description: '預貯金通帳や取引履歴の PDF をアップロードし、用途に応じた読み取り種別を選択してください。',
-            docType: 'bank_deposit',
+            docType: 'transaction_history',
             allowUpload: true,
             allowDateFormat: true,
             docTypeOptions: [
-                { value: 'bank_deposit', label: '通帳（預貯金）' },
                 { value: 'transaction_history', label: '取引履歴' },
+                { value: 'bank_deposit', label: '通帳（預貯金）' },
             ],
         },
     ];
