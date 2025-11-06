@@ -52,9 +52,11 @@ class AzureTransactionAnalyzer:
             raise AzureAnalysisError(str(exc)) from exc
 
         raw_lines = result.content.splitlines() if result.content else []
-        transactions: List[TransactionLine] = []
+        raw_transactions: List[TransactionLine] = []
         for table in result.tables or []:
-            transactions.extend(_extract_transactions_from_table(table, date_format=date_format))
+            raw_transactions.extend(_extract_transactions_from_table(table, date_format=date_format))
+
+        transactions = _post_process_transactions(raw_transactions)
 
         asset = AssetRecord(
             category="bank_deposit",
@@ -93,8 +95,79 @@ def _extract_transactions_from_table(table, *, date_format: str) -> List[Transac
             values.setdefault(field, []).append(row_cells.get(column_index))
         txn = _build_transaction(values, date_format=date_format)
         if txn:
-            transactions.append(txn)
-    return transactions
+            transactions.append(txn)    return transactions
+
+
+
+def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[TransactionLine]:
+    enriched: List[TransactionLine] = []
+    last_balance: Optional[float] = None
+
+    for txn in raw_transactions:
+        adjusted = _impute_missing_values(txn, last_balance)
+        if not adjusted:
+            continue
+
+        balance_candidate = adjusted.balance
+        if balance_candidate is None and last_balance is not None:
+            projected = last_balance
+            if adjusted.withdrawal_amount is not None:
+                projected -= adjusted.withdrawal_amount
+            if adjusted.deposit_amount is not None:
+                projected += adjusted.deposit_amount
+            if abs(projected - last_balance) > 1e-6:
+                adjusted = adjusted.model_copy(update={"balance": projected})
+                balance_candidate = projected
+
+        enriched.append(adjusted)
+
+        if balance_candidate is not None:
+            last_balance = balance_candidate
+        else:
+            delta = (adjusted.deposit_amount or 0.0) - (adjusted.withdrawal_amount or 0.0)
+            if last_balance is None:
+                last_balance = delta if delta else None
+            else:
+                last_balance = last_balance + delta
+
+    return enriched
+
+
+
+def _impute_missing_values(txn: TransactionLine, last_balance: Optional[float]) -> Optional[TransactionLine]:
+    data = txn.model_dump()
+    withdrawal = data.get("withdrawal_amount")
+    deposit = data.get("deposit_amount")
+    balance = data.get("balance")
+
+    if balance is not None and last_balance is not None and withdrawal is None and deposit is None:
+        delta = round(balance - last_balance, 2)
+        if abs(delta) >= 0.01:
+            if delta > 0:
+                deposit = float(delta)
+            else:
+                withdrawal = float(-delta)
+
+    if balance is None and last_balance is not None:
+        projected = last_balance
+        if withdrawal is not None:
+            projected -= withdrawal
+        if deposit is not None:
+            projected += deposit
+        if abs(projected - last_balance) >= 0.01:
+            balance = projected
+
+    if withdrawal is None and deposit is None and balance is None:
+        return None
+
+    data.update(
+        {
+            "withdrawal_amount": withdrawal,
+            "deposit_amount": deposit,
+            "balance": balance,
+        }
+    )
+    return TransactionLine(**data)
 
 
 def _map_headers(columns: Dict[int, str]) -> Dict[int, str]:
@@ -148,6 +221,9 @@ def _build_transaction(values: Dict[str, List[Optional[str]]], *, date_format: s
     if not any([date_text, description, withdrawal, deposit, balance]):
         return None
 
+    if withdrawal is None and deposit is None and balance is None:
+        return None
+
     transaction_date = _parse_date(date_text, date_format=date_format)
     return TransactionLine(
         transaction_date=transaction_date,
@@ -169,7 +245,7 @@ def _parse_amount(text: Optional[str]) -> Optional[float]:
         return None
     cleaned = text.replace("円", "").replace("¥", "")
     cleaned = cleaned.replace(",", "").replace(" ", "")
-    if "." in cleaned and cleaned.count(".") == 1 and len(cleaned.replace(".", "")) > 4:
+    if "." in cleaned and len(cleaned.replace(".", "")) > 4:
         cleaned = cleaned.replace(".", "")
     cleaned = cleaned.replace("△", "-")
     cleaned = cleaned.strip()
