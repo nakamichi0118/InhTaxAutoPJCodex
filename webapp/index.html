@@ -14,22 +14,20 @@
         }
         header {
             position: relative;
-            background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.85), rgba(30, 64, 175, 0.95));
+            background: linear-gradient(135deg, #0b1433, #102d6a);
             color: #fff;
-            padding: 2.6rem 1.4rem 2.4rem;
-            text-align: center;
+            padding: 2.8rem 2.4rem 2.6rem;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            gap: 1.2rem;
+            gap: 1.4rem;
             overflow: hidden;
         }
         header::before {
             content: "";
             position: absolute;
             inset: 0;
-            background: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.15), transparent 55%),
-                radial-gradient(circle at 80% 10%, rgba(191, 219, 254, 0.18), transparent 60%);
+            background: radial-gradient(circle at 15% 15%, rgba(255, 255, 255, 0.18), transparent 60%),
+                radial-gradient(circle at 85% 0%, rgba(96, 165, 250, 0.25), transparent 65%);
             pointer-events: none;
         }
         header > * {
@@ -38,39 +36,46 @@
         }
         header h1 {
             margin: 0;
-            font-size: 2.1rem;
+            font-size: 2.4rem;
             font-weight: 700;
-            letter-spacing: 0.02em;
+            letter-spacing: 0.04em;
         }
         header .tagline {
-            margin: 0.4rem auto 0;
-            max-width: 720px;
-            font-size: 1rem;
-            line-height: 1.7;
-            color: rgba(255, 255, 255, 0.92);
+            margin: 0.2rem 0 0;
+            max-width: 780px;
+            font-size: 1.05rem;
+            line-height: 1.8;
+            color: rgba(255, 255, 255, 0.94);
         }
 
-        .hero-brand {
+        .hero-top {
             display: flex;
             align-items: center;
-            justify-content: center;
-            gap: 1.2rem;
-            max-width: 840px;
+            justify-content: space-between;
+            gap: 1.6rem;
+        }
+        .hero-copy {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            text-align: left;
+        }
+        .hero-copy h1 {
+            margin-bottom: 0;
+        }
+        .hero-subtitle {
+            font-size: 0.95rem;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.7);
         }
         .hero-logo {
             width: 82px;
             height: auto;
-            border-radius: 18px;
-            background: rgba(255, 255, 255, 0.18);
-            padding: 0.6rem;
-            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.25);
-        }
-        .hero-copy {
-            text-align: left;
-            max-width: 640px;
-        }
-        .hero-copy h1 {
-            margin-bottom: 0.4rem;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.55rem;
+            box-shadow: 0 16px 36px rgba(15, 23, 42, 0.35);
         }
         .tagline strong {
             font-weight: 600;
@@ -79,12 +84,12 @@
             display: inline-flex;
             align-items: center;
             gap: 0.25rem;
-            padding: 0.2rem 0.55rem;
+            padding: 0.25rem 0.6rem;
             margin-left: 0.6rem;
             font-size: 0.75rem;
             border-radius: 999px;
-            background: rgba(37, 99, 235, 0.14);
-            color: #1d4ed8;
+            background: rgba(59, 130, 246, 0.18);
+            color: #cbd5ff;
             letter-spacing: 0.05em;
         }
         header, section.card, footer {
@@ -105,19 +110,21 @@
             letter-spacing: 0.02em;
         }
         main {
-            max-width: 960px;
+            width: 100%;
+            max-width: 1320px;
             margin: 0 auto;
-            padding: 2.4rem 1.4rem 3rem;
+            padding: 2.6rem 2.4rem 3.2rem;
             display: grid;
-            gap: 1.6rem;
+            gap: 1.8rem;
         }
         section.card {
-            background: rgba(255, 255, 255, 0.9);
-            border-radius: 18px;
-            box-shadow: 0 20px 48px rgba(15, 23, 42, 0.12);
-            padding: 2rem;
-            border: 1px solid rgba(59, 130, 246, 0.12);
-            backdrop-filter: blur(4px);
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: 20px;
+            box-shadow: 0 22px 48px rgba(15, 23, 42, 0.14);
+            padding: 2.2rem 2.4rem;
+            border: 1px solid rgba(59, 130, 246, 0.16);
+            backdrop-filter: blur(6px);
+            width: 100%;
         }
         section.card h2 {
             margin: 0 0 1rem;
@@ -417,12 +424,12 @@
             margin-top: 0;
         }
         @media (max-width: 640px) {
-            section.card { padding: 1.4rem; }
+            section.card { padding: 1.6rem 1.4rem; }
             .input-row { flex-direction: column; align-items: flex-start; }
             .text-input, select { width: 100%; }
             button { width: 100%; gap: 0.3rem; }
             .drop-area { padding: 1.8rem 1rem; }
-            .hero-brand { flex-direction: column; text-align: center; }
+            .hero-top { flex-direction: column-reverse; align-items: center; text-align: center; }
             .hero-copy { text-align: center; }
             .asset-layout { grid-template-columns: minmax(0, 1fr); }
             .asset-nav { flex-direction: row; overflow-x: auto; padding: 0.75rem; }
@@ -433,26 +440,17 @@
 </head>
 <body>
 <header>
-    <div class="hero-brand">
-        <img src="image/iucglog.png" alt="IUCG ロゴ" class="hero-logo">
+    <div class="hero-top">
         <div class="hero-copy">
+            <span class="hero-subtitle">相続書類 OCR</span>
             <h1>SOROBOCR</h1>
-            <p class="tagline">相続に関わる通帳・取引履歴・各種資産書類をまとめて解析し、<strong>整った CSV とレポート</strong>を最短で導出する専門家向け OCR プラットフォームです。</p>
         </div>
+        <img src="./image/iucglog.png" alt="IU Consulting Group" class="hero-logo">
     </div>
+    <p class="tagline">相続に関わる通帳・取引履歴・各種資産書類をまとめて解析し、<strong>整った CSV とレポート</strong>を最短で導出する専門家向け OCR プラットフォームです。</p>
     <p class="version">バージョン 0.5.0</p>
 </header>
 <main>
-    <section class="card" id="connectionSection">
-        <h2>接続先の確認 <span class="optional-badge">任意</span></h2>
-        <p class="description">本番環境ではデフォルト接続が設定済みです。テストや検証で独自のバックエンドを利用する場合のみ、URL を指定してください。</p>
-        <div class="input-row">
-            <input id="apiBase" class="text-input" type="url" placeholder="https://example.up.railway.app/api">
-            <button id="pingButton" class="secondary">接続をチェック</button>
-            <span id="pingResult" style="font-size:0.9rem;color:#4b5563;"></span>
-        </div>
-    </section>
-
     <section class="card" id="uploadSection">
         <h2>書類をアップロード</h2>
         <p class="description">対象の財産タブを選択し、PDF をアップロードしてください。取引履歴タブでは日付形式を指定できます。</p>
@@ -503,6 +501,7 @@
         documents: [],
         activeDocId: null,
         activeAssetTabId: null,
+        apiBaseFallback: DEFAULT_API,
     };
 
     const TAB_DEFINITIONS = [
@@ -590,12 +589,19 @@
 
     function init() {
         const queryApi = new URLSearchParams(window.location.search).get('api');
-        apiInput.value = (queryApi || DEFAULT_API).replace(/\/$/, '');
+        const initialBase = (queryApi || DEFAULT_API).replace(/\/$/, '');
+        state.apiBaseFallback = initialBase;
+        if (apiInput) {
+            apiInput.value = initialBase;
+        }
+
         const defaultTab = TAB_DEFINITIONS.find((tab) => tab.allowUpload) || TAB_DEFINITIONS[0];
         state.activeAssetTabId = defaultTab ? defaultTab.id : null;
         renderAssetTabs();
         setupRevealAnimations();
-        pingButton.addEventListener('click', handlePing);
+        if (pingButton) {
+            pingButton.addEventListener('click', handlePing);
+        }
         statusBox.style.display = 'none';
         statusBox.classList.remove('visible');
     }
@@ -1249,13 +1255,17 @@
     }
 
     function normalizedApiBase() {
-        const raw = (apiInput.value || DEFAULT_API).trim();
+        const source = apiInput ? apiInput.value : state.apiBaseFallback;
+        const raw = (source || DEFAULT_API).trim();
         if (!raw) return DEFAULT_API;
         const base = raw.endsWith('/api') ? raw : `${raw.replace(/\/$/, '')}/api`;
         return base.replace(/\/$/, '');
     }
 
     async function handlePing() {
+        if (!pingResult) {
+            return;
+        }
         const base = normalizedApiBase();
         pingResult.textContent = '接続を確認しています…';
         pingResult.style.color = '#4b5563';
