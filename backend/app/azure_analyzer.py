@@ -34,6 +34,16 @@ HEADER_KEYWORDS: Dict[str, Iterable[str]] = {
     "balance": ("残高", "差引残高", "残高金額", "残", "高"),
 }
 
+BALANCE_ONLY_KEYWORDS = (
+    "繰越",
+    "繰り越し",
+    "前日残高",
+)
+
+DESCRIPTION_CLEANUPS = (
+    (":selected:", ""),
+)
+
 
 class AzureAnalysisError(RuntimeError):
     pass
@@ -109,23 +119,37 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
         if not adjusted:
             continue
 
-        updates: Dict[str, Any] = {}
+        base_updates: Dict[str, Any] = {}
 
         desc_cleaned = _clean_description(adjusted.description)
         if desc_cleaned != (adjusted.description or ""):
-            updates["description"] = desc_cleaned or None
+            base_updates["description"] = desc_cleaned or None
 
         if not adjusted.transaction_date and enriched:
-            updates.setdefault("transaction_date", enriched[-1].transaction_date)
+            base_updates.setdefault("transaction_date", enriched[-1].transaction_date)
+
+        candidate = adjusted.model_copy(update=base_updates) if base_updates else adjusted
+
+        normalized_balance = _normalize_amount(candidate.balance, reference=last_balance)
+        normalized_withdrawal = _normalize_amount(candidate.withdrawal_amount, reference=last_balance)
+        normalized_deposit = _normalize_amount(candidate.deposit_amount, reference=last_balance)
+
+        normalization_updates: Dict[str, Any] = {}
+        if normalized_balance != candidate.balance:
+            normalization_updates["balance"] = normalized_balance
+        if normalized_withdrawal != candidate.withdrawal_amount:
+            normalization_updates["withdrawal_amount"] = normalized_withdrawal
+        if normalized_deposit != candidate.deposit_amount:
+            normalization_updates["deposit_amount"] = normalized_deposit
 
         if desc_cleaned and any(keyword in desc_cleaned for keyword in BALANCE_ONLY_KEYWORDS):
-            updates["withdrawal_amount"] = None
-            updates["deposit_amount"] = None
+            normalization_updates["withdrawal_amount"] = None
+            normalization_updates["deposit_amount"] = None
 
-        candidate = adjusted.model_copy(update=updates) if updates else adjusted
+        candidate = candidate.model_copy(update=normalization_updates) if normalization_updates else candidate
 
-        balance_candidate = candidate.balance
-        if balance_candidate is None and last_balance is not None:
+        balance_value = candidate.balance
+        if balance_value is None and last_balance is not None:
             projected = last_balance
             if candidate.withdrawal_amount is not None:
                 projected -= candidate.withdrawal_amount
@@ -133,18 +157,39 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
                 projected += candidate.deposit_amount
             if abs(projected - last_balance) > 1e-6:
                 candidate = candidate.model_copy(update={"balance": projected})
-                balance_candidate = projected
+                balance_value = projected
+
+        delta_updates: Dict[str, Any] = {}
+        if balance_value is not None and last_balance is not None:
+            delta = round(balance_value - last_balance, 2)
+            if abs(delta) <= 0.01:
+                delta = 0.0
+            expected_withdrawal: Optional[float] = None
+            expected_deposit: Optional[float] = None
+            if delta > 0:
+                expected_deposit = float(delta)
+            elif delta < 0:
+                expected_withdrawal = float(-delta)
+
+            if _needs_amount_override(candidate, expected_withdrawal, expected_deposit):
+                delta_updates["withdrawal_amount"] = expected_withdrawal
+                delta_updates["deposit_amount"] = expected_deposit
+
+        candidate = candidate.model_copy(update=delta_updates) if delta_updates else candidate
+
+        if not any(
+            [
+                candidate.description,
+                candidate.withdrawal_amount,
+                candidate.deposit_amount,
+                candidate.balance,
+            ]
+        ):
+            continue
 
         enriched.append(candidate)
-
-        if balance_candidate is not None:
-            last_balance = balance_candidate
-        else:
-            delta = (candidate.deposit_amount or 0.0) - (candidate.withdrawal_amount or 0.0)
-            if last_balance is None:
-                last_balance = delta if delta else None
-            else:
-                last_balance = last_balance + delta
+        if candidate.balance is not None:
+            last_balance = candidate.balance
 
     return enriched
 
@@ -184,6 +229,51 @@ def _impute_missing_values(txn: TransactionLine, last_balance: Optional[float]) 
         }
     )
     return TransactionLine(**data)
+
+
+def _normalize_amount(value: Optional[float], *, reference: Optional[float]) -> Optional[float]:
+    if value is None:
+        return None
+    normalized = float(value)
+    # Trim obviously duplicated magnitude (e.g. 10^13)
+    while abs(normalized) >= 1_000_000_000:
+        normalized /= 10
+    if reference is not None and abs(reference) > 0:
+        limit = max(abs(reference) * 5, 10_000_000)
+        while abs(normalized) > limit:
+            normalized /= 10
+    return round(normalized, 2)
+
+
+def _needs_amount_override(
+    candidate: TransactionLine,
+    expected_withdrawal: Optional[float],
+    expected_deposit: Optional[float],
+) -> bool:
+    current_withdrawal = None if candidate.withdrawal_amount is None else round(candidate.withdrawal_amount, 2)
+    current_deposit = None if candidate.deposit_amount is None else round(candidate.deposit_amount, 2)
+
+    if expected_withdrawal is None and expected_deposit is None:
+        return False
+
+    if expected_withdrawal is not None:
+        if current_withdrawal is None or abs(current_withdrawal - expected_withdrawal) > 0.5:
+            return True
+        if current_deposit not in (None, 0.0):
+            return True
+
+    if expected_deposit is not None:
+        if current_deposit is None or abs(current_deposit - expected_deposit) > 0.5:
+            return True
+        if current_withdrawal not in (None, 0.0):
+            return True
+
+    if expected_withdrawal is None and current_withdrawal not in (None, 0.0):
+        return True
+    if expected_deposit is None and current_deposit not in (None, 0.0):
+        return True
+
+    return False
 
 
 def _map_headers(columns: Dict[int, str]) -> Dict[int, str]:
@@ -278,6 +368,15 @@ def _parse_amount(text: Optional[str]) -> Optional[float]:
         return None
     negative = cleaned.startswith("(") and cleaned.endswith(")")
     cleaned = cleaned.strip("()").strip()
+    sign = ""
+    if cleaned.startswith("-"):
+        sign = "-"
+        cleaned = cleaned[1:]
+    digits_only = cleaned.replace(".", "")
+    if digits_only.isdigit() and len(digits_only) > 9:
+        digits_only = digits_only[-9:]
+        cleaned = digits_only
+    cleaned = sign + cleaned
     try:
         value = Decimal(cleaned)
     except (InvalidOperation, ValueError):
@@ -285,17 +384,6 @@ def _parse_amount(text: Optional[str]) -> Optional[float]:
     if negative:
         value = -value
     return float(value)
-
-
-BALANCE_ONLY_KEYWORDS = (
-    "繰越",
-    "繰り越し",
-    "前日残高",
-)
-
-DESCRIPTION_CLEANUPS = (
-    (":selected:", ""),
-)
 
 
 WAREKI_BOUNDARIES = [
