@@ -95,7 +95,8 @@ def _extract_transactions_from_table(table, *, date_format: str) -> List[Transac
             values.setdefault(field, []).append(row_cells.get(column_index))
         txn = _build_transaction(values, date_format=date_format)
         if txn:
-            transactions.append(txn)    return transactions
+            transactions.append(txn)
+    return transactions
 
 
 
