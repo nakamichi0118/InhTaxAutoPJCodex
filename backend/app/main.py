@@ -96,7 +96,7 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_for
 
     for chunk in chunks:
         try:
-        result = analyzer.analyze_pdf(chunk, source_name=source_name, date_format=date_format)
+            result = analyzer.analyze_pdf(chunk, source_name=source_name, date_format=date_format)
         except AzureAnalysisError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         combined_lines.extend(result.raw_lines)
