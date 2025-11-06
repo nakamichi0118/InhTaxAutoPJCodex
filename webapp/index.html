@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>通帳データ整理ツール</title>
+    <title>相続ドキュメントインサイトハブ</title>
     <style>
         :root { color-scheme: light; }
         body {
@@ -13,21 +13,90 @@
             color: #1f2937;
         }
         header {
-            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            position: relative;
+            background: radial-gradient(circle at top left, rgba(59, 130, 246, 0.85), rgba(30, 64, 175, 0.95));
             color: #fff;
-            padding: 2.2rem 1.4rem 2rem;
+            padding: 2.6rem 1.4rem 2.4rem;
             text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.2rem;
+            overflow: hidden;
+        }
+        header::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.15), transparent 55%),
+                radial-gradient(circle at 80% 10%, rgba(191, 219, 254, 0.18), transparent 60%);
+            pointer-events: none;
+        }
+        header > * {
+            position: relative;
+            z-index: 1;
         }
         header h1 {
             margin: 0;
-            font-size: 1.8rem;
+            font-size: 2.1rem;
             font-weight: 700;
+            letter-spacing: 0.02em;
         }
-        header p {
-            margin: 0.8rem auto 0;
+        header .tagline {
+            margin: 0.4rem auto 0;
+            max-width: 720px;
+            font-size: 1rem;
+            line-height: 1.7;
+            color: rgba(255, 255, 255, 0.92);
+        }
+
+        .hero-brand {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1.2rem;
+            max-width: 840px;
+        }
+        .hero-logo {
+            width: 82px;
+            height: auto;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.18);
+            padding: 0.6rem;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.25);
+        }
+        .hero-copy {
+            text-align: left;
             max-width: 640px;
-            font-size: 0.95rem;
-            line-height: 1.6;
+        }
+        .hero-copy h1 {
+            margin-bottom: 0.4rem;
+        }
+        .tagline strong {
+            font-weight: 600;
+        }
+        .optional-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.2rem 0.55rem;
+            margin-left: 0.6rem;
+            font-size: 0.75rem;
+            border-radius: 999px;
+            background: rgba(37, 99, 235, 0.14);
+            color: #1d4ed8;
+            letter-spacing: 0.05em;
+        }
+        header, section.card, footer {
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+        .pre-reveal {
+            opacity: 0;
+            transform: translateY(16px);
+        }
+        .revealed {
+            opacity: 1;
+            transform: translateY(0);
         }
         .version {
             margin-top: 0.6rem;
@@ -43,16 +112,21 @@
             gap: 1.6rem;
         }
         section.card {
-            background: #fff;
-            border-radius: 16px;
-            box-shadow: 0 18px 40px rgba(37, 99, 235, 0.12);
-            padding: 1.8rem;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 18px;
+            box-shadow: 0 20px 48px rgba(15, 23, 42, 0.12);
+            padding: 2rem;
+            border: 1px solid rgba(59, 130, 246, 0.12);
+            backdrop-filter: blur(4px);
         }
         section.card h2 {
             margin: 0 0 1rem;
             font-size: 1.1rem;
             font-weight: 700;
             color: #1f3b8c;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
         }
         section.card p.description {
             margin: 0 0 1.2rem;
@@ -132,6 +206,13 @@
             font-size: 0.92rem;
             line-height: 1.5;
             display: none;
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .status.visible {
+            opacity: 1;
+            transform: translateY(0);
         }
         .status.info { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
         .status.success { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
@@ -269,6 +350,8 @@
             .text-input, select { width: 100%; }
             button { width: 100%; gap: 0.3rem; }
             .drop-area { padding: 1.8rem 1rem; }
+            .hero-brand { flex-direction: column; text-align: center; }
+            .hero-copy { text-align: center; }
         }
         .tabs {
             display: flex;
@@ -311,14 +394,19 @@
 </head>
 <body>
 <header>
-    <h1>通帳データ整理ツール</h1>
-    <p>PDF を選ぶだけで、名義・口座番号・取引明細を読み取り、すぐに CSV ダウンロードまで進めます。専門的な操作は不要です。</p>
+    <div class="hero-brand">
+        <img src="image/iucglog.png" alt="IUCG ロゴ" class="hero-logo">
+        <div class="hero-copy">
+            <h1>相続ドキュメントインサイトハブ</h1>
+            <p class="tagline">相続に関わる通帳・取引履歴・各種資産書類をまとめて解析し、<strong>整った CSV とインサイト</strong>を最短で導出するための業務ダッシュボードです。</p>
+        </div>
+    </div>
     <p class="version">バージョン 0.5.0</p>
 </header>
 <main>
-    <section class="card">
-        <h2>STEP 1. 接続先の確認</h2>
-        <p class="description">デプロイ済みのバックエンド URL を入力してください。空欄のままでもデフォルトの Railway 環境に接続します。</p>
+    <section class="card" id="connectionSection">
+        <h2>接続先の確認 <span class="optional-badge">任意</span></h2>
+        <p class="description">本番環境ではデフォルト接続が設定済みです。テストや検証で独自のバックエンドを利用する場合のみ、URL を指定してください。</p>
         <div class="input-row">
             <input id="apiBase" class="text-input" type="url" placeholder="https://example.up.railway.app/api">
             <button id="pingButton" class="secondary">接続をチェック</button>
@@ -327,8 +415,8 @@
     </section>
 
     <section class="card" id="uploadSection">
-        <h2>STEP 2. 書類をアップロード</h2>
-        <p class="description">対象の財産タブを選び、該当する PDF をアップロードしてください。取引履歴では日付形式も指定できます。</p>
+        <h2>書類をアップロード</h2>
+        <p class="description">対象の財産タブを選択し、PDF をアップロードしてください。取引履歴タブでは日付形式を指定できます。</p>
         <div id="assetTabsRoot" class="asset-tabs"></div>
         <div id="status" class="status info"></div>
     </section>
@@ -463,9 +551,27 @@
         apiInput.value = (queryApi || DEFAULT_API).replace(/\/$/, '');
         state.activeAssetTabId = TAB_DEFINITIONS[0]?.id || null;
         renderAssetTabs();
+        setupRevealAnimations();
         pingButton.addEventListener('click', handlePing);
         statusBox.style.display = 'none';
     }
+
+    function setupRevealAnimations() {
+        const targets = [
+            document.querySelector('header'),
+            ...document.querySelectorAll('main section.card'),
+            document.querySelector('footer'),
+        ].filter(Boolean);
+
+        targets.forEach((element, index) => {
+            element.classList.add('pre-reveal');
+            setTimeout(() => {
+                element.classList.add('revealed');
+                element.classList.remove('pre-reveal');
+            }, 140 * index + 220);
+        });
+    }
+
 
     function renderAssetTabs() {
         assetTabsRoot.innerHTML = '';
@@ -994,7 +1100,16 @@
     function setStatus(message, type) {
         statusBox.textContent = message;
         statusBox.className = type ? `status ${type}` : 'status';
-        statusBox.style.display = message ? 'block' : 'none';
+        if (message) {
+            statusBox.style.display = 'block';
+            statusBox.classList.remove('visible');
+            requestAnimationFrame(() => statusBox.classList.add('visible'));
+        } else {
+            statusBox.classList.remove('visible');
+            setTimeout(() => {
+                statusBox.style.display = 'none';
+            }, 200);
+        }
     }
 
     function describeDocType(value) {
