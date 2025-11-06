@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
@@ -18,6 +18,31 @@ class AzureAnalysisResult:
     assets: List[AssetRecord]
 
 
+def build_transactions_from_lines(lines: Iterable[str], *, date_format: str) -> List[TransactionLine]:
+    """Convert free-form OCR lines into post-processed transactions."""
+    raw = _extract_transactions_from_lines(lines, date_format=date_format)
+    if not raw:
+        return []
+    return _post_process_transactions(raw)
+
+
+def merge_transactions(
+    primary: List[TransactionLine],
+    supplementary: List[TransactionLine],
+) -> List[TransactionLine]:
+    """Merge and sort transactions, avoiding duplicates."""
+    if not supplementary:
+        return list(primary)
+    return _merge_transactions(primary, supplementary)
+
+
+def post_process_transactions(transactions: List[TransactionLine]) -> List[TransactionLine]:
+    """Run post-processing pipeline on finalized transaction list."""
+    if not transactions:
+        return []
+    return _post_process_transactions(transactions)
+
+
 HEADER_ALIASES: Dict[str, str] = {
     "transaction_date": "取引日",
     "description": "摘要",
@@ -29,10 +54,12 @@ HEADER_ALIASES: Dict[str, str] = {
 HEADER_KEYWORDS: Dict[str, Iterable[str]] = {
     "transaction_date": ("取引日", "年月日", "日付"),
     "description": ("摘要", "内容", "件名"),
-    "withdrawal": ("支払", "出金", "支払金額"),
+    "withdrawal": ("支払", "出金", "出", "支払金額"),
     "deposit": ("入金", "預入", "入金金額"),
     "balance": ("残高", "差引残高", "残高金額", "残", "高"),
 }
+
+DATE_TOKEN_RE = re.compile(r"(?:19|20)\d{2}[./-]\d{1,2}[./-]\d{1,2}")
 
 BALANCE_ONLY_KEYWORDS = (
     "繰越",
@@ -134,19 +161,135 @@ def _extract_transactions_from_table(table, *, date_format: str) -> List[Transac
     if not header_map:
         return []
 
+    field_columns: Dict[str, List[int]] = {}
+    for column_index, field in header_map.items():
+        field_columns.setdefault(field, []).append(column_index)
+
     transactions: List[TransactionLine] = []
     for row_index in sorted(rows.keys()):
         if row_index == header_row:
             continue
         row_cells = rows[row_index]
         values: Dict[str, List[Optional[str]]] = {}
-        for column_index, field in header_map.items():
-            values.setdefault(field, []).append(row_cells.get(column_index))
+        for field, columns in field_columns.items():
+            if not columns:
+                continue
+            sorted_columns = sorted(set(columns))
+            clusters: List[List[int]] = []
+            current_cluster: List[int] = [sorted_columns[0]]
+            for column_index in sorted_columns[1:]:
+                if column_index - current_cluster[-1] <= 1:
+                    current_cluster.append(column_index)
+                else:
+                    clusters.append(current_cluster)
+                    current_cluster = [column_index]
+            clusters.append(current_cluster)
+
+            selected_values: List[Optional[str]] = []
+            for cluster in clusters:
+                block_values = [
+                    row_cells.get(column_index)
+                    for column_index in range(cluster[0], cluster[-1] + 1)
+                ]
+                if any(block_values):
+                    selected_values = block_values
+                    break
+                if not selected_values:
+                    selected_values = block_values
+            if selected_values:
+                values.setdefault(field, []).extend(selected_values)
         txn = _build_transaction(values, date_format=date_format)
         if txn:
             transactions.append(txn)
     return transactions
 
+
+def _extract_transactions_from_lines(lines: Iterable[str], *, date_format: str) -> List[TransactionLine]:
+    transactions: List[TransactionLine] = []
+    for line in lines:
+        normalized = _clean_text(line)
+        if not normalized:
+            continue
+        date_match = DATE_TOKEN_RE.search(normalized)
+        if not date_match:
+            continue
+        date_raw = normalized[date_match.start():date_match.end()]
+        transaction_date = _parse_date(date_raw, date_format=date_format)
+        if not transaction_date:
+            continue
+        remainder = normalized[date_match.end():].strip()
+        if not remainder:
+            continue
+        tokens = remainder.split()
+        value_tokens: List[str] = []
+        while tokens and _is_numeric_token(tokens[-1]):
+            value_tokens.append(tokens.pop())
+        description = " ".join(tokens).strip()
+        if not description:
+            description = remainder
+
+        numeric_values = [
+            _parse_numeric_token(token)
+            for token in reversed(value_tokens)
+            if _parse_numeric_token(token) is not None
+        ]
+
+        balance = numeric_values[-1] if numeric_values else None
+        withdrawal = None
+        deposit = None
+        classification = _classify_description(description)
+        if len(numeric_values) >= 2:
+            amount = numeric_values[-2]
+            if classification == "deposit":
+                deposit = amount
+            elif classification == "withdrawal":
+                withdrawal = amount
+        if len(numeric_values) >= 3 and classification == "unknown":
+            withdrawal = numeric_values[-3]
+            deposit = numeric_values[-2]
+
+        transactions.append(
+            TransactionLine(
+                transaction_date=transaction_date,
+                description=description or None,
+                withdrawal_amount=withdrawal,
+                deposit_amount=deposit,
+                balance=balance,
+            )
+        )
+    return transactions
+
+
+def _merge_transactions(
+    primary: List[TransactionLine],
+    supplementary: List[TransactionLine],
+) -> List[TransactionLine]:
+    merged = list(primary)
+    existing = {_transaction_signature(txn) for txn in merged}
+    for txn in supplementary:
+        signature = _transaction_signature(txn)
+        if signature in existing:
+            continue
+        merged.append(txn)
+        existing.add(signature)
+    merged.sort(key=_transaction_sort_key)
+    return merged
+
+
+def _transaction_signature(txn: TransactionLine) -> Tuple[str, str, Optional[float], Optional[float], Optional[float]]:
+    return (
+        txn.transaction_date or "",
+        (txn.description or "").replace(" ", ""),
+        round(txn.withdrawal_amount, 2) if txn.withdrawal_amount is not None else None,
+        round(txn.deposit_amount, 2) if txn.deposit_amount is not None else None,
+        round(txn.balance, 2) if txn.balance is not None else None,
+    )
+
+
+def _transaction_sort_key(txn: TransactionLine) -> Tuple[str, float]:
+    date_key = txn.transaction_date or ""
+    balance_key = txn.balance if txn.balance is not None else 0.0
+    return (date_key, balance_key)
 
 
 def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[TransactionLine]:
@@ -170,8 +313,8 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
         candidate = adjusted.model_copy(update=base_updates) if base_updates else adjusted
 
         normalized_balance = _normalize_amount(candidate.balance, reference=last_balance)
-        normalized_withdrawal = _normalize_amount(candidate.withdrawal_amount, reference=last_balance)
-        normalized_deposit = _normalize_amount(candidate.deposit_amount, reference=last_balance)
+        normalized_withdrawal = _normalize_magnitude(candidate.withdrawal_amount)
+        normalized_deposit = _normalize_magnitude(candidate.deposit_amount)
 
         normalization_updates: Dict[str, Any] = {}
         if normalized_balance != candidate.balance:
@@ -243,6 +386,9 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
         ):
             continue
 
+        if not candidate.transaction_date:
+            continue
+
         enriched.append(candidate)
         if candidate.balance is not None:
             last_balance = candidate.balance
@@ -301,10 +447,19 @@ def _normalize_amount(value: Optional[float], *, reference: Optional[float]) -> 
     return round(normalized, 2)
 
 
+def _normalize_magnitude(value: Optional[float]) -> Optional[float]:
+    """Normalize withdrawal/deposit values without balance reference."""
+    return _normalize_amount(value, reference=None)
+
+
 def _map_headers(columns: Dict[int, str]) -> Dict[int, str]:
     mapping: Dict[int, str] = {}
     for column_index, text in columns.items():
         normalized = _normalize_header(text)
+        if not normalized:
+            continue
+        if "前回" in normalized or "端末" in normalized or "備考" in normalized:
+            continue
         for field, keywords in HEADER_KEYWORDS.items():
             if any(keyword in normalized for keyword in keywords):
                 mapping[column_index] = field
@@ -323,7 +478,7 @@ def _map_headers(columns: Dict[int, str]) -> Dict[int, str]:
                 last_field = mapping[column_index]
                 continue
             text = _normalize_header(columns.get(column_index, ""))
-            if last_field in {"withdrawal", "deposit"} and text in {"", "金額"}:
+            if last_field in {"withdrawal", "deposit"} and text in {"", "金額", "金(円)", "円", "金"}:
                 mapping[column_index] = last_field
             elif last_field == "balance" and text in {"", "金額", "残", "高"}:
                 mapping[column_index] = last_field
@@ -380,6 +535,28 @@ def _clean_description(text: Optional[str]) -> str:
     return cleaned.strip()
 
 
+def _is_numeric_token(token: str) -> bool:
+    if not token:
+        return False
+    token = token.strip()
+    if not token:
+        return False
+    token = token.replace(",", "")
+    if token.startswith("+") or token.startswith("-"):
+        token = token[1:]
+    return token.isdigit()
+
+
+def _parse_numeric_token(token: str) -> Optional[float]:
+    token = token.strip().replace(",", "")
+    if not token:
+        return None
+    try:
+        return float(token)
+    except ValueError:
+        return None
+
+
 def _classify_description(text: str) -> str:
     if not text:
         return "unknown"
@@ -398,6 +575,7 @@ def _parse_amount(text: Optional[str]) -> Optional[float]:
         return None
     cleaned = text.replace("円", "").replace("¥", "")
     cleaned = cleaned.replace(",", "").replace(" ", "")
+    cleaned = cleaned.replace(":", "").replace("|", "")
     if "." in cleaned and len(cleaned.replace(".", "")) > 4:
         cleaned = cleaned.replace(".", "")
     cleaned = cleaned.replace("△", "-")
@@ -467,6 +645,11 @@ def _parse_date(text: Optional[str], *, date_format: str) -> Optional[str]:
 
     # Handle two-digit years
     match = re.fullmatch(r"(\d{1,2})-(\d{1,2})-(\d{1,2})", cleaned)
+    if match:
+        y, m, d = match.groups()
+        return build(_resolve_two_digit_year(int(y), date_format), int(m), int(d))
+
+    match = re.fullmatch(r"(\d{2})(\d{2})-(\d{2})", cleaned)
     if match:
         y, m, d = match.groups()
         return build(_resolve_two_digit_year(int(y), date_format), int(m), int(d))

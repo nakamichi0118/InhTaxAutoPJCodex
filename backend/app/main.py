@@ -7,7 +7,14 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from .azure_analyzer import AzureAnalysisError, AzureAnalysisResult, AzureTransactionAnalyzer
+from .azure_analyzer import (
+    AzureAnalysisError,
+    AzureAnalysisResult,
+    AzureTransactionAnalyzer,
+    build_transactions_from_lines,
+    merge_transactions,
+    post_process_transactions,
+)
 from .config import get_settings
 from .exporter import export_to_csv_strings
 from .gemini import GeminiClient, GeminiError
@@ -103,6 +110,24 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_for
         for asset in result.assets:
             combined_transactions.extend(asset.transactions)
 
+    azure_line_transactions = build_transactions_from_lines(combined_lines, date_format=date_format)
+    if azure_line_transactions:
+        combined_transactions = merge_transactions(combined_transactions, azure_line_transactions)
+
+    gemini_lines: List[str] = []
+    try:
+        gemini_lines = _analyze_with_gemini(contents, settings)
+    except (GeminiError, PdfChunkingError) as exc:
+        logger.warning("Gemini補完の取得に失敗しました: %s", exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Gemini補完処理で予期しないエラーが発生しました")
+    else:
+        supplementary_transactions = build_transactions_from_lines(gemini_lines, date_format=date_format)
+        if supplementary_transactions:
+            combined_transactions = merge_transactions(combined_transactions, supplementary_transactions)
+        combined_lines = _merge_line_lists(combined_lines, gemini_lines)
+    combined_transactions = post_process_transactions(combined_transactions)
+
     asset = AssetRecord(
         category="bank_deposit",
         type="transaction_history",
@@ -112,6 +137,22 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_for
     )
 
     return AzureAnalysisResult(raw_lines=combined_lines, assets=[asset])
+
+
+def _merge_line_lists(primary: List[str], supplementary: List[str]) -> List[str]:
+    if not supplementary:
+        return primary
+    merged = list(primary)
+    existing = {line.strip() for line in primary if line and line.strip()}
+    for line in supplementary:
+        if not line:
+            continue
+        key = line.strip()
+        if not key or key in existing:
+            continue
+        merged.append(line)
+        existing.add(key)
+    return merged
 
 
 def _analyze_layout(contents: bytes, content_type: str) -> List[str]:
