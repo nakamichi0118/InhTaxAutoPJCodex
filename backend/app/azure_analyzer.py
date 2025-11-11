@@ -53,7 +53,7 @@ HEADER_ALIASES: Dict[str, str] = {
 
 HEADER_KEYWORDS: Dict[str, Iterable[str]] = {
     "transaction_date": ("取引日", "年月日", "日付"),
-    "description": ("摘要", "内容", "件名"),
+    "description": ("摘要", "内容", "件名", "備考"),
     "withdrawal": ("支払", "出金", "出", "支払金額"),
     "deposit": ("入金", "預入", "入金金額"),
     "balance": ("残高", "差引残高", "残高金額", "残", "高"),
@@ -89,6 +89,8 @@ DEPOSIT_KEYWORDS = (
     "保険料",
     "入庫",
     "ATM入金",
+    "預り",
+    "お預り",
 )
 
 
@@ -499,7 +501,7 @@ def _map_headers(columns: Dict[int, str]) -> Dict[int, str]:
         normalized = _normalize_header(text)
         if not normalized:
             continue
-        if "前回" in normalized or "端末" in normalized or "備考" in normalized:
+        if "前回" in normalized or "端末" in normalized:
             continue
         for field, keywords in HEADER_KEYWORDS.items():
             if any(keyword in normalized for keyword in keywords):
