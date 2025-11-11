@@ -93,10 +93,13 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_for
         api_key=settings.azure_form_recognizer_key,
     )
     plan = PdfChunkingPlan(
-        max_bytes=min(settings.gemini_max_document_bytes, 2_000_000),
+        max_bytes=settings.azure_chunk_max_bytes,
         max_pages=1,
     )
-    chunks = chunk_pdf_by_limits(contents, plan)
+    try:
+        chunks = chunk_pdf_by_limits(contents, plan)
+    except PdfChunkingError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
 
     combined_lines: List[str] = []
     combined_transactions: List[Any] = []
