@@ -262,6 +262,46 @@ async def analyze_document(
     )
 
 
+@app.post("/api/documents/analyze-export")
+async def analyze_document_and_export(
+    file: UploadFile = File(...),
+    document_type: Optional[DocumentType] = Form(None),
+    date_format: Optional[str] = Form("auto"),
+) -> Dict[str, Any]:
+    contents, content_type = await _load_file_bytes(file)
+    settings = get_settings()
+    source_name = file.filename or "uploaded.pdf"
+    date_format_normalized = (date_format or "auto").lower()
+    if date_format_normalized not in {"auto", "western", "wareki"}:
+        date_format_normalized = "auto"
+
+    if document_type == "transaction_history":
+        azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
+        assets = azure_result.assets
+        doc_type = "transaction_history"
+    else:
+        lines = _analyze_layout(contents, content_type)
+        detected_type = document_type or detect_document_type(lines)
+        if detected_type == "transaction_history":
+            azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
+            assets = azure_result.assets
+        else:
+            assets = build_assets(detected_type, lines, source_name=source_name)
+        doc_type = detected_type
+
+    payload = {"assets": [asset.to_export_payload() for asset in assets]}
+    csv_map = export_to_csv_strings(payload)
+    encoded = {
+        name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
+        for name, content in csv_map.items()
+    }
+    return {
+        "status": "ok",
+        "document_type": doc_type,
+        "files": encoded,
+    }
+
+
 @app.on_event("startup")
 def log_startup() -> None:
     settings = get_settings()
