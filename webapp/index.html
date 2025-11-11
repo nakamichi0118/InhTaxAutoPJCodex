@@ -105,6 +105,27 @@
         header, section.card, footer {
             transition: opacity 0.5s ease, transform 0.5s ease;
         }
+        footer {
+            background: linear-gradient(135deg, #050d26 0%, #0d2765 55%, #15418f 100%);
+            color: rgba(236, 252, 255, 0.92);
+            padding: 2rem 3rem;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+            align-items: center;
+            border-top: 1px solid rgba(59, 130, 246, 0.25);
+        }
+        .footer-logo {
+            max-width: 220px;
+            min-height: 40px;
+            object-fit: contain;
+            filter: drop-shadow(0 10px 24px rgba(8, 16, 40, 0.45));
+        }
+        .footer-copy {
+            font-size: 0.95rem;
+            letter-spacing: 0.04em;
+        }
         .pre-reveal {
             opacity: 0;
             transform: translateY(16px);
@@ -526,7 +547,8 @@
     </section>
 </main>
 <footer>
-    &copy; 2025 IU Consulting group.
+    <img src="./image/iucglog.png" alt="IU Consulting Group ロゴ" class="footer-logo">
+    <div class="footer-copy">© 2025 IU Consulting Group. All Rights Reserved.</div>
 </footer>
 
 <script>
