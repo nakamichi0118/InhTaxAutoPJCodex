@@ -55,7 +55,7 @@ HEADER_KEYWORDS: Dict[str, Iterable[str]] = {
     "transaction_date": ("取引日", "年月日", "日付"),
     "description": ("摘要", "内容", "件名", "備考"),
     "withdrawal": ("支払", "出金", "出", "支払金額"),
-    "deposit": ("入金", "預入", "入金金額"),
+    "deposit": ("入金", "預入", "入金金額", "預り", "お預り"),
     "balance": ("残高", "差引残高", "残高金額", "残", "高"),
 }
 
@@ -619,6 +619,7 @@ def _parse_amount(text: Optional[str]) -> Optional[float]:
     cleaned = text.replace("円", "").replace("¥", "")
     cleaned = cleaned.replace(",", "").replace(" ", "")
     cleaned = cleaned.replace(":", "").replace("|", "")
+    cleaned = re.sub(r"[^\d\-\.\(\)]", "", cleaned)
     if "." in cleaned and len(cleaned.replace(".", "")) > 4:
         cleaned = cleaned.replace(".", "")
     cleaned = cleaned.replace("△", "-")
@@ -627,6 +628,11 @@ def _parse_amount(text: Optional[str]) -> Optional[float]:
         return None
     negative = cleaned.startswith("(") and cleaned.endswith(")")
     cleaned = cleaned.strip("()").strip()
+    number_match = re.search(r"-?\d+(?:\.\d+)?", cleaned)
+    if number_match:
+        cleaned = number_match.group(0)
+    else:
+        return None
     sign = ""
     if cleaned.startswith("-"):
         sign = "-"
@@ -661,6 +667,7 @@ def _parse_date(text: Optional[str], *, date_format: str) -> Optional[str]:
     cleaned = cleaned.replace("/", "-").replace(".", "-").replace(",", "-")
     cleaned = re.sub(r"\s+", "-", cleaned)
     cleaned = re.sub(r"[^0-9-]", "", cleaned)
+    cleaned = re.sub(r"-+", "-", cleaned)
     cleaned = cleaned.strip("-")
     if not cleaned:
         return None
