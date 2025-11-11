@@ -27,6 +27,44 @@
     </header>
     <main>
         <section>
+            <span class="tag">構成図</span>
+            <h2>アーキテクチャ図</h2>
+            <div style="background:#fff;border-radius:16px;padding:1rem;box-shadow:0 10px 25px rgba(15,23,42,0.1);">
+                <svg viewBox="0 0 800 200" width="100%" height="220">
+                    <defs>
+                        <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:#0b1433;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#102d6a;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                    <rect x="30" y="60" width="200" height="80" rx="15" fill="url(#grad1)" />
+                    <text x="130" y="105" fill="#fff" font-size="16" text-anchor="middle">Cloudflare Pages</text>
+                    <text x="130" y="125" fill="#fff" font-size="12" text-anchor="middle">SPA / UI</text>
+
+                    <rect x="300" y="40" width="200" height="120" rx="15" fill="#f8fafc" stroke="#2563eb" stroke-width="2"/>
+                    <text x="400" y="85" fill="#0f172a" font-size="16" text-anchor="middle">Railway</text>
+                    <text x="400" y="105" fill="#475569" font-size="12" text-anchor="middle">FastAPI</text>
+                    <text x="400" y="125" fill="#475569" font-size="12" text-anchor="middle">Chunking / CSV</text>
+
+                    <rect x="580" y="30" width="180" height="60" rx="12" fill="#fef3c7" stroke="#f59e0b"/>
+                    <text x="670" y="63" fill="#92400e" font-size="12" text-anchor="middle">Google Gemini</text>
+
+                    <rect x="580" y="110" width="180" height="60" rx="12" fill="#e0f2fe" stroke="#38bdf8"/>
+                    <text x="670" y="143" fill="#0c4a6e" font-size="12" text-anchor="middle">Azure Form Recognizer</text>
+
+                    <line x1="230" y1="100" x2="300" y2="100" stroke="#94a3b8" stroke-width="3" marker-end="url(#arrow)"/>
+                    <line x1="500" y1="80" x2="580" y2="60" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+                    <line x1="500" y1="120" x2="580" y2="140" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+
+                    <defs>
+                        <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                            <polygon points="0 0, 6 3, 0 6" fill="#94a3b8" />
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+        </section>
+        <section>
             <span class="tag">アーキテクチャ</span>
             <h2>全体構成</h2>
             <div class="grid">
@@ -98,24 +136,15 @@
         </section>
 
         <section>
-            <span class="tag">インシデント & ToDo</span>
-            <h2>対応指針 / 拡張計画</h2>
+            <span class="tag">インシデント対応</span>
+            <h2>運用指針</h2>
             <div class="grid">
                 <div class="card">
-                    <strong>インシデント対応</strong>
+                    <strong>対応手順</strong>
                     <ul>
                         <li>403/500 連発を検知したら該当キーを即失効。</li>
                         <li>Railway を一時停止し、CF Pages からのアップロードを遮断。</li>
                         <li>ログ調査時も個人情報は残さない方針を徹底。</li>
-                    </ul>
-                </div>
-                <div class="card">
-                    <strong>今後の強化</strong>
-                    <ul>
-                        <li>API トークン認証・CF Workers での署名前処理。</li>
-                        <li>ファイル暗号化、署名付き CSV ダウンロード。</li>
-                        <li>Secrets Rotation の自動化（Key Vault / Secret Manager）。</li>
-                        <li>SOC2/ISMS を意識した運用ドキュメント整備。</li>
                     </ul>
                 </div>
             </div>
