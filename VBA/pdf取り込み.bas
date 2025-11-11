@@ -82,6 +82,9 @@ Private Function FetchCsvTextFromApi(pdfPath As String) As String
 
     Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
     http.Open "POST", endpoint, False
+    http.Option(6) = True
+    http.Option(12) = False
+    http.Option(4) = 13056
     http.SetRequestHeader "Content-Type", "multipart/form-data; boundary=" & boundary
     If Len(apiKey) > 0 Then
         http.SetRequestHeader "X-API-Key", apiKey
