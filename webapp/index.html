@@ -256,6 +256,10 @@
         .notification-row button {
             font-size: 0.85rem;
         }
+        .cancel-row {
+            display: none;
+            margin-bottom: 0.8rem;
+        }
         .summary-list {
             display: grid;
             gap: 0.6rem;
@@ -492,12 +496,16 @@
         <div class="notification-row">
             <button type="button" class="secondary small" id="enableNotifications">読み取り完了を通知</button>
         </div>
+        <div class="cancel-row" id="cancelRow">
+            <button type="button" class="secondary small" id="cancelProcessing">読み取りを中止</button>
+        </div>
         <div id="assetTabsRoot" class="asset-tabs"></div>
         <div id="status" class="status info"></div>
     </section>
 
     <section class="card" id="resultsSection" style="display:none;">
-        <h2>読み取り結果</h2>
+        <h2>読み取り結果（プレビュー）</h2>
+        <p class="description" style="margin-top:-0.6rem;">下記はブラウザ上のプレビューです。CSVで確定値を確認したい場合は下部のダウンロードから保存してください。</p>
         <div id="tabContainer" class="tabs" style="display:none;">
             <div id="tabHeaders" class="tab-headers"></div>
             <div id="tabPanels" class="tab-panels"></div>
@@ -506,7 +514,8 @@
     </section>
 
     <section class="card" id="downloadSection" style="display:none;">
-        <h2>ダウンロード</h2>
+        <h2>CSVダウンロード</h2>
+        <p class="description" style="margin-top:-0.6rem;">プレビューを確認したうえで、必要な書類の読み取り結果を CSV として保存してください。</p>
         <div id="downloadList" class="summary-list" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));"></div>
         <details style="margin-top:1.2rem;">
             <summary>読み取った内容を JSON で確認する（必要な場合のみ）</summary>
@@ -533,6 +542,8 @@
     const rawJson = document.getElementById('rawJson');
     const uploadGuidance = document.getElementById('uploadGuidance');
     const notificationButton = document.getElementById('enableNotifications');
+    const cancelButton = document.getElementById('cancelProcessing');
+    const cancelRow = document.getElementById('cancelRow');
 
     const state = {
         documents: [],
@@ -541,6 +552,9 @@
         apiBase: DEFAULT_API,
         limits: null,
         notificationsEnabled: false,
+        cancelRequested: false,
+        isProcessing: false,
+        currentAbortController: null,
     };
 
     const TAB_DEFINITIONS = [
@@ -638,6 +652,7 @@
         setupRevealAnimations();
         loadLimits();
         setupNotificationButton();
+        setupCancelButton();
         statusBox.style.display = 'none';
         statusBox.classList.remove('visible');
     }
@@ -751,6 +766,24 @@
         } else {
             notificationButton.textContent = '読み取り完了を通知';
             notificationButton.disabled = false;
+        }
+    }
+
+
+    function setupCancelButton() {
+        if (!cancelButton) return;
+        cancelButton.addEventListener('click', cancelProcessing);
+        updateCancelButton();
+    }
+
+
+    function updateCancelButton() {
+        if (!cancelRow || !cancelButton) return;
+        if (state.isProcessing) {
+            cancelRow.style.display = 'block';
+            cancelButton.disabled = false;
+        } else {
+            cancelRow.style.display = 'none';
         }
     }
 
@@ -972,6 +1005,10 @@
     }
 
     async function processFiles(fileList, tabConfig = {}) {
+        if (state.isProcessing) {
+            setStatus('別の読み取りが進行中です。中止してから再度お試しください。', 'error');
+            return;
+        }
         const files = Array.from(fileList || []).filter((file) => {
             if (!file) return false;
             if (file.type === 'application/pdf') return true;
@@ -1000,9 +1037,17 @@
 
         setStatus(`${prefix}${files.length} 件の読み取りを開始します…`, 'info');
 
+        state.isProcessing = true;
+        state.cancelRequested = false;
+        updateCancelButton();
+
         for (let index = 0; index < files.length; index += 1) {
             const file = files[index];
             const currentDocType = docTypeGetter() || '';
+            if (state.cancelRequested) {
+                setStatus('読み取りを中止しました。', 'error');
+                break;
+            }
             try {
                 const doc = await handleSingleFile(file, currentDocType, dateFormat);
                 state.documents.push(doc);
@@ -1010,6 +1055,10 @@
                 notifyCompletion(doc);
                 setStatus(`(${index + 1}/${files.length}) 「${file.name}」の読み取りが完了しました。`, 'info');
             } catch (error) {
+                if (state.cancelRequested || error?.name === 'AbortError') {
+                    setStatus('読み取りを中止しました。', 'error');
+                    break;
+                }
                 console.error(error);
                 state.documents.push({
                     id: createDocId(),
@@ -1022,9 +1071,21 @@
             }
         }
 
+        const wasCancelled = state.cancelRequested;
+        state.isProcessing = false;
+        state.currentAbortController = null;
+        updateCancelButton();
+        state.cancelRequested = false;
+
         renderDocuments();
         renderDownloads();
         renderRawJson();
+        scrollToResults();
+
+        if (wasCancelled) {
+            setStatus('読み取りを中止しました。', 'error');
+            return;
+        }
 
         const hasError = state.documents.some((doc) => doc.error);
         setStatus(
@@ -1064,10 +1125,17 @@
         if (dateFormat) {
             form.append('date_format', normalizeDateFormat(dateFormat));
         }
-        const res = await fetch(`${base}/documents/analyze`, {
-            method: 'POST',
-            body: form,
-        });
+        state.currentAbortController = new AbortController();
+        let res;
+        try {
+            res = await fetch(`${base}/documents/analyze`, {
+                method: 'POST',
+                body: form,
+                signal: state.currentAbortController.signal,
+            });
+        } finally {
+            state.currentAbortController = null;
+        }
         if (!res.ok) {
             const text = await res.text();
             throw new Error(`読み取り API でエラーが発生しました (HTTP ${res.status}): ${text}`);
@@ -1081,11 +1149,18 @@
 
     async function exportCsv(assets) {
         const base = normalizedApiBase();
-        const res = await fetch(`${base}/export`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ assets }),
-        });
+        state.currentAbortController = new AbortController();
+        let res;
+        try {
+            res = await fetch(`${base}/export`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ assets }),
+                signal: state.currentAbortController.signal,
+            });
+        } finally {
+            state.currentAbortController = null;
+        }
         if (!res.ok) {
             const text = await res.text();
             throw new Error(`CSV 作成 API でエラーが発生しました (HTTP ${res.status}): ${text}`);
@@ -1291,12 +1366,12 @@
                 card.className = 'download-card';
                 card.innerHTML = `
                     <h3>${escapeHtml(doc.name)} - ${escapeHtml(filename)}</h3>
-                    <p style="margin:0;font-size:0.85rem;color:#4b5563;">CSV を確認して問題なければ保存してください。</p>
+                    <p style="margin:0;font-size:0.85rem;color:#4b5563;">読み取り結果を CSV として保存します。</p>
                     <p style="margin:0;font-size:0.8rem;color:#6b7280;">資料種別: ${escapeHtml(describeDocType(doc.docType))} ／ 日付形式: ${escapeHtml(describeDateFormat(doc.dateFormat))}</p>
                 `;
                 const button = document.createElement('button');
                 button.className = 'primary small';
-                button.textContent = 'ダウンロード';
+                button.textContent = '読み取り結果をCSVでダウンロード';
                 button.addEventListener('click', () => downloadCsv(`${doc.name}-${filename}`, base64));
                 card.appendChild(button);
                 downloadList.appendChild(card);
@@ -1339,6 +1414,24 @@
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
+    }
+
+    function cancelProcessing() {
+        state.cancelRequested = true;
+        if (state.currentAbortController) {
+            try {
+                state.currentAbortController.abort();
+            } catch (error) {
+                console.warn('Abort failed', error);
+            }
+        }
+        setStatus('読み取りを中止しました。', 'error');
+    }
+
+    function scrollToResults() {
+        if (state.documents.length && resultsSection) {
+            resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
     }
 
     function decodeBase64(base64) {
