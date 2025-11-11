@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <title>SOROBOCR セキュリティ概要</title>
+    <style>
+        body { font-family: "Segoe UI", "Hiragino Sans", sans-serif; margin: 0; padding: 0; background: #f7f9fc; color: #1f2937; }
+        header { background: linear-gradient(135deg, #0b1433, #102d6a); color: #fff; padding: 2.4rem 3rem; }
+        h1 { margin: 0 0 0.5rem; font-size: 2.2rem; }
+        main { padding: 2rem 3rem; display: grid; gap: 1.5rem; }
+        section { background: #fff; border-radius: 16px; padding: 1.5rem 1.8rem; box-shadow: 0 18px 40px rgba(15, 23, 42, 0.15); border: 1px solid rgba(59, 130, 246, 0.15); }
+        h2 { margin-top: 0; color: #0f172a; }
+        ul { padding-left: 1.2rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+        .card { background: #f8fafc; border-radius: 12px; padding: 1rem 1.2rem; border: 1px solid rgba(15, 23, 42, 0.08); }
+        table { width: 100%; border-collapse: collapse; margin-top: 0.6rem; }
+        th, td { border: 1px solid #dbeafe; padding: 0.6rem 0.8rem; text-align: left; }
+        th { background: #2563eb; color: #fff; }
+        .tag { display: inline-block; padding: 0.2rem 0.85rem; border-radius: 999px; font-size: 0.8rem; background: rgba(16, 45, 106, 0.1); color: #0f2d6a; margin-bottom: 0.4rem; }
+        .footnote { font-size: 0.9rem; color: #475569; margin-top: 1rem; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>SOROBOCR セキュリティ概要</h1>
+        <p>Cloudflare Pages × Railway × Gemini/Azure による構成と保護戦略</p>
+    </header>
+    <main>
+        <section>
+            <span class="tag">アーキテクチャ</span>
+            <h2>全体構成</h2>
+            <div class="grid">
+                <div class="card">
+                    <strong>フロントエンド</strong>
+                    <p>Cloudflare Pages の SPA。PDF をローカルで分割しつつ Railway API へ直接 POST。JS側で通知やキャンセルも完結。</p>
+                </div>
+                <div class="card">
+                    <strong>API層</strong>
+                    <p>Railway 上の FastAPI。PDFをチャンク分割 → Gemini/Azure へ送信 → 結果を統合して CSV 化。永続ストレージは未使用。</p>
+                </div>
+                <div class="card">
+                    <strong>外部 AI</strong>
+                    <p>Azure Form Recognizer: テーブル解析の一次ソース。<br>Google Gemini: 補強と再解釈（複数キーの自動ローテーション）。</p>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <span class="tag">データフロー</span>
+            <h2>処理の流れ</h2>
+            <ol>
+                <li>ユーザーが Cloudflare Pages の UI で PDF を選択。</li>
+                <li>`fetch` 経由で Railway `/api/documents/analyze` へ TLS POST（CORS 制御）。</li>
+                <li>FastAPI が PDF を 1 ページ ≤ 6MB に分割 → Gemini/Azure へ HTTPS 呼び出し。</li>
+                <li>抽出結果をマージし CSV 文字列を生成、Base64 でフロントへ返却。</li>
+                <li>ブラウザはプレビュー表示＋CSVダウンロード。サーバーには PDF/結果を保存しない。</li>
+            </ol>
+        </section>
+
+        <section>
+            <span class="tag">秘密情報とログ</span>
+            <h2>キー管理・ログポリシー</h2>
+            <ul>
+                <li>`.env` と Railway Secrets で Azure / Gemini キーを管理。Git には含めない。</li>
+                <li>Gemini は複数キー対応：403（leaked 等）検出時に自動フェイルオーバー。</li>
+                <li>ログ (`.venv/logs/*.log`) にはステータス/例外のみ。PDF 内容や個人情報は出力しない。</li>
+                <li>AbortController を利用し、キャンセル時は即座に API 呼び出しを停止。</li>
+            </ul>
+        </section>
+
+        <section>
+            <span class="tag">実装済み対策</span>
+            <h2>セキュリティ制御</h2>
+            <ul>
+                <li>入力制限: PDF のみ受け付け、1ページ 6MB 超は 413 で拒否。</li>
+                <li>通信: すべて HTTPS。Gemini/Azure 以外には送信しない（SSRF 低リスク）。</li>
+                <li>CORS: 開発中は `*`、本番では Cloudflare Pages ドメインに限定予定。</li>
+                <li>XSS: プレビュー表示は `escapeHtml()` でサニタイズ。</li>
+                <li>永続保存なし: レスポンス後はサーバー上にファイルを残さない運用。</li>
+            </ul>
+        </section>
+
+        <section>
+            <span class="tag">リスク & 推奨</span>
+            <h2>既知リスクと今後のアクション</h2>
+            <table>
+                <thead>
+                    <tr><th>項目</th><th>現状</th><th>推奨策</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>認証 / 認可</td><td>API はオープン（社内 PoC 想定）</td><td>CF Pages ↔ Railway を IP 制限＋API Key/OAuth 化</td></tr>
+                    <tr><td>CORS</td><td>`allow_origins=["*"]`</td><td>本番では CF Pages ドメインに限定</td></tr>
+                    <tr><td>マルウェア対策</td><td>OCR専用前提で未実装</td><td>AV スキャンやサンドボックスを追加</td></tr>
+                    <tr><td>監査ログ</td><td>API/システムログのみ</td><td>ユーザー操作ログ（誰が何を処理したか）を記録</td></tr>
+                    <tr><td>データ保持</td><td>メモリのみ</td><td>「保存しない」旨を運用手順に明記</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <span class="tag">インシデント & ToDo</span>
+            <h2>対応指針 / 拡張計画</h2>
+            <div class="grid">
+                <div class="card">
+                    <strong>インシデント対応</strong>
+                    <ul>
+                        <li>403/500 連発を検知したら該当キーを即失効。</li>
+                        <li>Railway を一時停止し、CF Pages からのアップロードを遮断。</li>
+                        <li>ログ調査時も個人情報は残さない方針を徹底。</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <strong>今後の強化</strong>
+                    <ul>
+                        <li>API トークン認証・CF Workers での署名前処理。</li>
+                        <li>ファイル暗号化、署名付き CSV ダウンロード。</li>
+                        <li>Secrets Rotation の自動化（Key Vault / Secret Manager）。</li>
+                        <li>SOC2/ISMS を意識した運用ドキュメント整備。</li>
+                    </ul>
+                </div>
+            </div>
+            <p class="footnote">本資料をベースに、構成図や詳細設定を添えてセキュリティ顧問へ説明してください。</p>
+        </section>
+    </main>
+</body>
+</html>
