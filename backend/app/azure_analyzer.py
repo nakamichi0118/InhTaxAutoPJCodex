@@ -543,9 +543,16 @@ def _merge_parts(parts: Optional[List[Optional[str]]]) -> Optional[str]:
 def _build_transaction(values: Dict[str, List[Optional[str]]], *, date_format: str) -> Optional[TransactionLine]:
     date_text = _merge_parts(values.get("transaction_date"))
     description = _clean_text(_merge_parts(values.get("description")))
-    withdrawal = _parse_amount(_merge_parts(values.get("withdrawal")))
-    deposit = _parse_amount(_merge_parts(values.get("deposit")))
-    balance = _parse_amount(_merge_parts(values.get("balance")))
+    withdrawal_text = _merge_parts(values.get("withdrawal"))
+    deposit_text = _merge_parts(values.get("deposit"))
+    balance_text = _merge_parts(values.get("balance"))
+
+    if not date_text and any(_looks_like_annotation(text) for text in (withdrawal_text, deposit_text)):
+        return None
+
+    withdrawal = _parse_amount(withdrawal_text)
+    deposit = _parse_amount(deposit_text)
+    balance = _parse_amount(balance_text)
 
     if not any([date_text, description, withdrawal, deposit, balance]):
         return None
@@ -576,6 +583,13 @@ def _clean_description(text: Optional[str]) -> str:
     for target, replacement in DESCRIPTION_CLEANUPS:
         cleaned = cleaned.replace(target, replacement)
     return cleaned.strip()
+
+
+def _looks_like_annotation(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    stripped = text.strip()
+    return "(" in stripped or ")" in stripped or stripped.startswith("(") or stripped.endswith(")")
 
 
 def _is_numeric_token(token: str) -> bool:
