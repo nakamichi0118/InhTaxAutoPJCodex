@@ -178,6 +178,23 @@ def ping() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/meta/limits")
+def get_limits() -> Dict[str, Any]:
+    settings = get_settings()
+    return {
+        "azure": {
+            "chunk_max_mb": round(settings.azure_chunk_max_bytes / (1024 * 1024), 2),
+            "chunk_max_bytes": settings.azure_chunk_max_bytes,
+            "chunk_max_pages": 1,
+        },
+        "gemini": {
+            "document_max_mb": round(settings.gemini_max_document_bytes / (1024 * 1024), 2),
+            "document_max_bytes": settings.gemini_max_document_bytes,
+            "chunk_page_limit": settings.gemini_chunk_page_limit,
+        },
+    }
+
+
 @app.post("/api/export")
 async def export_csv(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:

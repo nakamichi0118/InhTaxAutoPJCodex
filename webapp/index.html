@@ -243,6 +243,19 @@
         .status.info { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
         .status.success { background: #ecfdf5; color: #047857; border: 1px solid #6ee7b7; }
         .status.error { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        .guidance-text {
+            margin: 0.2rem 0 0.8rem;
+            font-size: 0.85rem;
+            color: #1f3b8c;
+        }
+        .notification-row {
+            display: flex;
+            justify-content: flex-start;
+            margin-bottom: 0.8rem;
+        }
+        .notification-row button {
+            font-size: 0.85rem;
+        }
         .summary-list {
             display: grid;
             gap: 0.6rem;
@@ -475,6 +488,10 @@
     <section class="card" id="uploadSection">
         <h2>書類をアップロード</h2>
         <p class="description">対象の財産タブを選択し、PDF をアップロードしてください。取引履歴タブでは日付形式を指定できます。</p>
+        <p class="guidance-text" id="uploadGuidance">読み取り可能サイズを確認しています…</p>
+        <div class="notification-row">
+            <button type="button" class="secondary small" id="enableNotifications">読み取り完了を通知</button>
+        </div>
         <div id="assetTabsRoot" class="asset-tabs"></div>
         <div id="status" class="status info"></div>
     </section>
@@ -514,12 +531,16 @@
     const downloadSection = document.getElementById('downloadSection');
     const downloadList = document.getElementById('downloadList');
     const rawJson = document.getElementById('rawJson');
+    const uploadGuidance = document.getElementById('uploadGuidance');
+    const notificationButton = document.getElementById('enableNotifications');
 
     const state = {
         documents: [],
         activeDocId: null,
         activeAssetTabId: null,
         apiBase: DEFAULT_API,
+        limits: null,
+        notificationsEnabled: false,
     };
 
     const TAB_DEFINITIONS = [
@@ -615,6 +636,8 @@
         state.activeAssetTabId = defaultTab ? defaultTab.id : null;
         renderAssetTabs();
         setupRevealAnimations();
+        loadLimits();
+        setupNotificationButton();
         statusBox.style.display = 'none';
         statusBox.classList.remove('visible');
     }
@@ -633,6 +656,102 @@
                 element.classList.remove('pre-reveal');
             }, 140 * index + 220);
         });
+    }
+
+
+    async function loadLimits() {
+        try {
+            const res = await fetch(`${normalizedApiBase()}/meta/limits`);
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            const data = await res.json();
+            state.limits = data;
+            updateUploadGuidance();
+            renderAssetTabs();
+        } catch (error) {
+            console.warn('Failed to load limits', error);
+            updateUploadGuidance(true);
+        }
+    }
+
+
+    function updateUploadGuidance(fallback = false) {
+        if (!uploadGuidance) return;
+        if (fallback) {
+            uploadGuidance.textContent =
+                'サイズ上限を取得できませんでした。通常は1ページあたり約6MBまでのPDFに対応しています。';
+            return;
+        }
+        const limitMb = state.limits?.azure?.chunk_max_mb;
+        if (limitMb) {
+            uploadGuidance.textContent = `1ページあたり最大 ${limitMb}MB までのPDFを読み取れます。これを超える場合はPDFを分割・圧縮してください。`;
+        } else {
+            uploadGuidance.textContent = '読み取り可能サイズを確認しています…';
+        }
+    }
+
+
+    function setupNotificationButton() {
+        if (!notificationButton) {
+            return;
+        }
+        if (!('Notification' in window)) {
+            notificationButton.style.display = 'none';
+            return;
+        }
+        notificationButton.addEventListener('click', handleNotificationRequest);
+        updateNotificationButton();
+    }
+
+
+    async function handleNotificationRequest() {
+        const granted = await ensureNotificationPermission();
+        state.notificationsEnabled = granted;
+        updateNotificationButton();
+        if (granted) {
+            setStatus('次回以降、読み取り完了時に通知を表示します。', 'success');
+        } else if (Notification.permission === 'denied') {
+            setStatus('通知はブラウザ設定で拒否されています。', 'error');
+        } else {
+            setStatus('通知の許可が得られませんでした。', 'error');
+        }
+    }
+
+
+    async function ensureNotificationPermission() {
+        if (!('Notification' in window)) {
+            return false;
+        }
+        if (Notification.permission === 'granted') {
+            return true;
+        }
+        if (Notification.permission === 'denied') {
+            return false;
+        }
+        try {
+            const result = await Notification.requestPermission();
+            return result === 'granted';
+        } catch (error) {
+            console.warn('Notification permission request failed', error);
+            return false;
+        }
+    }
+
+
+    function updateNotificationButton() {
+        if (!notificationButton || !('Notification' in window)) return;
+        const permission = Notification.permission;
+        if (permission === 'granted') {
+            notificationButton.textContent = '通知は有効です';
+            notificationButton.disabled = true;
+        } else if (permission === 'denied') {
+            notificationButton.textContent = '通知はブラウザ設定で無効化されています';
+            notificationButton.disabled = true;
+        } else {
+            notificationButton.textContent = '読み取り完了を通知';
+            notificationButton.disabled = false;
+        }
     }
 
 
@@ -782,7 +901,7 @@
 
                 function updateDropCopy() {
                     const labelText = describeDocType(selectedDocType);
-                    dropMessage.textContent = `${labelText}の書類を読み取ります。`;
+                    dropMessage.textContent = buildDropMessage(labelText);
                 }
                 updateDropCopy();
 
@@ -888,6 +1007,7 @@
                 const doc = await handleSingleFile(file, currentDocType, dateFormat);
                 state.documents.push(doc);
                 state.activeDocId = doc.id;
+                notifyCompletion(doc);
                 setStatus(`(${index + 1}/${files.length}) 「${file.name}」の読み取りが完了しました。`, 'info');
             } catch (error) {
                 console.error(error);
@@ -1234,6 +1354,24 @@
         return text;
     }
 
+    function notifyCompletion(doc) {
+        if (!('Notification' in window)) {
+            return;
+        }
+        if (Notification.permission !== 'granted') {
+            return;
+        }
+        const transactionCount = doc.assets?.[0]?.transactions?.length || 0;
+        const body = transactionCount
+            ? `${doc.name} の読み取りが完了しました（取引 ${transactionCount} 件）`
+            : `${doc.name} の読み取りが完了しました。`;
+        try {
+            new Notification('SOROBOCR 読み取り完了', { body });
+        } catch (error) {
+            console.warn('Failed to display notification', error);
+        }
+    }
+
     function setStatus(message, type) {
         statusBox.textContent = message;
         statusBox.className = type ? `status ${type}` : 'status';
@@ -1252,6 +1390,14 @@
     function describeDocType(value) {
         if (!value) return DOC_TYPE_LABELS[''];
         return DOC_TYPE_LABELS[value] || value;
+    }
+
+    function buildDropMessage(labelText) {
+        const limitMb = state.limits?.azure?.chunk_max_mb;
+        if (limitMb) {
+            return `${labelText}の書類を読み取ります（1ページ最大 ${limitMb}MB）`;
+        }
+        return `${labelText}の書類を読み取ります。`;
     }
 
     function describeDateFormat(value) {

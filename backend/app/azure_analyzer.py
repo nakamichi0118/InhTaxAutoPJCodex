@@ -265,13 +265,12 @@ def _merge_transactions(
     supplementary: List[TransactionLine],
 ) -> List[TransactionLine]:
     merged = list(primary)
-    existing = {_transaction_signature(txn) for txn in merged}
     for txn in supplementary:
-        signature = _transaction_signature(txn)
-        if signature in existing:
+        match_index = _find_matching_transaction_index(merged, txn)
+        if match_index is not None:
+            merged[match_index] = _combine_transactions(merged[match_index], txn)
             continue
         merged.append(txn)
-        existing.add(signature)
     merged.sort(key=_transaction_sort_key)
     return merged
 
@@ -290,6 +289,48 @@ def _transaction_sort_key(txn: TransactionLine) -> Tuple[str, float]:
     date_key = txn.transaction_date or ""
     balance_key = txn.balance if txn.balance is not None else 0.0
     return (date_key, balance_key)
+
+
+def _find_matching_transaction_index(
+    existing: List[TransactionLine],
+    candidate: TransactionLine,
+) -> Optional[int]:
+    for index, txn in enumerate(existing):
+        if _transactions_equivalent(txn, candidate):
+            return index
+    return None
+
+
+def _transactions_equivalent(lhs: TransactionLine, rhs: TransactionLine) -> bool:
+    return (
+        (lhs.transaction_date or "") == (rhs.transaction_date or "")
+        and _float_equal(lhs.withdrawal_amount, rhs.withdrawal_amount)
+        and _float_equal(lhs.deposit_amount, rhs.deposit_amount)
+        and _float_equal(lhs.balance, rhs.balance)
+    )
+
+
+def _combine_transactions(primary: TransactionLine, supplementary: TransactionLine) -> TransactionLine:
+    updates: Dict[str, Any] = {}
+    if (not primary.description) and supplementary.description:
+        updates["description"] = supplementary.description
+    if primary.withdrawal_amount is None and supplementary.withdrawal_amount is not None:
+        updates["withdrawal_amount"] = supplementary.withdrawal_amount
+    if primary.deposit_amount is None and supplementary.deposit_amount is not None:
+        updates["deposit_amount"] = supplementary.deposit_amount
+    if primary.balance is None and supplementary.balance is not None:
+        updates["balance"] = supplementary.balance
+    if not updates:
+        return primary
+    return primary.model_copy(update=updates)
+
+
+def _float_equal(lhs: Optional[float], rhs: Optional[float]) -> bool:
+    if lhs is None and rhs is None:
+        return True
+    if lhs is None or rhs is None:
+        return False
+    return abs(lhs - rhs) <= 0.01
 
 
 def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[TransactionLine]:
