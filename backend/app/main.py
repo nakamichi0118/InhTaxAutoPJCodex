@@ -73,7 +73,7 @@ def _with_pdf_chunks(
 
 
 def _analyze_with_gemini(contents: bytes, settings) -> List[str]:
-    client = GeminiClient(api_key=settings.gemini_api_key, model=settings.gemini_model)
+    client = GeminiClient(api_keys=settings.gemini_api_keys, model=settings.gemini_model)
     plan = PdfChunkingPlan(
         max_bytes=settings.gemini_max_document_bytes,
         max_pages=settings.gemini_chunk_page_limit,
