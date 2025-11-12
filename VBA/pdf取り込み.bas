@@ -104,7 +104,7 @@ Private Function FetchCsvTextFromApi(pdfPath As String, overrideDocType As Strin
     jobId = CreateAnalysisJob(normalizedBase & "/jobs", pdfPath, docType, dateFmt, apiKey)
     If Len(jobId) = 0 Then GoTo Cleanup
 
-    Application.StatusBar = "解析ジョブを開始しました: " & jobId
+    Application.StatusBar = "ファイル: " & displayName & " ｜ 解析を開始しました"
     statusUrl = normalizedBase & "/jobs/" & jobId
     resultUrl = statusUrl & "/result"
     startTime = Now

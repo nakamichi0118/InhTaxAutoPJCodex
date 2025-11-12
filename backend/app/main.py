@@ -107,7 +107,12 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_for
     try:
         chunks = chunk_pdf_by_limits(contents, plan)
     except PdfChunkingError as exc:
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
+        logger.warning(
+            "Azure chunking failed (max_bytes=%s): %s. Falling back to single-chunk upload.",
+            plan.max_bytes,
+            exc,
+        )
+        chunks = [contents]
 
     combined_lines: List[str] = []
     combined_transactions: List[Any] = []
