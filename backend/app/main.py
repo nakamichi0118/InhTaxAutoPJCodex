@@ -113,6 +113,15 @@ def _build_gemini_transaction_result(
     return AzureAnalysisResult(raw_lines=lines, assets=[asset])
 
 
+def _finalize_assets(
+    assets: List[AssetRecord],
+    progress_callback: Optional[Callable[[str, str], None]] = None,
+) -> List[AssetRecord]:
+    if not assets:
+        return assets
+    return _refine_assets(assets, progress_callback)
+
+
 def _refine_assets(
     assets: List[AssetRecord],
     progress_callback: Optional[Callable[[str, str], None]] = None,
@@ -269,7 +278,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         def progress(stage: str, detail: str) -> None:
             handle.update(stage=stage, detail=detail)
 
-        assets = _refine_assets(assets, progress)
+        assets = _finalize_assets(assets, progress)
     handle.update(stage="exporting", detail="CSV 生成中")
     payload = {"assets": [asset.to_export_payload() for asset in assets]}
     csv_map = export_to_csv_strings(payload)
@@ -358,6 +367,7 @@ async def analyze_document(
         settings,
         source_name,
     )
+    assets = _finalize_assets(assets)
     return DocumentAnalyzeResponse(
         status="ok",
         document_type=doc_type,
@@ -387,6 +397,7 @@ async def analyze_document_and_export(
         settings,
         source_name,
     )
+    assets = _finalize_assets(assets)
     payload = {"assets": [asset.to_export_payload() for asset in assets]}
     csv_map = export_to_csv_strings(payload)
     encoded = {
