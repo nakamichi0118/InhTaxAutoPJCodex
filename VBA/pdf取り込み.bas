@@ -6,19 +6,19 @@ Option Explicit
     Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
 #End If
 
-'====================================================================================
-' PDF 直接取り込みモジュール
-'
-' ・隠しシート「設定」の A 列にキー、B 列に値を格納しておくこと。
-'   例) A1=BASE_URL, B1=https://inhtaxautopjcodex-production.up.railway.app/api
-'       A2=API_KEY,   B2= (必要なら任意のキー。未使用なら空欄で可)
-' ・Cloudflare Pages 経由/ Railway 直割りどちらでも BASE_URL で切り替え可能。
-' ・参照設定は不要。(WinHTTP/ADODB/DOMDocument は Late Binding)
-'
-' ※既存の CSV 取り込みロジック (GetMinimumAmount, ImportDataToExcel など) を流用。
-'====================================================================================
-
 Sub PDF取込ボタン_Click()
+    RunPdfImportWorkflow ""
+End Sub
+
+Sub 取引履歴取込ボタン_Click()
+    RunPdfImportWorkflow "transaction_history"
+End Sub
+
+Sub 通帳取込ボタン_Click()
+    RunPdfImportWorkflow "bank_deposit"
+End Sub
+
+Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim ws As Worksheet
     Dim buttonCol As Long
     Dim pdfPath As String
@@ -35,7 +35,7 @@ Sub PDF取込ボタン_Click()
     minAmount = GetMinimumAmount()
     If minAmount = -1 Then Exit Sub
 
-    csvText = FetchCsvTextFromApi(pdfPath)
+    csvText = FetchCsvTextFromApi(pdfPath, targetDocType)
     If Len(csvText) = 0 Then
         MsgBox "PDF の読み取りに失敗しました。設定値とネットワークを確認してください。", vbExclamation
         Exit Sub
@@ -68,7 +68,7 @@ Private Function SelectPdfFile() As String
     Set fd = Nothing
 End Function
 
-Private Function FetchCsvTextFromApi(pdfPath As String) As String
+Private Function FetchCsvTextFromApi(pdfPath As String, overrideDocType As String) As String
     On Error GoTo ErrHandler
     Dim baseUrl As String
     Dim apiKey As String
@@ -91,7 +91,8 @@ Private Function FetchCsvTextFromApi(pdfPath As String) As String
 
     baseUrl = GetConfigValue("BASE_URL")
     apiKey = GetConfigValue("API_KEY")
-    docType = GetOptionalConfigValue("DOC_TYPE", "transaction_history")
+    docType = ResolveDocumentType(overrideDocType)
+    If Len(docType) = 0 Then GoTo Cleanup
     dateFmt = GetOptionalConfigValue("DATE_FORMAT", "auto")
     maxWaitSeconds = CLng(GetOptionalConfigValue("JOB_MAX_WAIT_SECONDS", "900"))
     pollIntervalMs = CLng(GetOptionalConfigValue("JOB_POLL_INTERVAL_MS", "4000"))
@@ -113,7 +114,7 @@ Private Function FetchCsvTextFromApi(pdfPath As String) As String
         jobStatusRaw = GetJsonStringValue(statusJson, "status")
         jobStatus = LCase$(jobStatusRaw)
         stage = GetJsonStringValue(statusJson, "stage")
-        detail = GetJsonStringValue(statusJson, "detail")
+        detail = NormalizeDetailText(GetJsonStringValue(statusJson, "detail"))
         UpdateJobStatusBar jobId, jobStatusRaw, stage, detail
 
         If jobStatus = "completed" Then Exit Do
@@ -156,6 +157,7 @@ Private Function CreateAnalysisJob(endpoint As String, pdfPath As String, docTyp
     Dim body() As Byte
     Dim http As Object
     Dim jobId As String
+    Dim responseText As String
 
     boundary = "----SOROBOCR" & Format(Now, "yymmddhhmmss")
     body = BuildMultipartBody(pdfPath, boundary, docType, dateFmt)
@@ -168,16 +170,17 @@ Private Function CreateAnalysisJob(endpoint As String, pdfPath As String, docTyp
         http.SetRequestHeader "X-API-Key", apiKey
     End If
     http.Send body
+    responseText = ReadUtf8Response(http)
 
     If http.Status <> 200 And http.Status <> 202 Then
         MsgBox "ジョブ作成に失敗しました: " & http.Status & " " & http.StatusText & _
-               vbCrLf & http.ResponseText, vbExclamation
+               vbCrLf & responseText, vbExclamation
         Exit Function
     End If
 
-    jobId = GetJsonStringValue(http.ResponseText, "job_id")
+    jobId = GetJsonStringValue(responseText, "job_id")
     If Len(jobId) = 0 Then
-        MsgBox "ジョブ ID を取得できませんでした。応答: " & http.ResponseText, vbExclamation
+        MsgBox "ジョブ ID を取得できませんでした。応答: " & responseText, vbExclamation
         Exit Function
     End If
 
@@ -196,6 +199,7 @@ Private Function SendJsonRequest(method As String, url As String, apiKey As Stri
     receiveTimeoutMs As Long) As String
     On Error GoTo ErrHandler
     Dim http As Object
+    Dim responseText As String
 
     Set http = CreateHttpClient(receiveTimeoutMs)
     http.Open method, url, False
@@ -204,14 +208,15 @@ Private Function SendJsonRequest(method As String, url As String, apiKey As Stri
         http.SetRequestHeader "X-API-Key", apiKey
     End If
     http.Send
+    responseText = ReadUtf8Response(http)
 
     If http.Status <> 200 Then
         MsgBox "API応答: " & http.Status & " " & http.StatusText & _
-               vbCrLf & http.ResponseText, vbExclamation
+               vbCrLf & responseText, vbExclamation
         Exit Function
     End If
 
-    SendJsonRequest = http.ResponseText
+    SendJsonRequest = responseText
     Exit Function
 
 ErrHandler:
@@ -233,15 +238,54 @@ End Function
 
 Private Sub UpdateJobStatusBar(jobId As String, jobStatus As String, stage As String, detail As String)
     Dim message As String
-    message = "ジョブ " & jobId & ": " & jobStatus
-    If Len(stage) > 0 Then
-        message = message & " / " & stage
+    Dim stageLabel As String
+    Dim statusLabel As String
+
+    statusLabel = TranslateJobStatus(jobStatus)
+    stageLabel = TranslateStage(stage)
+
+    message = "ジョブ " & jobId & ": " & statusLabel
+    If Len(stageLabel) > 0 Then
+        message = message & " / " & stageLabel
     End If
     If Len(detail) > 0 Then
         message = message & " - " & detail
     End If
     Application.StatusBar = message
 End Sub
+
+Private Function TranslateJobStatus(jobStatus As String) As String
+    Select Case LCase$(jobStatus)
+        Case "pending": TranslateJobStatus = "待機中"
+        Case "running": TranslateJobStatus = "実行中"
+        Case "completed": TranslateJobStatus = "完了"
+        Case "failed": TranslateJobStatus = "失敗"
+        Case Else: TranslateJobStatus = jobStatus
+    End Select
+End Function
+
+Private Function TranslateStage(stage As String) As String
+    Select Case LCase$(stage)
+        Case "queued": TranslateStage = "キュー投入"
+        Case "analyzing": TranslateStage = "レイアウト解析"
+        Case "exporting": TranslateStage = "CSV出力"
+        Case "completed": TranslateStage = "完了"
+        Case "failed": TranslateStage = "失敗"
+        Case Else: TranslateStage = stage
+    End Select
+End Function
+
+Private Function NormalizeDetailText(detail As String) As String
+    Dim cleaned As String
+    cleaned = Replace(detail, vbCr, " ")
+    cleaned = Replace(cleaned, vbLf, " ")
+    cleaned = Trim$(cleaned)
+    If Len(cleaned) > 80 Then
+        NormalizeDetailText = Left$(cleaned, 77) & "..."
+    Else
+        NormalizeDetailText = cleaned
+    End If
+End Function
 
 Private Function GetJsonStringValue(json As String, keyName As String) As String
     Dim token As String
@@ -272,6 +316,24 @@ Private Function ExtractJsonStringAt(json As String, startPos As Long) As String
         End If
         ExtractJsonStringAt = ExtractJsonStringAt & ch
     Next i
+End Function
+
+Private Function ReadUtf8Response(http As Object) As String
+    On Error GoTo Fallback
+    Dim stream As Object
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 1
+    stream.Open
+    stream.Write http.ResponseBody
+    stream.Position = 0
+    stream.Type = 2
+    stream.Charset = "utf-8"
+    ReadUtf8Response = stream.ReadText
+    stream.Close
+    Set stream = Nothing
+    Exit Function
+Fallback:
+    ReadUtf8Response = http.ResponseText
 End Function
 
 Private Function NormalizeBaseUrl(baseUrl As String) As String
@@ -534,4 +596,53 @@ Private Function GetOptionalConfigValue(keyName As String, defaultValue As Strin
 MissingKey:
     Err.Clear
     GetOptionalConfigValue = defaultValue
+End Function
+
+Private Function ResolveDocumentType(overrideDocType As String) As String
+    Dim defaultType As String
+    Dim dlg As DocTypeSelector
+
+    If Len(overrideDocType) > 0 Then
+        ResolveDocumentType = overrideDocType
+        Exit Function
+    End If
+
+    defaultType = GetOptionalConfigValue("DOC_TYPE", "transaction_history")
+
+    On Error GoTo Fallback
+    Set dlg = New DocTypeSelector
+    ResolveDocumentType = dlg.ShowDialog(defaultType)
+    Unload dlg
+    Set dlg = Nothing
+    Exit Function
+
+Fallback:
+    ResolveDocumentType = PromptDocTypeFallback(defaultType)
+End Function
+
+Private Function PromptDocTypeFallback(defaultType As String) As String
+    Dim prompt As String
+    Dim answer As Variant
+    Dim defaultChoice As String
+
+    defaultChoice = IIf(LCase$(defaultType) = "bank_deposit", "1", "2")
+    prompt = "どの書類を処理しますか？" & vbCrLf & _
+             "1: 通帳（預金残高）" & vbCrLf & _
+             "2: 取引履歴（入出金明細）"
+
+    Do
+        answer = Application.InputBox(prompt, "書類タイプの選択", defaultChoice, , , , , 1)
+        If answer = False Then
+            PromptDocTypeFallback = ""
+            Exit Function
+        End If
+        If answer = 1 Then
+            PromptDocTypeFallback = "bank_deposit"
+            Exit Function
+        ElseIf answer = 2 Then
+            PromptDocTypeFallback = "transaction_history"
+            Exit Function
+        End If
+        prompt = "1 か 2 を入力してください。" & vbCrLf & prompt
+    Loop
 End Function
