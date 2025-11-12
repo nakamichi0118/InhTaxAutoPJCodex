@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -10,6 +11,8 @@ from azure.core.credentials import AzureKeyCredential
 from azure.core.exceptions import HttpResponseError
 
 from .models import AssetRecord, TransactionLine
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -40,7 +43,8 @@ def post_process_transactions(transactions: List[TransactionLine]) -> List[Trans
     """Run post-processing pipeline on finalized transaction list."""
     if not transactions:
         return []
-    return _post_process_transactions(transactions)
+    normalized = _post_process_transactions(transactions)
+    return _rebalance_transactions(normalized)
 
 
 HEADER_ALIASES: Dict[str, str] = {
@@ -73,6 +77,8 @@ DESCRIPTION_CLEANUPS = (
 
 BALANCE_TOLERANCE = 1.0
 DELTA_OVERRIDE_REL_TOLERANCE = 0.02  # 2%
+BALANCE_REBALANCE_TOLERANCE = 999.0
+MAX_REBALANCE_PASSES = 10
 
 
 DEPOSIT_KEYWORDS = (
@@ -450,6 +456,70 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
             last_balance = candidate.balance
 
     return enriched
+
+
+def _rebalance_transactions(transactions: List[TransactionLine]) -> List[TransactionLine]:
+    if not transactions:
+        return transactions
+
+    working = list(transactions)
+    for pass_index in range(MAX_REBALANCE_PASSES):
+        mismatched_rows: List[int] = []
+        rebalanced: List[TransactionLine] = []
+
+        first = working[0]
+        running_balance = first.balance
+        if running_balance is None:
+            running_balance = (first.deposit_amount or 0.0) - (first.withdrawal_amount or 0.0)
+            first = first.model_copy(update={"balance": running_balance})
+        rebalanced.append(first)
+
+        for idx in range(1, len(working)):
+            txn = working[idx]
+            prev_balance = running_balance
+            withdrawal = txn.withdrawal_amount or 0.0
+            deposit = txn.deposit_amount or 0.0
+            expected_balance = prev_balance - withdrawal + deposit
+            balance_diff = None if txn.balance is None else txn.balance - expected_balance
+            needs_balance_fix = txn.balance is None or abs(balance_diff) > BALANCE_REBALANCE_TOLERANCE
+            updates: Dict[str, Any] = {}
+
+            if needs_balance_fix:
+                mismatched_rows.append(idx)
+                updates["balance"] = expected_balance
+                delta = expected_balance - prev_balance
+                if delta > BALANCE_TOLERANCE:
+                    if txn.deposit_amount is None or abs(txn.deposit_amount - delta) > BALANCE_REBALANCE_TOLERANCE:
+                        updates["deposit_amount"] = round(delta, 2)
+                        if txn.withdrawal_amount not in (None, 0.0):
+                            updates["withdrawal_amount"] = None
+                elif delta < -BALANCE_TOLERANCE:
+                    expected_withdrawal = round(abs(delta), 2)
+                    if txn.withdrawal_amount is None or abs(txn.withdrawal_amount - expected_withdrawal) > BALANCE_REBALANCE_TOLERANCE:
+                        updates["withdrawal_amount"] = expected_withdrawal
+                        if txn.deposit_amount not in (None, 0.0):
+                            updates["deposit_amount"] = None
+
+            updated_txn = txn.model_copy(update=updates) if updates else txn
+            final_withdrawal = updated_txn.withdrawal_amount or 0.0
+            final_deposit = updated_txn.deposit_amount or 0.0
+            running_balance = prev_balance - final_withdrawal + final_deposit
+            if updated_txn.balance is None or abs(updated_txn.balance - running_balance) > BALANCE_TOLERANCE:
+                updated_txn = updated_txn.model_copy(update={"balance": running_balance})
+            rebalanced.append(updated_txn)
+
+        working = rebalanced
+        if not mismatched_rows:
+            return working
+
+        if pass_index == MAX_REBALANCE_PASSES - 1:
+            logger.warning(
+                "Remaining balance mismatches after %s passes at rows: %s",
+                MAX_REBALANCE_PASSES,
+                mismatched_rows,
+            )
+
+    return working
 
 
 def _should_override_amount(current: Optional[float], expected: Optional[float]) -> bool:
