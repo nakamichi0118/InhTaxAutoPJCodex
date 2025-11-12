@@ -18,7 +18,15 @@ from .azure_analyzer import (
 from .config import get_settings
 from .exporter import export_to_csv_strings
 from .gemini import GeminiClient, GeminiError
-from .models import AssetRecord, DocumentAnalyzeResponse, DocumentType
+from .job_manager import JobHandle, JobManager, JobRecord
+from .models import (
+    AssetRecord,
+    DocumentAnalyzeResponse,
+    DocumentType,
+    JobCreateResponse,
+    JobResultResponse,
+    JobStatusResponse,
+)
 from .parser import build_assets, detect_document_type
 from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 
@@ -173,6 +181,63 @@ def _analyze_layout(contents: bytes, content_type: str) -> List[str]:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+def _resolve_document_assets(
+    contents: bytes,
+    content_type: str,
+    document_type: Optional[DocumentType],
+    date_format_normalized: str,
+    settings,
+    source_name: str,
+) -> tuple[DocumentType, List[AssetRecord], List[str]]:
+    if document_type == "transaction_history":
+        azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
+        return "transaction_history", azure_result.assets, azure_result.raw_lines
+
+    lines = _analyze_layout(contents, content_type)
+    detected_type = document_type or detect_document_type(lines)
+    if detected_type == "transaction_history":
+        azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
+        return detected_type, azure_result.assets, azure_result.raw_lines
+
+    assets = build_assets(detected_type, lines, source_name=source_name)
+    return detected_type, assets, lines
+
+
+def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
+    settings = get_settings()
+    handle.update(stage="analyzing", detail="レイアウト解析中")
+    with open(job.file_path, "rb") as stream:
+        contents = stream.read()
+    source_name = job.file_name or "uploaded.pdf"
+    doc_type, assets, _ = _resolve_document_assets(
+        contents,
+        job.content_type,
+        job.document_type_hint,
+        job.date_format,
+        settings,
+        source_name,
+    )
+    handle.update(stage="exporting", detail="CSV 生成中")
+    payload = {"assets": [asset.to_export_payload() for asset in assets]}
+    csv_map = export_to_csv_strings(payload)
+    encoded = {
+        name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
+        for name, content in csv_map.items()
+    }
+    if not encoded:
+        raise ValueError("CSV出力が空です")
+    handle.update(
+        status="completed",
+        stage="completed",
+        detail="完了",
+        document_type=doc_type,
+        result_files=encoded,
+    )
+
+
+job_manager = JobManager(_process_job_record)
+
+
 @app.get("/api/ping")
 def ping() -> Dict[str, str]:
     return {"status": "ok"}
@@ -232,32 +297,18 @@ async def analyze_document(
     date_format_normalized = (date_format or "auto").lower()
     if date_format_normalized not in {"auto", "western", "wareki"}:
         date_format_normalized = "auto"
-
-    if document_type == "transaction_history":
-        azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
-        return DocumentAnalyzeResponse(
-            status="ok",
-            document_type="transaction_history",
-            raw_lines=azure_result.raw_lines,
-            assets=azure_result.assets,
-        )
-
-    lines = _analyze_layout(contents, content_type)
-    detected_type = document_type or detect_document_type(lines)
-    if detected_type == "transaction_history":
-        azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
-        return DocumentAnalyzeResponse(
-            status="ok",
-            document_type=detected_type,
-            raw_lines=azure_result.raw_lines,
-            assets=azure_result.assets,
-        )
-
-    assets = build_assets(detected_type, lines, source_name=source_name)
+    doc_type, assets, raw_lines = _resolve_document_assets(
+        contents,
+        content_type,
+        document_type,
+        date_format_normalized,
+        settings,
+        source_name,
+    )
     return DocumentAnalyzeResponse(
         status="ok",
-        document_type=detected_type,
-        raw_lines=lines,
+        document_type=doc_type,
+        raw_lines=raw_lines,
         assets=assets,
     )
 
@@ -275,20 +326,14 @@ async def analyze_document_and_export(
     if date_format_normalized not in {"auto", "western", "wareki"}:
         date_format_normalized = "auto"
 
-    if document_type == "transaction_history":
-        azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
-        assets = azure_result.assets
-        doc_type = "transaction_history"
-    else:
-        lines = _analyze_layout(contents, content_type)
-        detected_type = document_type or detect_document_type(lines)
-        if detected_type == "transaction_history":
-            azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
-            assets = azure_result.assets
-        else:
-            assets = build_assets(detected_type, lines, source_name=source_name)
-        doc_type = detected_type
-
+    doc_type, assets, _ = _resolve_document_assets(
+        contents,
+        content_type,
+        document_type,
+        date_format_normalized,
+        settings,
+        source_name,
+    )
     payload = {"assets": [asset.to_export_payload() for asset in assets]}
     csv_map = export_to_csv_strings(payload)
     encoded = {
@@ -300,6 +345,54 @@ async def analyze_document_and_export(
         "document_type": doc_type,
         "files": encoded,
     }
+
+
+@app.post("/api/jobs", response_model=JobCreateResponse, status_code=202)
+async def enqueue_document_job(
+    file: UploadFile = File(...),
+    document_type: Optional[DocumentType] = Form(None),
+    date_format: Optional[str] = Form("auto"),
+) -> JobCreateResponse:
+    contents, content_type = await _load_file_bytes(file)
+    source_name = file.filename or "uploaded.pdf"
+    date_format_normalized = (date_format or "auto").lower()
+    if date_format_normalized not in {"auto", "western", "wareki"}:
+        date_format_normalized = "auto"
+    job = job_manager.submit(
+        contents,
+        content_type,
+        source_name,
+        document_type,
+        date_format_normalized,
+    )
+    return JobCreateResponse(status="accepted", job_id=job.job_id)
+
+
+@app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
+async def get_job_status(job_id: str) -> JobStatusResponse:
+    job = job_manager.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JobStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        stage=job.stage,
+        detail=job.detail,
+        document_type=job.document_type,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
+
+
+@app.get("/api/jobs/{job_id}/result", response_model=JobResultResponse)
+async def get_job_result(job_id: str) -> JobResultResponse:
+    job = job_manager.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "completed" or not job.result_files:
+        raise HTTPException(status_code=409, detail="Job is not completed")
+    document_type = job.document_type or "unknown"
+    return JobResultResponse(status="ok", job_id=job.job_id, document_type=document_type, files=job.result_files)
 
 
 @app.on_event("startup")

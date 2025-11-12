@@ -1,5 +1,11 @@
 Option Explicit
 
+#If VBA7 Then
+    Private Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As LongPtr)
+#Else
+    Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
+#End If
+
 '====================================================================================
 ' PDF 直接取り込みモジュール
 '
@@ -66,47 +72,206 @@ Private Function FetchCsvTextFromApi(pdfPath As String) As String
     On Error GoTo ErrHandler
     Dim baseUrl As String
     Dim apiKey As String
-    Dim endpoint As String
-    Dim boundary As String
-    Dim body() As Byte
-    Dim http As Object
-    Dim responseText As String
+    Dim docType As String
+    Dim dateFmt As String
+    Dim normalizedBase As String
+    Dim jobId As String
+    Dim statusUrl As String
+    Dim resultUrl As String
+    Dim statusJson As String
+    Dim jobStatus As String
+    Dim jobStatusRaw As String
+    Dim stage As String
+    Dim detail As String
+    Dim startTime As Date
+    Dim pollIntervalMs As Long
+    Dim maxWaitSeconds As Long
+    Dim resultJson As String
     Dim csvBase64 As String
 
     baseUrl = GetConfigValue("BASE_URL")
     apiKey = GetConfigValue("API_KEY")
-    endpoint = NormalizeBaseUrl(baseUrl) & "/documents/analyze-export"
+    docType = GetOptionalConfigValue("DOC_TYPE", "transaction_history")
+    dateFmt = GetOptionalConfigValue("DATE_FORMAT", "auto")
+    maxWaitSeconds = CLng(GetOptionalConfigValue("JOB_MAX_WAIT_SECONDS", "900"))
+    pollIntervalMs = CLng(GetOptionalConfigValue("JOB_POLL_INTERVAL_MS", "4000"))
+    If pollIntervalMs < 500 Then pollIntervalMs = 500
 
-    boundary = "----SOROBOCR" & Format(Now, "yymmddhhmmss")
-    body = BuildMultipartBody(pdfPath, boundary)
+    normalizedBase = NormalizeBaseUrl(baseUrl)
+    jobId = CreateAnalysisJob(normalizedBase & "/jobs", pdfPath, docType, dateFmt, apiKey)
+    If Len(jobId) = 0 Then GoTo Cleanup
 
-    Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
-    http.Open "POST", endpoint, False
-    http.Option(6) = True
-    http.Option(12) = False
-    http.Option(4) = 13056
-    http.SetRequestHeader "Content-Type", "multipart/form-data; boundary=" & boundary
-    If Len(apiKey) > 0 Then
-        http.SetRequestHeader "X-API-Key", apiKey
-    End If
-    http.Send body
+    Application.StatusBar = "解析ジョブを開始しました: " & jobId
+    statusUrl = normalizedBase & "/jobs/" & jobId
+    resultUrl = statusUrl & "/result"
+    startTime = Now
 
-    If http.Status <> 200 Then
-        MsgBox "API応答: " & http.Status & " " & http.StatusText, vbExclamation
-        Exit Function
-    End If
+    Do
+        statusJson = GetJobStatus(statusUrl, apiKey)
+        If Len(statusJson) = 0 Then GoTo Cleanup
 
-    responseText = http.ResponseText
-    csvBase64 = ExtractCsvBase64(responseText, "bank_transactions.csv")
-    If csvBase64 = "" Then
-        csvBase64 = ExtractFirstFileBase64(responseText)
+        jobStatusRaw = GetJsonStringValue(statusJson, "status")
+        jobStatus = LCase$(jobStatusRaw)
+        stage = GetJsonStringValue(statusJson, "stage")
+        detail = GetJsonStringValue(statusJson, "detail")
+        UpdateJobStatusBar jobId, jobStatusRaw, stage, detail
+
+        If jobStatus = "completed" Then Exit Do
+        If jobStatus = "failed" Then
+            MsgBox "解析ジョブが失敗しました: " & IIf(Len(detail) = 0, "(詳細なし)", detail), vbExclamation
+            GoTo Cleanup
+        End If
+
+        If DateDiff("s", startTime, Now) >= maxWaitSeconds Then
+            MsgBox "解析ジョブがタイムアウトしました。Web アプリをご利用ください。", vbExclamation
+            GoTo Cleanup
+        End If
+
+        Sleep pollIntervalMs
+        DoEvents
+    Loop
+
+    resultJson = GetJobResult(resultUrl, apiKey)
+    If Len(resultJson) = 0 Then GoTo Cleanup
+
+    csvBase64 = ExtractCsvBase64(resultJson, "bank_transactions.csv")
+    If Len(csvBase64) = 0 Then
+        csvBase64 = ExtractFirstFileBase64(resultJson)
     End If
     FetchCsvTextFromApi = Base64ToUtf8(csvBase64)
+
+Cleanup:
+    Application.StatusBar = False
     Exit Function
 
 ErrHandler:
     MsgBox "API 呼び出しでエラー: " & Err.Description, vbCritical
     FetchCsvTextFromApi = ""
+    Resume Cleanup
+End Function
+
+Private Function CreateAnalysisJob(endpoint As String, pdfPath As String, docType As String, _
+    dateFmt As String, apiKey As String) As String
+    Dim boundary As String
+    Dim body() As Byte
+    Dim http As Object
+    Dim jobId As String
+
+    boundary = "----SOROBOCR" & Format(Now, "yymmddhhmmss")
+    body = BuildMultipartBody(pdfPath, boundary, docType, dateFmt)
+
+    Set http = CreateHttpClient(120000)
+    http.Open "POST", endpoint, False
+    http.SetRequestHeader "Content-Type", "multipart/form-data; boundary=" & boundary
+    http.SetRequestHeader "Accept", "application/json"
+    If Len(apiKey) > 0 Then
+        http.SetRequestHeader "X-API-Key", apiKey
+    End If
+    http.Send body
+
+    If http.Status <> 200 And http.Status <> 202 Then
+        MsgBox "ジョブ作成に失敗しました: " & http.Status & " " & http.StatusText & _
+               vbCrLf & http.ResponseText, vbExclamation
+        Exit Function
+    End If
+
+    jobId = GetJsonStringValue(http.ResponseText, "job_id")
+    If Len(jobId) = 0 Then
+        MsgBox "ジョブ ID を取得できませんでした。応答: " & http.ResponseText, vbExclamation
+        Exit Function
+    End If
+
+    CreateAnalysisJob = jobId
+End Function
+
+Private Function GetJobStatus(statusUrl As String, apiKey As String) As String
+    GetJobStatus = SendJsonRequest("GET", statusUrl, apiKey, 60000)
+End Function
+
+Private Function GetJobResult(resultUrl As String, apiKey As String) As String
+    GetJobResult = SendJsonRequest("GET", resultUrl, apiKey, 180000)
+End Function
+
+Private Function SendJsonRequest(method As String, url As String, apiKey As String, _
+    receiveTimeoutMs As Long) As String
+    On Error GoTo ErrHandler
+    Dim http As Object
+
+    Set http = CreateHttpClient(receiveTimeoutMs)
+    http.Open method, url, False
+    http.SetRequestHeader "Accept", "application/json"
+    If Len(apiKey) > 0 Then
+        http.SetRequestHeader "X-API-Key", apiKey
+    End If
+    http.Send
+
+    If http.Status <> 200 Then
+        MsgBox "API応答: " & http.Status & " " & http.StatusText & _
+               vbCrLf & http.ResponseText, vbExclamation
+        Exit Function
+    End If
+
+    SendJsonRequest = http.ResponseText
+    Exit Function
+
+ErrHandler:
+    MsgBox "API 呼び出しでエラー: " & Err.Description, vbCritical
+    SendJsonRequest = ""
+End Function
+
+Private Function CreateHttpClient(receiveTimeoutMs As Long) As Object
+    Dim http As Object
+    Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
+    http.Option(6) = True
+    http.Option(12) = False
+    http.Option(4) = 13056
+    On Error Resume Next
+    http.SetTimeouts 30000, 60000, 60000, receiveTimeoutMs
+    On Error GoTo 0
+    Set CreateHttpClient = http
+End Function
+
+Private Sub UpdateJobStatusBar(jobId As String, jobStatus As String, stage As String, detail As String)
+    Dim message As String
+    message = "ジョブ " & jobId & ": " & jobStatus
+    If Len(stage) > 0 Then
+        message = message & " / " & stage
+    End If
+    If Len(detail) > 0 Then
+        message = message & " - " & detail
+    End If
+    Application.StatusBar = message
+End Sub
+
+Private Function GetJsonStringValue(json As String, keyName As String) As String
+    Dim token As String
+    Dim startPos As Long
+
+    token = """" & keyName & """:"
+    startPos = InStr(1, json, token, vbTextCompare)
+    If startPos = 0 Then Exit Function
+    startPos = startPos + Len(token)
+    Do While startPos <= Len(json) And Mid$(json, startPos, 1) = " "
+        startPos = startPos + 1
+    Loop
+    If startPos > Len(json) Then Exit Function
+    If Mid$(json, startPos, 1) <> """" Then Exit Function
+    startPos = startPos + 1
+
+    GetJsonStringValue = ExtractJsonStringAt(json, startPos)
+End Function
+
+Private Function ExtractJsonStringAt(json As String, startPos As Long) As String
+    Dim i As Long
+    Dim ch As String
+    For i = startPos To Len(json)
+        ch = Mid$(json, i, 1)
+        If ch = """" Then
+            If i = startPos Then Exit For
+            If Mid$(json, i - 1, 1) <> "\" Then Exit For
+        End If
+        ExtractJsonStringAt = ExtractJsonStringAt & ch
+    Next i
 End Function
 
 Private Function NormalizeBaseUrl(baseUrl As String) As String
@@ -116,33 +281,48 @@ Private Function NormalizeBaseUrl(baseUrl As String) As String
     NormalizeBaseUrl = tmp
 End Function
 
-Private Function BuildMultipartBody(pdfPath As String, boundary As String) As Byte()
+Private Function BuildMultipartBody(pdfPath As String, boundary As String, _
+    Optional docType As String = "", Optional dateFmt As String = "") As Byte()
     Dim fileBytes() As Byte
-    Dim prefix As String
-    Dim suffix As String
     Dim fileName As String
     Dim stream As Object
 
     fileBytes = ReadBinaryFile(pdfPath)
     fileName = Mid$(pdfPath, InStrRev(pdfPath, Application.PathSeparator) + 1)
 
-    prefix = "--" & boundary & vbCrLf & _
-             "Content-Disposition: form-data; name=""file""; filename=""" & fileName & """" & vbCrLf & _
-             "Content-Type: application/pdf" & vbCrLf & vbCrLf
-
-    suffix = vbCrLf & "--" & boundary & "--" & vbCrLf
-
     Set stream = CreateObject("ADODB.Stream")
     stream.Type = 1 'binary
     stream.Open
-    stream.Write StringToBytes(prefix)
+    If Len(docType) > 0 Then
+        stream.Write StringToBytes(BuildTextPart(boundary, "document_type", docType))
+    End If
+    If Len(dateFmt) > 0 Then
+        stream.Write StringToBytes(BuildTextPart(boundary, "date_format", dateFmt))
+    End If
+    stream.Write StringToBytes(BuildFileHeader(boundary, fileName))
     stream.Write fileBytes
-    stream.Write StringToBytes(suffix)
+    stream.Write StringToBytes(BuildClosingBoundary(boundary))
 
     stream.Position = 0
     BuildMultipartBody = stream.Read
     stream.Close
     Set stream = Nothing
+End Function
+
+Private Function BuildTextPart(boundary As String, fieldName As String, fieldValue As String) As String
+    BuildTextPart = "--" & boundary & vbCrLf & _
+                    "Content-Disposition: form-data; name=""" & fieldName & """" & vbCrLf & vbCrLf & _
+                    fieldValue & vbCrLf
+End Function
+
+Private Function BuildFileHeader(boundary As String, fileName As String) As String
+    BuildFileHeader = "--" & boundary & vbCrLf & _
+                      "Content-Disposition: form-data; name=""file""; filename=""" & fileName & """" & vbCrLf & _
+                      "Content-Type: application/pdf" & vbCrLf & vbCrLf
+End Function
+
+Private Function BuildClosingBoundary(boundary As String) As String
+    BuildClosingBoundary = vbCrLf & "--" & boundary & "--" & vbCrLf
 End Function
 
 Private Function ReadBinaryFile(filePath As String) As Byte()
@@ -159,16 +339,50 @@ End Function
 
 Private Function StringToBytes(textValue As String) As Byte()
     Dim stream As Object
+    Dim raw() As Byte
+    Dim trimmed() As Byte
+    Dim i As Long
+    Dim startIndex As Long
+
     Set stream = CreateObject("ADODB.Stream")
-    stream.Type = 2 'text
+    stream.Type = 2 ' text mode
     stream.Charset = "utf-8"
     stream.Open
     stream.WriteText textValue
+
     stream.Position = 0
-    stream.Type = 1
-    StringToBytes = stream.Read
+    stream.Type = 1 ' binary
+    raw = stream.Read
     stream.Close
     Set stream = Nothing
+
+    Dim upperBound As Long
+    On Error Resume Next
+    upperBound = UBound(raw)
+    If Err.Number <> 0 Then
+        Err.Clear
+        On Error GoTo 0
+        StringToBytes = raw
+        Exit Function
+    End If
+    On Error GoTo 0
+
+    startIndex = 0
+    If upperBound >= 2 Then
+        If raw(0) = &HEF And raw(1) = &HBB And raw(2) = &HBF Then
+            startIndex = 3 ' skip BOM
+        End If
+    End If
+
+    If startIndex = 0 Then
+        StringToBytes = raw
+    Else
+        ReDim trimmed(upperBound - startIndex)
+        For i = 0 To UBound(trimmed)
+            trimmed(i) = raw(i + startIndex)
+        Next i
+        StringToBytes = trimmed
+    End If
 End Function
 
 Private Function Base64ToUtf8(base64Value As String) As String
@@ -190,43 +404,30 @@ End Function
 Private Function ExtractCsvBase64(json As String, fileName As String) As String
     Dim token As String
     Dim startPos As Long
-    Dim i As Long
-    Dim resultText As String
 
     token = """" & fileName & """:"""
     startPos = InStr(1, json, token, vbTextCompare)
     If startPos = 0 Then Exit Function
     startPos = startPos + Len(token)
 
-    For i = startPos To Len(json)
-        Dim ch As String
-        ch = Mid$(json, i, 1)
-        If ch = """" And Mid$(json, i - 1, 1) <> "\" Then Exit For
-        resultText = resultText & ch
-    Next i
-    ExtractCsvBase64 = resultText
+    ExtractCsvBase64 = ExtractJsonStringAt(json, startPos)
 End Function
 
 Private Function ExtractFirstFileBase64(json As String) As String
     Dim token As String
     Dim pos As Long
+    Dim colonPos As Long
 
     token = """files"":{"
     pos = InStr(1, json, token, vbTextCompare)
     If pos = 0 Then Exit Function
     pos = pos + Len(token)
-    pos = InStr(pos, json, """:"", vbTextCompare)
-    If pos = 0 Then Exit Function
-    pos = pos + 3
-    Dim i As Long
-    Dim resultText As String
-    For i = pos To Len(json)
-        Dim ch As String
-        ch = Mid$(json, i, 1)
-        If ch = """" And Mid$(json, i - 1, 1) <> "\" Then Exit For
-        resultText = resultText & ch
-    Next i
-    ExtractFirstFileBase64 = resultText
+
+    colonPos = InStr(pos, json, Chr$(34) & ":" & Chr$(34), vbTextCompare)
+    If colonPos = 0 Then Exit Function
+    pos = colonPos + 3
+
+    ExtractFirstFileBase64 = ExtractJsonStringAt(json, pos)
 End Function
 
 Private Function ParseCsvText(csvContent As String, minAmount As Long) As Variant
@@ -318,4 +519,19 @@ Private Function GetConfigValue(keyName As String) As String
         End If
     Next i
     Err.Raise vbObjectError + 2, , "設定シートに " & keyName & " が定義されていません。"
+End Function
+
+Private Function GetOptionalConfigValue(keyName As String, defaultValue As String) As String
+    On Error GoTo MissingKey
+    Dim value As String
+    value = GetConfigValue(keyName)
+    If Len(value) = 0 Then
+        GetOptionalConfigValue = defaultValue
+    Else
+        GetOptionalConfigValue = value
+    End If
+    Exit Function
+MissingKey:
+    Err.Clear
+    GetOptionalConfigValue = defaultValue
 End Function

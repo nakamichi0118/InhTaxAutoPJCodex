@@ -1,7 +1,7 @@
 ﻿"""Pydantic models for document processing endpoints."""
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -76,3 +76,25 @@ class DocumentAnalyzeResponse(BaseModel):
 
 class DocumentAnalyzeRequest(BaseModel):
     document_type: Optional[DocumentType] = None
+
+
+class JobCreateResponse(BaseModel):
+    status: Literal["accepted"]
+    job_id: str
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: Literal["pending", "running", "completed", "failed"]
+    stage: Optional[str] = None
+    detail: Optional[str] = None
+    document_type: Optional[DocumentType] = None
+    created_at: float
+    updated_at: float
+
+
+class JobResultResponse(BaseModel):
+    status: Literal["ok"]
+    job_id: str
+    document_type: DocumentType
+    files: Dict[str, str]
