@@ -4,6 +4,7 @@ import logging
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+import statistics
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from azure.ai.formrecognizer import DocumentAnalysisClient
@@ -466,6 +467,7 @@ def _rebalance_transactions(
 ) -> List[TransactionLine]:
     if not transactions:
         return transactions
+    transactions = _cap_unreasonable_withdrawals(transactions)
 
     def notify(stage: str, detail: str) -> None:
         if progress_callback:
@@ -596,6 +598,38 @@ def _balance_residual(actual: Optional[float], expected: float) -> float:
     if actual is None:
         return 0.0
     return float(actual) - expected
+
+
+def _cap_unreasonable_withdrawals(transactions: List[TransactionLine]) -> List[TransactionLine]:
+    withdrawals = [
+        abs(txn.withdrawal_amount)
+        for txn in transactions
+        if txn.withdrawal_amount is not None and abs(txn.withdrawal_amount) >= 1.0
+    ]
+    if not withdrawals:
+        return transactions
+    try:
+        median_value = statistics.median(withdrawals)
+    except statistics.StatisticsError:
+        median_value = max(withdrawals)
+    cap = max(500_000.0, median_value * 50)
+    scaled_transactions: List[TransactionLine] = []
+    for txn in transactions:
+        withdrawal = txn.withdrawal_amount
+        if withdrawal is None or abs(withdrawal) <= cap:
+            scaled_transactions.append(txn)
+            continue
+        adjusted = withdrawal
+        divisor = 1.0
+        while abs(adjusted) > cap and divisor < 1_000_000.0:
+            adjusted /= 10.0
+            divisor *= 10.0
+        if abs(adjusted) > cap:
+            scaled_transactions.append(txn)
+            continue
+        updates = {"withdrawal_amount": round(adjusted, 2)}
+        scaled_transactions.append(txn.model_copy(update=updates))
+    return scaled_transactions
 
 
 def _should_override_amount(current: Optional[float], expected: Optional[float]) -> bool:
