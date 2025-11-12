@@ -14,6 +14,7 @@ from .azure_analyzer import (
     build_transactions_from_lines,
     merge_transactions,
     post_process_transactions,
+    _rebalance_transactions,
 )
 from .config import get_settings
 from .exporter import export_to_csv_strings
@@ -110,6 +111,24 @@ def _build_gemini_transaction_result(
         transactions=transactions,
     )
     return AzureAnalysisResult(raw_lines=lines, assets=[asset])
+
+
+def _refine_assets(
+    assets: List[AssetRecord],
+    progress_callback: Optional[Callable[[str, str], None]] = None,
+) -> List[AssetRecord]:
+    refined: List[AssetRecord] = []
+    for asset in assets:
+        transactions = asset.transactions or []
+        if not transactions:
+            refined.append(asset)
+            continue
+        if asset.category != "bank_deposit" or asset.type != "transaction_history":
+            refined.append(asset)
+            continue
+        refined_transactions = _rebalance_transactions(transactions, progress_callback)
+        refined.append(asset.model_copy(update={"transactions": refined_transactions}))
+    return refined
 
 
 def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_format: str) -> AzureAnalysisResult:
@@ -246,6 +265,11 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         settings,
         source_name,
     )
+    if assets:
+        def progress(stage: str, detail: str) -> None:
+            handle.update(stage=stage, detail=detail)
+
+        assets = _refine_assets(assets, progress)
     handle.update(stage="exporting", detail="CSV 生成中")
     payload = {"assets": [asset.to_export_payload() for asset in assets]}
     csv_map = export_to_csv_strings(payload)

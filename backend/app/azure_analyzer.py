@@ -4,7 +4,7 @@ import logging
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
@@ -13,6 +13,9 @@ from azure.core.exceptions import HttpResponseError
 from .models import AssetRecord, TransactionLine
 
 logger = logging.getLogger(__name__)
+
+
+ProgressCallback = Callable[[str, str], None]
 
 
 @dataclass
@@ -43,8 +46,7 @@ def post_process_transactions(transactions: List[TransactionLine]) -> List[Trans
     """Run post-processing pipeline on finalized transaction list."""
     if not transactions:
         return []
-    normalized = _post_process_transactions(transactions)
-    return _rebalance_transactions(normalized)
+    return _post_process_transactions(transactions)
 
 
 HEADER_ALIASES: Dict[str, str] = {
@@ -458,9 +460,30 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
     return enriched
 
 
-def _rebalance_transactions(transactions: List[TransactionLine]) -> List[TransactionLine]:
+def _rebalance_transactions(
+    transactions: List[TransactionLine],
+    progress_callback: Optional[ProgressCallback] = None,
+) -> List[TransactionLine]:
     if not transactions:
         return transactions
+
+    def notify(stage: str, detail: str) -> None:
+        if progress_callback:
+            progress_callback(stage, detail)
+
+    expected_balances, residuals = _compute_balance_residuals(transactions)
+    if residuals:
+        mid_index = len(residuals) // 2
+        final_index = len(residuals) - 1
+        notify(
+            "balance_probe",
+            f"中間残高差 {abs(residuals[mid_index]):,.0f} 円 / 最終残高差 {abs(residuals[final_index]):,.0f} 円",
+        )
+        max_residual = max(abs(res) for res in residuals)
+        if max_residual <= BALANCE_REBALANCE_TOLERANCE:
+            notify("balance_probe", "残高チェック完了。補正は不要です。")
+            return transactions
+    notify("balance_refine", "AI補正を適用しています…")
 
     working = list(transactions)
     for pass_index in range(MAX_REBALANCE_PASSES):
@@ -510,6 +533,7 @@ def _rebalance_transactions(transactions: List[TransactionLine]) -> List[Transac
 
         working = rebalanced
         if not mismatched_rows:
+            notify("balance_refine", "AI補正が完了しました。")
             return working
 
         if pass_index == MAX_REBALANCE_PASSES - 1:
@@ -518,8 +542,40 @@ def _rebalance_transactions(transactions: List[TransactionLine]) -> List[Transac
                 MAX_REBALANCE_PASSES,
                 mismatched_rows,
             )
-
+            notify(
+                "balance_refine",
+                f"残高差が残っています。重点確認対象: {', '.join(str(row + 1) for row in mismatched_rows[:10])}",
+            )
     return working
+
+
+def _compute_balance_residuals(transactions: List[TransactionLine]) -> Tuple[List[float], List[float]]:
+    expected_balances: List[float] = []
+    residuals: List[float] = []
+    if not transactions:
+        return expected_balances, residuals
+
+    first = transactions[0]
+    running_balance = first.balance
+    if running_balance is None:
+        running_balance = (first.deposit_amount or 0.0) - (first.withdrawal_amount or 0.0)
+    expected_balances.append(running_balance)
+    residuals.append(_balance_residual(first.balance, running_balance))
+
+    for txn in transactions[1:]:
+        withdrawal = txn.withdrawal_amount or 0.0
+        deposit = txn.deposit_amount or 0.0
+        running_balance = running_balance - withdrawal + deposit
+        expected_balances.append(running_balance)
+        residuals.append(_balance_residual(txn.balance, running_balance))
+
+    return expected_balances, residuals
+
+
+def _balance_residual(actual: Optional[float], expected: float) -> float:
+    if actual is None:
+        return 0.0
+    return float(actual) - expected
 
 
 def _should_override_amount(current: Optional[float], expected: Optional[float]) -> bool:

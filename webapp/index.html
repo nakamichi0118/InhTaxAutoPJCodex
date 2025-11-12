@@ -1103,13 +1103,15 @@
     }
 
     async function handleSingleFile(file, docType, dateFormat) {
-        setStatus(`「${file.name}」を解析中です…`, 'info');
+        setStatus(`「${file.name}」のレイアウト解析を開始しました…`, 'info');
         const payload = await analyzeDocument(file, docType, dateFormat);
         const assets = Array.isArray(payload.assets) ? payload.assets : [];
         if (!assets.length) {
             throw new Error('取引情報が見つかりませんでした。');
         }
+        setStatus(`「${file.name}」のAI補正を適用しています…`, 'info');
         const csvFiles = await exportCsv(assets);
+        setStatus(`「${file.name}」の結果を整形しています…`, 'info');
         return {
             id: createDocId(),
             name: file.name,

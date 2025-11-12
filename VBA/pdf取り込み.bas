@@ -280,6 +280,8 @@ Private Function TranslateStage(stage As String) As String
     Select Case LCase$(stage)
         Case "queued": TranslateStage = "キュー投入"
         Case "analyzing": TranslateStage = "レイアウト解析"
+        Case "balance_probe": TranslateStage = "残高スキャン"
+        Case "balance_refine": TranslateStage = "AI補正"
         Case "exporting": TranslateStage = "CSV出力"
         Case "completed": TranslateStage = "完了"
         Case "failed": TranslateStage = "失敗"
@@ -291,6 +293,8 @@ Private Function StageDefaultHint(stageLabel As String) As String
     Select Case stageLabel
         Case "キュー投入": StageDefaultHint = "順番待ちです"
         Case "レイアウト解析": StageDefaultHint = "少々お待ちください"
+        Case "残高スキャン": StageDefaultHint = "中間と最終残高を確認しています"
+        Case "AI補正": StageDefaultHint = "AI 補正を適用しています"
         Case "CSV出力": StageDefaultHint = "結果を作成中です"
         Case Else: StageDefaultHint = ""
     End Select
