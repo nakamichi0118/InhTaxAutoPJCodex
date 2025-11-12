@@ -600,8 +600,6 @@ End Function
 
 Private Function ResolveDocumentType(overrideDocType As String) As String
     Dim defaultType As String
-    Dim dlg As DocTypeDialog
-
     If Len(overrideDocType) > 0 Then
         ResolveDocumentType = overrideDocType
         Exit Function
@@ -609,39 +607,32 @@ Private Function ResolveDocumentType(overrideDocType As String) As String
 
     defaultType = GetOptionalConfigValue("DOC_TYPE", "transaction_history")
 
-    On Error GoTo Fallback
-    Set dlg = New DocTypeDialog
-    ResolveDocumentType = dlg.ShowDialog(defaultType)
-    Set dlg = Nothing
-    Exit Function
-
-Fallback:
-    ResolveDocumentType = PromptDocTypeFallback(defaultType)
+    ResolveDocumentType = PromptDocTypeSelection(defaultType)
 End Function
 
-Private Function PromptDocTypeFallback(defaultType As String) As String
+Private Function PromptDocTypeSelection(defaultType As String) As String
     Dim prompt As String
-    Dim answer As Variant
-    Dim defaultChoice As String
+    Dim choice As VbMsgBoxResult
+    Dim defaultHint As String
 
-    defaultChoice = IIf(LCase$(defaultType) = "bank_deposit", "1", "2")
-    prompt = "どの書類を処理しますか？" & vbCrLf & _
-             "1: 通帳（預金残高）" & vbCrLf & _
-             "2: 取引履歴（入出金明細）"
+    defaultHint = IIf(LCase$(defaultType) = "bank_deposit", "（既定: 通帳）", "（既定: 取引履歴）")
+    prompt = "処理する書類を選択してください。" & vbCrLf & _
+             "【はい】通帳（預金残高）" & vbCrLf & _
+             "【いいえ】取引履歴（入出金明細）" & vbCrLf & _
+             defaultHint
 
     Do
-        answer = Application.InputBox(prompt, "書類タイプの選択", defaultChoice, , , , , 1)
-        If answer = False Then
-            PromptDocTypeFallback = ""
-            Exit Function
-        End If
-        If answer = 1 Then
-            PromptDocTypeFallback = "bank_deposit"
-            Exit Function
-        ElseIf answer = 2 Then
-            PromptDocTypeFallback = "transaction_history"
-            Exit Function
-        End If
-        prompt = "1 か 2 を入力してください。" & vbCrLf & prompt
+        choice = MsgBox(prompt, vbQuestion + vbYesNoCancel, "書類タイプの選択")
+        Select Case choice
+            Case vbYes
+                PromptDocTypeSelection = "bank_deposit"
+                Exit Function
+            Case vbNo
+                PromptDocTypeSelection = "transaction_history"
+                Exit Function
+            Case vbCancel
+                PromptDocTypeSelection = ""
+                Exit Function
+        End Select
     Loop
 End Function
