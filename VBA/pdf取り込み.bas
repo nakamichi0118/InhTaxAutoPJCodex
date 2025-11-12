@@ -600,7 +600,7 @@ End Function
 
 Private Function ResolveDocumentType(overrideDocType As String) As String
     Dim defaultType As String
-    Dim dlg As DocTypeSelector
+    Dim dlg As DocTypeDialog
 
     If Len(overrideDocType) > 0 Then
         ResolveDocumentType = overrideDocType
@@ -610,9 +610,8 @@ Private Function ResolveDocumentType(overrideDocType As String) As String
     defaultType = GetOptionalConfigValue("DOC_TYPE", "transaction_history")
 
     On Error GoTo Fallback
-    Set dlg = New DocTypeSelector
+    Set dlg = New DocTypeDialog
     ResolveDocumentType = dlg.ShowDialog(defaultType)
-    Unload dlg
     Set dlg = Nothing
     Exit Function
 
