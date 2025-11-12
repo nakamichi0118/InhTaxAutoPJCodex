@@ -93,6 +93,25 @@ def _analyze_with_gemini(contents: bytes, settings) -> List[str]:
     return _with_pdf_chunks(contents, plan, analyzer)
 
 
+def _build_gemini_transaction_result(
+    contents: bytes,
+    settings,
+    source_name: str,
+    *,
+    date_format: str,
+) -> AzureAnalysisResult:
+    lines = _analyze_with_gemini(contents, settings)
+    transactions = build_transactions_from_lines(lines, date_format=date_format)
+    asset = AssetRecord(
+        category="bank_deposit",
+        type="transaction_history",
+        source_document=source_name,
+        asset_name="預金取引推移表",
+        transactions=transactions,
+    )
+    return AzureAnalysisResult(raw_lines=lines, assets=[asset])
+
+
 def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_format: str) -> AzureAnalysisResult:
     if not settings.azure_form_recognizer_endpoint or not settings.azure_form_recognizer_key:
         raise HTTPException(status_code=503, detail="Azure Form Recognizer is not configured")
@@ -108,11 +127,11 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_for
         chunks = chunk_pdf_by_limits(contents, plan)
     except PdfChunkingError as exc:
         logger.warning(
-            "Azure chunking failed (max_bytes=%s): %s. Falling back to single-chunk upload.",
+            "Azure chunking failed (max_bytes=%s): %s. Falling back to Gemini-only analysis.",
             plan.max_bytes,
             exc,
         )
-        chunks = [contents]
+        return _build_gemini_transaction_result(contents, settings, source_name, date_format=date_format)
 
     combined_lines: List[str] = []
     combined_transactions: List[Any] = []
@@ -121,7 +140,12 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_for
         try:
             result = analyzer.analyze_pdf(chunk, source_name=source_name, date_format=date_format)
         except AzureAnalysisError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            message = str(exc)
+            lowered = message.lower()
+            if "out of call volume quota" in lowered or "quota" in lowered:
+                logger.warning("Azure quota exhausted; falling back to Gemini-only analysis: %s", message)
+                return _build_gemini_transaction_result(contents, settings, source_name, date_format=date_format)
+            raise HTTPException(status_code=502, detail=message) from exc
         combined_lines.extend(result.raw_lines)
         for asset in result.assets:
             combined_transactions.extend(asset.transactions)
