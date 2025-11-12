@@ -512,23 +512,43 @@ def _rebalance_transactions(
                 updates["balance"] = expected_balance
                 delta = expected_balance - prev_balance
                 if delta > BALANCE_TOLERANCE:
-                    if txn.deposit_amount is None or abs(txn.deposit_amount - delta) > BALANCE_REBALANCE_TOLERANCE:
-                        updates["deposit_amount"] = round(delta, 2)
-                        if txn.withdrawal_amount not in (None, 0.0):
-                            updates["withdrawal_amount"] = None
+                    updates["deposit_amount"] = round(delta, 2)
+                    if txn.withdrawal_amount not in (None, 0.0):
+                        updates["withdrawal_amount"] = None
                 elif delta < -BALANCE_TOLERANCE:
                     expected_withdrawal = round(abs(delta), 2)
-                    if txn.withdrawal_amount is None or abs(txn.withdrawal_amount - expected_withdrawal) > BALANCE_REBALANCE_TOLERANCE:
-                        updates["withdrawal_amount"] = expected_withdrawal
-                        if txn.deposit_amount not in (None, 0.0):
-                            updates["deposit_amount"] = None
+                    updates["withdrawal_amount"] = expected_withdrawal
+                    if txn.deposit_amount not in (None, 0.0):
+                        updates["deposit_amount"] = None
 
             updated_txn = txn.model_copy(update=updates) if updates else txn
             final_withdrawal = updated_txn.withdrawal_amount or 0.0
             final_deposit = updated_txn.deposit_amount or 0.0
             running_balance = prev_balance - final_withdrawal + final_deposit
-            if updated_txn.balance is None or abs(updated_txn.balance - running_balance) > BALANCE_TOLERANCE:
+            residual = _balance_residual(updated_txn.balance, running_balance)
+            if abs(residual) > BALANCE_REBALANCE_TOLERANCE:
                 updated_txn = updated_txn.model_copy(update={"balance": running_balance})
+                residual = 0.0
+
+            if abs(residual) > BALANCE_TOLERANCE:
+                if residual > 0 and (updated_txn.withdrawal_amount is None or updated_txn.withdrawal_amount <= 0):
+                    updates = {
+                        "withdrawal_amount": round(residual, 2),
+                        "deposit_amount": None,
+                        "balance": running_balance - residual,
+                    }
+                    updated_txn = updated_txn.model_copy(update=updates)
+                    running_balance -= residual
+                elif residual < 0 and (updated_txn.deposit_amount is None or updated_txn.deposit_amount <= 0):
+                    addition = round(abs(residual), 2)
+                    updates = {
+                        "deposit_amount": addition,
+                        "withdrawal_amount": None,
+                        "balance": running_balance + addition,
+                    }
+                    updated_txn = updated_txn.model_copy(update=updates)
+                    running_balance += addition
+
             rebalanced.append(updated_txn)
 
         working = rebalanced
