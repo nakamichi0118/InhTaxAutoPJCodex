@@ -88,6 +88,7 @@ Private Function FetchCsvTextFromApi(pdfPath As String, overrideDocType As Strin
     Dim maxWaitSeconds As Long
     Dim resultJson As String
     Dim csvBase64 As String
+    Dim displayName As String
 
     baseUrl = GetConfigValue("BASE_URL")
     apiKey = GetConfigValue("API_KEY")
@@ -99,6 +100,7 @@ Private Function FetchCsvTextFromApi(pdfPath As String, overrideDocType As Strin
     If pollIntervalMs < 500 Then pollIntervalMs = 500
 
     normalizedBase = NormalizeBaseUrl(baseUrl)
+    displayName = ExtractFileName(pdfPath)
     jobId = CreateAnalysisJob(normalizedBase & "/jobs", pdfPath, docType, dateFmt, apiKey)
     If Len(jobId) = 0 Then GoTo Cleanup
 
@@ -115,7 +117,7 @@ Private Function FetchCsvTextFromApi(pdfPath As String, overrideDocType As Strin
         jobStatus = LCase$(jobStatusRaw)
         stage = GetJsonStringValue(statusJson, "stage")
         detail = NormalizeDetailText(GetJsonStringValue(statusJson, "detail"))
-        UpdateJobStatusBar jobId, jobStatusRaw, stage, detail
+        UpdateJobStatusBar displayName, jobStatusRaw, stage, detail
 
         If jobStatus = "completed" Then Exit Do
         If jobStatus = "failed" Then
@@ -236,21 +238,31 @@ Private Function CreateHttpClient(receiveTimeoutMs As Long) As Object
     Set CreateHttpClient = http
 End Function
 
-Private Sub UpdateJobStatusBar(jobId As String, jobStatus As String, stage As String, detail As String)
+Private Sub UpdateJobStatusBar(displayName As String, jobStatus As String, stage As String, detail As String)
     Dim message As String
     Dim stageLabel As String
     Dim statusLabel As String
+    Dim hint As String
 
     statusLabel = TranslateJobStatus(jobStatus)
     stageLabel = TranslateStage(stage)
+    hint = detail
+    If Len(hint) = 0 Then
+        hint = StageDefaultHint(stageLabel)
+    End If
+    If Len(hint) = 0 Then
+        hint = "少々お待ちください..."
+    End If
 
-    message = "ジョブ " & jobId & ": " & statusLabel
+    message = "ファイル: " & displayName
     If Len(stageLabel) > 0 Then
-        message = message & " / " & stageLabel
+        message = message & " ｜ " & stageLabel
     End If
-    If Len(detail) > 0 Then
-        message = message & " - " & detail
+    If Len(statusLabel) > 0 Then
+        message = message & " (" & statusLabel & ")"
     End If
+    message = message & " - " & hint
+
     Application.StatusBar = message
 End Sub
 
@@ -272,6 +284,15 @@ Private Function TranslateStage(stage As String) As String
         Case "completed": TranslateStage = "完了"
         Case "failed": TranslateStage = "失敗"
         Case Else: TranslateStage = stage
+    End Select
+End Function
+
+Private Function StageDefaultHint(stageLabel As String) As String
+    Select Case stageLabel
+        Case "キュー投入": StageDefaultHint = "順番待ちです"
+        Case "レイアウト解析": StageDefaultHint = "少々お待ちください"
+        Case "CSV出力": StageDefaultHint = "結果を作成中です"
+        Case Else: StageDefaultHint = ""
     End Select
 End Function
 
@@ -316,6 +337,14 @@ Private Function ExtractJsonStringAt(json As String, startPos As Long) As String
         End If
         ExtractJsonStringAt = ExtractJsonStringAt & ch
     Next i
+End Function
+
+Private Function ExtractFileName(filePath As String) As String
+    On Error GoTo Fallback
+    ExtractFileName = Mid$(filePath, InStrRev(filePath, Application.PathSeparator) + 1)
+    Exit Function
+Fallback:
+    ExtractFileName = filePath
 End Function
 
 Private Function ReadUtf8Response(http As Object) As String
@@ -616,9 +645,10 @@ Private Function PromptDocTypeSelection(defaultType As String) As String
     Dim defaultHint As String
 
     defaultHint = IIf(LCase$(defaultType) = "bank_deposit", "（既定: 通帳）", "（既定: 取引履歴）")
-    prompt = "処理する書類を選択してください。" & vbCrLf & _
-             "【はい】通帳（預金残高）" & vbCrLf & _
-             "【いいえ】取引履歴（入出金明細）" & vbCrLf & _
+    prompt = "読み取るPDFは通帳ですか？" & vbCrLf & _
+             "・通帳の場合は「はい」を選択" & vbCrLf & _
+             "・取引履歴の場合は「いいえ」を選択" & vbCrLf & _
+             "・処理を中止する場合は「キャンセル」を選択" & vbCrLf & _
              defaultHint
 
     Do

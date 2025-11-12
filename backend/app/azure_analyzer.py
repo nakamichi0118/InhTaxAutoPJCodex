@@ -71,6 +71,9 @@ DESCRIPTION_CLEANUPS = (
     (":selected:", ""),
 )
 
+BALANCE_TOLERANCE = 1.0
+DELTA_OVERRIDE_REL_TOLERANCE = 0.02  # 2%
+
 
 DEPOSIT_KEYWORDS = (
     "入金",
@@ -374,15 +377,23 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
         candidate = candidate.model_copy(update=normalization_updates) if normalization_updates else candidate
 
         balance_value = candidate.balance
-        if balance_value is None and last_balance is not None:
-            projected = last_balance
+        projected_balance: Optional[float] = None
+        if last_balance is not None and (
+            candidate.withdrawal_amount is not None or candidate.deposit_amount is not None
+        ):
+            projected_balance = last_balance
             if candidate.withdrawal_amount is not None:
-                projected -= candidate.withdrawal_amount
+                projected_balance -= candidate.withdrawal_amount
             if candidate.deposit_amount is not None:
-                projected += candidate.deposit_amount
-            if abs(projected - last_balance) > 1e-6:
-                candidate = candidate.model_copy(update={"balance": projected})
-                balance_value = projected
+                projected_balance += candidate.deposit_amount
+
+        if balance_value is None and projected_balance is not None:
+            candidate = candidate.model_copy(update={"balance": projected_balance})
+            balance_value = projected_balance
+        elif balance_value is not None and projected_balance is not None:
+            if abs(projected_balance - balance_value) > BALANCE_TOLERANCE:
+                candidate = candidate.model_copy(update={"balance": projected_balance})
+                balance_value = projected_balance
 
         classification = _classify_description(desc_cleaned)
 
@@ -406,14 +417,16 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
                 expected_withdrawal = float(abs(delta))
                 expected_deposit = None
 
-            if expected_withdrawal is not None:
-                if candidate.withdrawal_amount is None or abs(candidate.withdrawal_amount - expected_withdrawal) > 0.5:
-                    delta_updates["withdrawal_amount"] = expected_withdrawal
+            if expected_withdrawal is not None and _should_override_amount(
+                candidate.withdrawal_amount, expected_withdrawal
+            ):
+                delta_updates["withdrawal_amount"] = expected_withdrawal
                 if candidate.deposit_amount not in (None, 0.0):
                     delta_updates["deposit_amount"] = None
-            elif expected_deposit is not None:
-                if candidate.deposit_amount is None or abs(candidate.deposit_amount - expected_deposit) > 0.5:
-                    delta_updates["deposit_amount"] = expected_deposit
+            elif expected_deposit is not None and _should_override_amount(
+                candidate.deposit_amount, expected_deposit
+            ):
+                delta_updates["deposit_amount"] = expected_deposit
                 if candidate.withdrawal_amount not in (None, 0.0):
                     delta_updates["withdrawal_amount"] = None
 
@@ -437,6 +450,15 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
             last_balance = candidate.balance
 
     return enriched
+
+
+def _should_override_amount(current: Optional[float], expected: Optional[float]) -> bool:
+    if expected is None:
+        return False
+    if current is None or abs(current) < 1e-6:
+        return True
+    tolerance = max(1.0, abs(expected) * DELTA_OVERRIDE_REL_TOLERANCE)
+    return abs(current - expected) <= tolerance
 
 
 
