@@ -90,6 +90,9 @@ class JobStatusResponse(BaseModel):
     stage: Optional[str] = None
     detail: Optional[str] = None
     document_type: Optional[DocumentType] = None
+    processed_chunks: Optional[int] = None
+    total_chunks: Optional[int] = None
+    files: Optional[Dict[str, str]] = None
     created_at: float
     updated_at: float
 

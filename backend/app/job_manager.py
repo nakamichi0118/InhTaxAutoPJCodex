@@ -26,6 +26,9 @@ class JobRecord:
     detail: Optional[str] = None
     document_type: Optional[DocumentType] = None
     result_files: Optional[Dict[str, str]] = None
+    partial_files: Optional[Dict[str, str]] = None
+    processed_chunks: int = 0
+    total_chunks: int = 0
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 

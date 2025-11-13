@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import base64
 import logging
+from collections import OrderedDict
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -215,6 +216,44 @@ def _merge_line_lists(primary: List[str], supplementary: List[str]) -> List[str]
     return merged
 
 
+def _aggregate_assets(
+    store: "OrderedDict[str, AssetRecord]",
+    additions: Iterable[AssetRecord],
+) -> None:
+    for asset in additions:
+        key = _asset_aggregation_key(asset)
+        if key not in store:
+            store[key] = asset.model_copy(deep=True)
+        else:
+            target = store[key]
+            if asset.transactions:
+                target.transactions.extend(asset.transactions)
+
+
+def _asset_aggregation_key(asset: AssetRecord) -> str:
+    owners = ";".join(sorted(asset.owner_name)) if asset.owner_name else ""
+    return "|".join(
+        [
+            asset.category or "",
+            asset.type or "",
+            asset.asset_name or "",
+            owners,
+        ]
+    )
+
+
+def _sort_asset_transactions(assets: Iterable[AssetRecord]) -> None:
+    for asset in assets:
+        if not asset.transactions:
+            continue
+        asset.transactions.sort(
+            key=lambda txn: (
+                txn.transaction_date or "",
+                txn.balance if txn.balance is not None else 0.0,
+            )
+        )
+
+
 def _convert_gemini_structured_transactions(
     items: List[Dict[str, Any]],
     *,
@@ -335,33 +374,74 @@ def _resolve_document_assets(
 
 def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     settings = get_settings()
-    handle.update(stage="analyzing", detail="レイアウト解析中")
     with open(job.file_path, "rb") as stream:
         contents = stream.read()
     source_name = job.file_name or "uploaded.pdf"
-    doc_type, assets, _ = _resolve_document_assets(
-        contents,
-        job.content_type,
-        job.document_type_hint,
-        job.date_format,
-        settings,
-        source_name,
+
+    plan = PdfChunkingPlan(
+        max_bytes=settings.azure_chunk_max_bytes,
+        max_pages=1,
     )
-    handle.update(stage="exporting", detail="CSV 生成中")
-    payload = {"assets": [asset.to_export_payload() for asset in assets]}
-    csv_map = export_to_csv_strings(payload)
-    encoded = {
-        name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
-        for name, content in csv_map.items()
-    }
-    if not encoded:
+    try:
+        chunks = chunk_pdf_by_limits(contents, plan)
+    except PdfChunkingError as exc:
+        raise ValueError(str(exc)) from exc
+
+    if not chunks:
+        chunks = [contents]
+    total_chunks = len(chunks)
+    handle.update(
+        stage="analyzing",
+        detail="PDFを分割しています…",
+        total_chunks=total_chunks,
+        processed_chunks=0,
+    )
+
+    aggregated_assets: "OrderedDict[str, AssetRecord]" = OrderedDict()
+    document_type: Optional[DocumentType] = None
+    latest_files: Optional[Dict[str, str]] = None
+
+    for index, chunk in enumerate(chunks, start=1):
+        handle.update(stage="analyzing", detail=f"{index}/{total_chunks} ページ解析中")
+        doc_type, chunk_assets, _ = _resolve_document_assets(
+            chunk,
+            "application/pdf",
+            job.document_type_hint,
+            job.date_format,
+            settings,
+            source_name,
+        )
+        document_type = doc_type
+        _aggregate_assets(aggregated_assets, chunk_assets)
+        _sort_asset_transactions(aggregated_assets.values())
+
+        payload = {"assets": [asset.to_export_payload() for asset in aggregated_assets.values()]}
+        csv_map = export_to_csv_strings(payload)
+        latest_files = {
+            name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
+            for name, content in csv_map.items()
+        }
+        handle.update(
+            detail=f"{index}/{total_chunks} ページ完了",
+            processed_chunks=index,
+            total_chunks=total_chunks,
+            document_type=document_type,
+            partial_files=latest_files,
+        )
+
+    if not aggregated_assets or not latest_files:
         raise ValueError("CSV出力が空です")
+
+    handle.update(stage="exporting", detail="CSV 生成中")
     handle.update(
         status="completed",
         stage="completed",
         detail="完了",
-        document_type=doc_type,
-        result_files=encoded,
+        document_type=document_type,
+        result_files=latest_files,
+        partial_files=latest_files,
+        processed_chunks=total_chunks,
+        total_chunks=total_chunks,
     )
 
 
@@ -509,6 +589,9 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
         stage=job.stage,
         detail=job.detail,
         document_type=job.document_type,
+        processed_chunks=job.processed_chunks or None,
+        total_chunks=job.total_chunks or None,
+        files=job.partial_files,
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
