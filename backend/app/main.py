@@ -119,7 +119,14 @@ def _build_gemini_transaction_result(
     return AzureAnalysisResult(raw_lines=extraction.lines, assets=[asset])
 
 
-def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_format: str) -> AzureAnalysisResult:
+def _analyze_with_azure(
+    contents: bytes,
+    settings,
+    source_name: str,
+    *,
+    date_format: str,
+    progress_reporter: Optional[Callable[[int, int], None]] = None,
+) -> AzureAnalysisResult:
     if not settings.azure_form_recognizer_endpoint or not settings.azure_form_recognizer_key:
         raise HTTPException(status_code=503, detail="Azure Form Recognizer is not configured")
     analyzer = AzureTransactionAnalyzer(
@@ -143,7 +150,8 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_for
     combined_lines: List[str] = []
     combined_transactions: List[Any] = []
 
-    for chunk in chunks:
+    total_chunks = len(chunks) or 1
+    for index, chunk in enumerate(chunks, start=1):
         try:
             result = analyzer.analyze_pdf(chunk, source_name=source_name, date_format=date_format)
         except AzureAnalysisError as exc:
@@ -156,6 +164,8 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_for
         combined_lines.extend(result.raw_lines)
         for asset in result.assets:
             combined_transactions.extend(asset.transactions)
+        if progress_reporter:
+            progress_reporter(index, total_chunks)
 
     azure_line_transactions = build_transactions_from_lines(combined_lines, date_format=date_format)
     if azure_line_transactions:
@@ -214,44 +224,6 @@ def _merge_line_lists(primary: List[str], supplementary: List[str]) -> List[str]
         merged.append(line)
         existing.add(key)
     return merged
-
-
-def _aggregate_assets(
-    store: "OrderedDict[str, AssetRecord]",
-    additions: Iterable[AssetRecord],
-) -> None:
-    for asset in additions:
-        key = _asset_aggregation_key(asset)
-        if key not in store:
-            store[key] = asset.model_copy(deep=True)
-        else:
-            target = store[key]
-            if asset.transactions:
-                target.transactions.extend(asset.transactions)
-
-
-def _asset_aggregation_key(asset: AssetRecord) -> str:
-    owners = ";".join(sorted(asset.owner_name)) if asset.owner_name else ""
-    return "|".join(
-        [
-            asset.category or "",
-            asset.type or "",
-            asset.asset_name or "",
-            owners,
-        ]
-    )
-
-
-def _sort_asset_transactions(assets: Iterable[AssetRecord]) -> None:
-    for asset in assets:
-        if not asset.transactions:
-            continue
-        asset.transactions.sort(
-            key=lambda txn: (
-                txn.transaction_date or "",
-                txn.balance if txn.balance is not None else 0.0,
-            )
-        )
 
 
 def _convert_gemini_structured_transactions(
@@ -357,15 +329,29 @@ def _resolve_document_assets(
     date_format_normalized: str,
     settings,
     source_name: str,
+    *,
+    progress_reporter: Optional[Callable[[int, int], None]] = None,
 ) -> tuple[DocumentType, List[AssetRecord], List[str]]:
     if document_type == "transaction_history":
-        azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
+        azure_result = _analyze_with_azure(
+            contents,
+            settings,
+            source_name,
+            date_format=date_format_normalized,
+            progress_reporter=progress_reporter,
+        )
         return "transaction_history", azure_result.assets, azure_result.raw_lines
 
     lines = _analyze_layout(contents, content_type)
     detected_type = document_type or detect_document_type(lines)
     if detected_type == "transaction_history":
-        azure_result = _analyze_with_azure(contents, settings, source_name, date_format=date_format_normalized)
+        azure_result = _analyze_with_azure(
+            contents,
+            settings,
+            source_name,
+            date_format=date_format_normalized,
+            progress_reporter=progress_reporter,
+        )
         return detected_type, azure_result.assets, azure_result.raw_lines
 
     assets = build_assets(detected_type, lines, source_name=source_name)
@@ -374,74 +360,53 @@ def _resolve_document_assets(
 
 def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     settings = get_settings()
+    handle.update(stage="queued", detail="ジョブを初期化しています…")
     with open(job.file_path, "rb") as stream:
         contents = stream.read()
     source_name = job.file_name or "uploaded.pdf"
 
-    plan = PdfChunkingPlan(
-        max_bytes=settings.azure_chunk_max_bytes,
-        max_pages=1,
-    )
-    try:
-        chunks = chunk_pdf_by_limits(contents, plan)
-    except PdfChunkingError as exc:
-        raise ValueError(str(exc)) from exc
+    progress = {"total": 0}
 
-    if not chunks:
-        chunks = [contents]
-    total_chunks = len(chunks)
-    handle.update(
-        stage="analyzing",
-        detail="PDFを分割しています…",
-        total_chunks=total_chunks,
-        processed_chunks=0,
-    )
-
-    aggregated_assets: "OrderedDict[str, AssetRecord]" = OrderedDict()
-    document_type: Optional[DocumentType] = None
-    latest_files: Optional[Dict[str, str]] = None
-
-    for index, chunk in enumerate(chunks, start=1):
-        handle.update(stage="analyzing", detail=f"{index}/{total_chunks} ページ解析中")
-        doc_type, chunk_assets, _ = _resolve_document_assets(
-            chunk,
-            "application/pdf",
-            job.document_type_hint,
-            job.date_format,
-            settings,
-            source_name,
-        )
-        document_type = doc_type
-        _aggregate_assets(aggregated_assets, chunk_assets)
-        _sort_asset_transactions(aggregated_assets.values())
-
-        payload = {"assets": [asset.to_export_payload() for asset in aggregated_assets.values()]}
-        csv_map = export_to_csv_strings(payload)
-        latest_files = {
-            name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
-            for name, content in csv_map.items()
-        }
+    def progress_reporter(done: int, total: int) -> None:
+        progress["total"] = total
         handle.update(
-            detail=f"{index}/{total_chunks} ページ完了",
-            processed_chunks=index,
-            total_chunks=total_chunks,
-            document_type=document_type,
-            partial_files=latest_files,
+            stage="analyzing",
+            detail=f"{done}/{total} ページ解析中…",
+            processed_chunks=done,
+            total_chunks=total,
         )
 
-    final_assets = list(aggregated_assets.values())
-    if not final_assets or not latest_files:
-        raise ValueError("CSV出力が空です")
+    doc_type, assets, _ = _resolve_document_assets(
+        contents,
+        job.content_type,
+        job.document_type_hint,
+        job.date_format,
+        settings,
+        source_name,
+        progress_reporter=progress_reporter,
+    )
 
-    handle.update(stage="exporting", detail="CSV 生成中")
-    assets_payload = [asset.model_dump() for asset in final_assets]
+    if not assets:
+        raise ValueError("解析結果が空でした")
+
+    handle.update(stage="exporting", detail="AI補正とCSV整形を実行しています…")
+    payload = {"assets": [asset.to_export_payload() for asset in assets]}
+    csv_map = export_to_csv_strings(payload)
+    if not csv_map:
+        raise ValueError("CSV出力が空です")
+    encoded = {
+        name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
+        for name, content in csv_map.items()
+    }
+    assets_payload = [asset.model_dump() for asset in assets]
+    total_chunks = progress.get("total", 0) or len(assets_payload)
     handle.update(
         status="completed",
         stage="completed",
         detail="完了",
-        document_type=document_type,
-        result_files=latest_files,
-        partial_files=latest_files,
+        document_type=doc_type,
+        result_files=encoded,
+        partial_files=encoded,
         processed_chunks=total_chunks,
         total_chunks=total_chunks,
         assets_payload=assets_payload,
