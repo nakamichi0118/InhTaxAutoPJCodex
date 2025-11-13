@@ -15,6 +15,7 @@ class TransactionLine(BaseModel):
     deposit_amount: Optional[float] = None
     balance: Optional[float] = None
     line_confidence: Optional[float] = None
+    correction_note: Optional[str] = None
 
 
 class AssetRecord(BaseModel):

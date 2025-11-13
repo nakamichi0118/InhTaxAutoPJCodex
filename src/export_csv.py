@@ -30,6 +30,7 @@ TRANSACTION_EXPORT_COLUMNS: Sequence[Tuple[str, str]] = (
     ("withdrawal_amount", "出金"),
     ("deposit_amount", "入金"),
     ("balance", "残高"),
+    ("correction_note", "補正メモ"),
 )
 
 JAPANESE_ERA_BASE_YEAR = {
@@ -122,6 +123,7 @@ class AssetRecord:
                     "deposit_amount": normalize_decimal(txn.get("deposit_amount")),
                     "balance": normalize_decimal(txn.get("balance")),
                     "line_confidence": normalize_decimal(txn.get("confidence")),
+                    "correction_note": clean_text(txn.get("correction_note")),
                 }
 
         return _generator()

@@ -4,7 +4,6 @@ import logging
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-import statistics
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from azure.ai.formrecognizer import DocumentAnalysisClient
@@ -82,6 +81,9 @@ BALANCE_TOLERANCE = 1.0
 DELTA_OVERRIDE_REL_TOLERANCE = 0.02  # 2%
 BALANCE_REBALANCE_TOLERANCE = 999.0
 MAX_REBALANCE_PASSES = 10
+WITHDRAW_RATIO_LIMIT = 1.5
+WITHDRAW_ABS_MARGIN = 1_000_000.0
+WITHDRAW_MAX_DIVISOR = 1_000_000.0
 
 
 DEPOSIT_KEYWORDS = (
@@ -467,13 +469,11 @@ def _rebalance_transactions(
 ) -> List[TransactionLine]:
     if not transactions:
         return transactions
-    transactions = _cap_unreasonable_withdrawals(transactions)
-
     def notify(stage: str, detail: str) -> None:
         if progress_callback:
             progress_callback(stage, detail)
 
-    expected_balances, residuals = _compute_balance_residuals(transactions)
+    _, residuals = _compute_balance_residuals(transactions)
     if residuals:
         mid_index = len(residuals) // 2
         final_index = len(residuals) - 1
@@ -481,94 +481,82 @@ def _rebalance_transactions(
             "balance_probe",
             f"中間残高差 {abs(residuals[mid_index]):,.0f} 円 / 最終残高差 {abs(residuals[final_index]):,.0f} 円",
         )
-        max_residual = max(abs(res) for res in residuals)
-        if max_residual <= BALANCE_REBALANCE_TOLERANCE:
-            notify("balance_probe", "残高チェック完了。補正は不要です。")
-            return transactions
+    else:
+        notify("balance_probe", "残高チェック完了。補正は不要です。")
+        return transactions
+
     notify("balance_refine", "AI補正を適用しています…")
 
-    working = list(transactions)
-    for pass_index in range(MAX_REBALANCE_PASSES):
-        mismatched_rows: List[int] = []
-        rebalanced: List[TransactionLine] = []
+    refined: List[TransactionLine] = []
+    notes: List[List[str]] = [[] for _ in transactions]
 
-        first = working[0]
-        running_balance = first.balance
-        if running_balance is None:
-            running_balance = (first.deposit_amount or 0.0) - (first.withdrawal_amount or 0.0)
-            first = first.model_copy(update={"balance": running_balance})
-        rebalanced.append(first)
+    first = transactions[0]
+    running_balance = first.balance
+    if running_balance is None:
+        running_balance = (first.deposit_amount or 0.0) - (first.withdrawal_amount or 0.0)
+        notes[0].append("初期残高を再計算しました")
+    running_balance = running_balance or 0.0
+    refined.append(
+        first.model_copy(
+            update={
+                "balance": running_balance,
+                "correction_note": _merge_notes(first.correction_note, notes[0]),
+            }
+        )
+    )
 
-        for idx in range(1, len(working)):
-            txn = working[idx]
-            prev_balance = running_balance
-            withdrawal = txn.withdrawal_amount or 0.0
-            deposit = txn.deposit_amount or 0.0
-            expected_balance = prev_balance - withdrawal + deposit
-            balance_diff = None if txn.balance is None else txn.balance - expected_balance
-            needs_balance_fix = txn.balance is None or abs(balance_diff) > BALANCE_REBALANCE_TOLERANCE
-            updates: Dict[str, Any] = {}
+    for idx in range(1, len(transactions)):
+        txn = transactions[idx]
+        entry_notes: List[str] = []
+        withdrawal = txn.withdrawal_amount or 0.0
+        deposit = txn.deposit_amount or 0.0
 
-            if needs_balance_fix:
-                mismatched_rows.append(idx)
-                updates["balance"] = expected_balance
-                delta = expected_balance - prev_balance
-                if delta > BALANCE_TOLERANCE:
-                    updates["deposit_amount"] = round(delta, 2)
-                    if txn.withdrawal_amount not in (None, 0.0):
-                        updates["withdrawal_amount"] = None
-                elif delta < -BALANCE_TOLERANCE:
-                    expected_withdrawal = round(abs(delta), 2)
-                    updates["withdrawal_amount"] = expected_withdrawal
-                    if txn.deposit_amount not in (None, 0.0):
-                        updates["deposit_amount"] = None
+        withdrawal, note = _normalize_withdrawal_for_balance(running_balance, withdrawal)
+        if note:
+            entry_notes.append(note)
 
-            updated_txn = txn.model_copy(update=updates) if updates else txn
-            final_withdrawal = updated_txn.withdrawal_amount or 0.0
-            final_deposit = updated_txn.deposit_amount or 0.0
-            running_balance = prev_balance - final_withdrawal + final_deposit
-            residual = _balance_residual(updated_txn.balance, running_balance)
-            if abs(residual) > BALANCE_REBALANCE_TOLERANCE:
-                updated_txn = updated_txn.model_copy(update={"balance": running_balance})
-                residual = 0.0
+        expected_balance = running_balance - withdrawal + deposit
+        balance = txn.balance
+        if balance is None:
+            balance = expected_balance
+            entry_notes.append("残高が欠損していたため再計算しました")
+        elif abs(balance - expected_balance) > BALANCE_REBALANCE_TOLERANCE:
+            balance = expected_balance
+            entry_notes.append("残高を再計算しました")
 
-            if abs(residual) > BALANCE_TOLERANCE:
-                if residual > 0 and (updated_txn.withdrawal_amount is None or updated_txn.withdrawal_amount <= 0):
-                    updates = {
-                        "withdrawal_amount": round(residual, 2),
-                        "deposit_amount": None,
-                        "balance": running_balance - residual,
-                    }
-                    updated_txn = updated_txn.model_copy(update=updates)
-                    running_balance -= residual
-                elif residual < 0 and (updated_txn.deposit_amount is None or updated_txn.deposit_amount <= 0):
-                    addition = round(abs(residual), 2)
-                    updates = {
-                        "deposit_amount": addition,
-                        "withdrawal_amount": None,
-                        "balance": running_balance + addition,
-                    }
-                    updated_txn = updated_txn.model_copy(update=updates)
-                    running_balance += addition
+        if balance < -BALANCE_TOLERANCE:
+            balance = 0.0
+            entry_notes.append("残高が負数のため 0 円に補正しました")
 
-            rebalanced.append(updated_txn)
+        delta = balance - running_balance
+        if delta >= 0:
+            new_deposit = round(delta, 2)
+            if abs(new_deposit - (txn.deposit_amount or 0.0)) > BALANCE_TOLERANCE:
+                entry_notes.append("入金額を残高差に合わせて補正しました")
+            deposit = new_deposit
+            if withdrawal > BALANCE_TOLERANCE:
+                entry_notes.append("同一行の出金を 0 円に補正しました")
+            withdrawal = 0.0
+        else:
+            new_withdrawal = round(abs(delta), 2)
+            if abs(new_withdrawal - withdrawal) > BALANCE_TOLERANCE:
+                entry_notes.append("出金額を残高差に合わせて補正しました")
+            withdrawal = new_withdrawal
+            if deposit > BALANCE_TOLERANCE:
+                entry_notes.append("同一行の入金を 0 円に補正しました")
+            deposit = 0.0
 
-        working = rebalanced
-        if not mismatched_rows:
-            notify("balance_refine", "AI補正が完了しました。")
-            return working
+        running_balance = balance
+        update_fields: Dict[str, Any] = {
+            "withdrawal_amount": withdrawal or None,
+            "deposit_amount": deposit or None,
+            "balance": balance,
+            "correction_note": _merge_notes(txn.correction_note, entry_notes),
+        }
+        refined.append(txn.model_copy(update=update_fields))
 
-        if pass_index == MAX_REBALANCE_PASSES - 1:
-            logger.warning(
-                "Remaining balance mismatches after %s passes at rows: %s",
-                MAX_REBALANCE_PASSES,
-                mismatched_rows,
-            )
-            notify(
-                "balance_refine",
-                f"残高差が残っています。重点確認対象: {', '.join(str(row + 1) for row in mismatched_rows[:10])}",
-            )
-    return working
+    notify("balance_refine", "AI補正が完了しました。")
+    return refined
 
 
 def _compute_balance_residuals(transactions: List[TransactionLine]) -> Tuple[List[float], List[float]]:
@@ -600,36 +588,28 @@ def _balance_residual(actual: Optional[float], expected: float) -> float:
     return float(actual) - expected
 
 
-def _cap_unreasonable_withdrawals(transactions: List[TransactionLine]) -> List[TransactionLine]:
-    withdrawals = [
-        abs(txn.withdrawal_amount)
-        for txn in transactions
-        if txn.withdrawal_amount is not None and abs(txn.withdrawal_amount) >= 1.0
-    ]
-    if not withdrawals:
-        return transactions
-    try:
-        median_value = statistics.median(withdrawals)
-    except statistics.StatisticsError:
-        median_value = max(withdrawals)
-    cap = max(500_000.0, median_value * 50)
-    scaled_transactions: List[TransactionLine] = []
-    for txn in transactions:
-        withdrawal = txn.withdrawal_amount
-        if withdrawal is None or abs(withdrawal) <= cap:
-            scaled_transactions.append(txn)
-            continue
-        adjusted = withdrawal
-        divisor = 1.0
-        while abs(adjusted) > cap and divisor < 1_000_000.0:
-            adjusted /= 10.0
-            divisor *= 10.0
-        if abs(adjusted) > cap:
-            scaled_transactions.append(txn)
-            continue
-        updates = {"withdrawal_amount": round(adjusted, 2)}
-        scaled_transactions.append(txn.model_copy(update=updates))
-    return scaled_transactions
+def _merge_notes(existing: Optional[str], notes: List[str]) -> Optional[str]:
+    parts: List[str] = []
+    if existing:
+        parts.append(existing)
+    parts.extend(note for note in notes if note)
+    merged = "; ".join(part for part in parts if part)
+    return merged or None
+
+
+def _normalize_withdrawal_for_balance(prev_balance: float, withdrawal: float) -> Tuple[float, Optional[str]]:
+    if withdrawal <= 0.0:
+        return withdrawal, None
+    cap = max(prev_balance * WITHDRAW_RATIO_LIMIT + WITHDRAW_ABS_MARGIN, WITHDRAW_ABS_MARGIN)
+    adjusted = withdrawal
+    divisor = 1.0
+    while adjusted > cap and divisor < WITHDRAW_MAX_DIVISOR:
+        adjusted /= 10.0
+        divisor *= 10.0
+    if abs(adjusted - withdrawal) <= BALANCE_TOLERANCE:
+        return withdrawal, None
+    note = f"出金を {withdrawal:,.0f} → {adjusted:,.2f} に補正しました"
+    return round(adjusted, 2), note
 
 
 def _should_override_amount(current: Optional[float], expected: Optional[float]) -> bool:
