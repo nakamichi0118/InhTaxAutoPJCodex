@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import logging
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -14,11 +15,11 @@ from .azure_analyzer import (
     build_transactions_from_lines,
     merge_transactions,
     post_process_transactions,
-    _rebalance_transactions,
+    _reconcile_transactions,
 )
 from .config import get_settings
 from .exporter import export_to_csv_strings
-from .gemini import GeminiClient, GeminiError
+from .gemini import GeminiClient, GeminiError, GeminiExtraction
 from .job_manager import JobHandle, JobManager, JobRecord
 from .models import (
     AssetRecord,
@@ -27,6 +28,7 @@ from .models import (
     JobCreateResponse,
     JobResultResponse,
     JobStatusResponse,
+    TransactionLine,
 )
 from .parser import build_assets, detect_document_type
 from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
@@ -58,16 +60,17 @@ async def _load_file_bytes(file: UploadFile) -> tuple[bytes, str]:
 def _with_pdf_chunks(
     payload: bytes,
     plan: PdfChunkingPlan,
-    analyzer: Callable[[bytes], List[str]],
-) -> List[str]:
+    analyzer: Callable[[bytes], GeminiExtraction],
+) -> GeminiExtraction:
     current_plan = plan
     while True:
         chunks = chunk_pdf_by_limits(payload, current_plan)
         try:
-            lines: List[str] = []
+            aggregated = GeminiExtraction(lines=[], transactions=[])
             for chunk in chunks:
-                lines.extend(analyzer(chunk))
-            return lines
+                extraction = analyzer(chunk)
+                aggregated.extend(extraction)
+            return aggregated
         except GeminiError as exc:
             if current_plan.max_pages <= 1:
                 raise
@@ -81,14 +84,14 @@ def _with_pdf_chunks(
             )
 
 
-def _analyze_with_gemini(contents: bytes, settings) -> List[str]:
+def _analyze_with_gemini(contents: bytes, settings) -> GeminiExtraction:
     client = GeminiClient(api_keys=settings.gemini_api_keys, model=settings.gemini_model)
     plan = PdfChunkingPlan(
         max_bytes=settings.gemini_max_document_bytes,
         max_pages=settings.gemini_chunk_page_limit,
     )
 
-    def analyzer(blob: bytes) -> List[str]:
+    def analyzer(blob: bytes) -> GeminiExtraction:
         return client.extract_lines_from_pdf(blob)
 
     return _with_pdf_chunks(contents, plan, analyzer)
@@ -101,8 +104,10 @@ def _build_gemini_transaction_result(
     *,
     date_format: str,
 ) -> AzureAnalysisResult:
-    lines = _analyze_with_gemini(contents, settings)
-    transactions = build_transactions_from_lines(lines, date_format=date_format)
+    extraction = _analyze_with_gemini(contents, settings)
+    transactions = _convert_gemini_structured_transactions(extraction.transactions, date_format=date_format)
+    if not transactions:
+        transactions = build_transactions_from_lines(extraction.lines, date_format=date_format)
     asset = AssetRecord(
         category="bank_deposit",
         type="transaction_history",
@@ -110,34 +115,7 @@ def _build_gemini_transaction_result(
         asset_name="預金取引推移表",
         transactions=transactions,
     )
-    return AzureAnalysisResult(raw_lines=lines, assets=[asset])
-
-
-def _finalize_assets(
-    assets: List[AssetRecord],
-    progress_callback: Optional[Callable[[str, str], None]] = None,
-) -> List[AssetRecord]:
-    if not assets:
-        return assets
-    return _refine_assets(assets, progress_callback)
-
-
-def _refine_assets(
-    assets: List[AssetRecord],
-    progress_callback: Optional[Callable[[str, str], None]] = None,
-) -> List[AssetRecord]:
-    refined: List[AssetRecord] = []
-    for asset in assets:
-        transactions = asset.transactions or []
-        if not transactions:
-            refined.append(asset)
-            continue
-        if asset.category != "bank_deposit" or asset.type != "transaction_history":
-            refined.append(asset)
-            continue
-        refined_transactions = _rebalance_transactions(transactions, progress_callback)
-        refined.append(asset.model_copy(update={"transactions": refined_transactions}))
-    return refined
+    return AzureAnalysisResult(raw_lines=extraction.lines, assets=[asset])
 
 
 def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_format: str) -> AzureAnalysisResult:
@@ -182,19 +160,33 @@ def _analyze_with_azure(contents: bytes, settings, source_name: str, *, date_for
     if azure_line_transactions:
         combined_transactions = merge_transactions(combined_transactions, azure_line_transactions)
 
-    gemini_lines: List[str] = []
+    gemini_transactions: List[TransactionLine] = []
     try:
-        gemini_lines = _analyze_with_gemini(contents, settings)
+        gemini_extraction = _analyze_with_gemini(contents, settings)
     except (GeminiError, PdfChunkingError) as exc:
         logger.warning("Gemini補完の取得に失敗しました: %s", exc)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Gemini補完処理で予期しないエラーが発生しました")
     else:
-        supplementary_transactions = build_transactions_from_lines(gemini_lines, date_format=date_format)
-        if supplementary_transactions:
-            combined_transactions = merge_transactions(combined_transactions, supplementary_transactions)
-        combined_lines = _merge_line_lists(combined_lines, gemini_lines)
+        gemini_transactions = _convert_gemini_structured_transactions(
+            gemini_extraction.transactions,
+            date_format=date_format,
+        )
+        if not gemini_transactions:
+            gemini_transactions = build_transactions_from_lines(
+                gemini_extraction.lines,
+                date_format=date_format,
+            )
+        combined_lines = _merge_line_lists(combined_lines, gemini_extraction.lines)
+
     combined_transactions = post_process_transactions(combined_transactions)
+    if gemini_transactions:
+        gemini_transactions = post_process_transactions(gemini_transactions)
+        combined_transactions = _reconcile_transactions(
+            combined_transactions,
+            gemini_transactions,
+            None,
+        )
 
     asset = AssetRecord(
         category="bank_deposit",
@@ -223,13 +215,94 @@ def _merge_line_lists(primary: List[str], supplementary: List[str]) -> List[str]
     return merged
 
 
+def _convert_gemini_structured_transactions(
+    items: List[Dict[str, Any]],
+    *,
+    date_format: str,
+) -> List[TransactionLine]:
+    transactions: List[TransactionLine] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        date_value = item.get("date") or item.get("transaction_date")
+        transaction_date = _normalize_gemini_date(date_value)
+        description = str(item.get("description") or item.get("memo") or "").strip() or None
+        withdrawal = _parse_gemini_amount(
+            item.get("withdrawal")
+            or item.get("withdraw")
+            or item.get("debit")
+            or item.get("withdrawal_amount")
+        )
+        deposit = _parse_gemini_amount(
+            item.get("deposit")
+            or item.get("credit")
+            or item.get("deposit_amount")
+        )
+        balance = _parse_gemini_amount(item.get("balance") or item.get("current_balance"))
+        if not any([transaction_date, description, withdrawal, deposit, balance]):
+            continue
+        transactions.append(
+            TransactionLine(
+                transaction_date=transaction_date,
+                description=description,
+                withdrawal_amount=withdrawal,
+                deposit_amount=deposit,
+                balance=balance,
+            )
+        )
+    return transactions
+
+
+def _normalize_gemini_date(value: Any) -> Optional[str]:
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    candidates = [text, text.replace("/", "-"), text.replace(".", "-")]
+    for candidate in candidates:
+        normalized = candidate.replace(" ", "-")
+        try:
+            return datetime.fromisoformat(normalized).date().isoformat()
+        except ValueError:
+            pass
+        parts = normalized.split("-")
+        if len(parts) == 3 and all(part.isdigit() for part in parts):
+            year, month, day = map(int, parts)
+            try:
+                return datetime(year, month, day).date().isoformat()
+            except ValueError:
+                continue
+    return None
+
+
+def _parse_gemini_amount(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    negative = text.startswith("(") and text.endswith(")")
+    text = text.strip("()")
+    text = text.replace(",", "").replace("円", "").replace("¥", "")
+    text = text.replace("＋", "+").replace("ー", "-")
+    try:
+        value = float(text)
+        return -value if negative else value
+    except ValueError:
+        return None
+
+
 def _analyze_layout(contents: bytes, content_type: str) -> List[str]:
     if content_type != "application/pdf":
         raise HTTPException(status_code=415, detail="Only PDF documents are supported")
 
     settings = get_settings()
     try:
-        return _analyze_with_gemini(contents, settings)
+        extraction = _analyze_with_gemini(contents, settings)
+        return extraction.lines
     except PdfChunkingError as exc:
         logger.error("PDF chunking failed: %s", exc)
         raise HTTPException(status_code=413, detail=str(exc)) from exc
@@ -274,11 +347,6 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         settings,
         source_name,
     )
-    if assets:
-        def progress(stage: str, detail: str) -> None:
-            handle.update(stage=stage, detail=detail)
-
-        assets = _finalize_assets(assets, progress)
     handle.update(stage="exporting", detail="CSV 生成中")
     payload = {"assets": [asset.to_export_payload() for asset in assets]}
     csv_map = export_to_csv_strings(payload)
@@ -367,7 +435,6 @@ async def analyze_document(
         settings,
         source_name,
     )
-    assets = _finalize_assets(assets)
     return DocumentAnalyzeResponse(
         status="ok",
         document_type=doc_type,
@@ -397,7 +464,6 @@ async def analyze_document_and_export(
         settings,
         source_name,
     )
-    assets = _finalize_assets(assets)
     payload = {"assets": [asset.to_export_payload() for asset in assets]}
     csv_map = export_to_csv_strings(payload)
     encoded = {

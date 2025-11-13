@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
@@ -81,9 +82,10 @@ BALANCE_TOLERANCE = 1.0
 DELTA_OVERRIDE_REL_TOLERANCE = 0.02  # 2%
 BALANCE_REBALANCE_TOLERANCE = 999.0
 MAX_REBALANCE_PASSES = 10
-WITHDRAW_RATIO_LIMIT = 1.5
-WITHDRAW_ABS_MARGIN = 1_000_000.0
-WITHDRAW_MAX_DIVISOR = 1_000_000.0
+SEGMENT_WINDOW = 10
+MAX_SEGMENT_ATTEMPTS = 10
+AMOUNT_DISCREPANCY_THRESHOLD = 1_000.0
+AMOUNT_RATIO_THRESHOLD = 8.0
 
 
 DEPOSIT_KEYWORDS = (
@@ -463,100 +465,395 @@ def _post_process_transactions(raw_transactions: List[TransactionLine]) -> List[
     return enriched
 
 
-def _rebalance_transactions(
-    transactions: List[TransactionLine],
+def _reconcile_transactions(
+    azure_transactions: List[TransactionLine],
+    gemini_transactions: List[TransactionLine],
     progress_callback: Optional[ProgressCallback] = None,
 ) -> List[TransactionLine]:
-    if not transactions:
-        return transactions
+    if not azure_transactions:
+        return []
+
     def notify(stage: str, detail: str) -> None:
         if progress_callback:
             progress_callback(stage, detail)
 
-    _, residuals = _compute_balance_residuals(transactions)
-    if residuals:
-        mid_index = len(residuals) // 2
-        final_index = len(residuals) - 1
+    if not gemini_transactions:
+        notify("balance_probe", "Gemini結果が得られなかったためAzure結果を採用します。")
+        return azure_transactions
+
+    gemini_index = _build_gemini_index(gemini_transactions)
+    corrected: List[TransactionLine] = []
+    prev_balance = _opening_balance_before_first(azure_transactions)
+
+    for azure_txn in azure_transactions:
+        candidate = _select_gemini_candidate(azure_txn, prev_balance, gemini_index)
+        gemini_txn = candidate["txn"] if candidate else None
+        prefer_gemini = _has_significant_amount_gap(azure_txn, gemini_txn)
+        chosen, prev_balance = _choose_best_transaction(
+            prev_balance,
+            azure_txn,
+            gemini_txn,
+            prefer_gemini=prefer_gemini,
+        )
+        corrected.append(chosen)
+
+    expected_balances, residuals = _compute_balance_residuals(corrected)
+    worst_idx, worst_residual = _find_worst_residual(residuals)
+    if worst_idx is None:
+        notify("balance_refine", "取引結果の検算が完了しました。")
+        return corrected
+    if abs(worst_residual) <= BALANCE_REBALANCE_TOLERANCE:
         notify(
-            "balance_probe",
-            f"中間残高差 {abs(residuals[mid_index]):,.0f} 円 / 最終残高差 {abs(residuals[final_index]):,.0f} 円",
+            "balance_refine",
+            f"残高差 {abs(worst_residual):,.0f} 円以内に収まりました。",
         )
-    else:
-        notify("balance_probe", "残高チェック完了。補正は不要です。")
-        return transactions
+        return corrected
 
-    notify("balance_refine", "AI補正を適用しています…")
-
-    refined: List[TransactionLine] = []
-    notes: List[List[str]] = [[] for _ in transactions]
-
-    first = transactions[0]
-    running_balance = first.balance
-    if running_balance is None:
-        running_balance = (first.deposit_amount or 0.0) - (first.withdrawal_amount or 0.0)
-        notes[0].append("初期残高を再計算しました")
-    running_balance = running_balance or 0.0
-    refined.append(
-        first.model_copy(
-            update={
-                "balance": running_balance,
-                "correction_note": _merge_notes(first.correction_note, notes[0]),
-            }
-        )
+    notify(
+        "balance_probe",
+        f"{worst_idx + 1} 行目付近で {abs(worst_residual):,.0f} 円の残高差を検出しました",
     )
 
-    for idx in range(1, len(transactions)):
-        txn = transactions[idx]
-        entry_notes: List[str] = []
-        withdrawal = txn.withdrawal_amount or 0.0
-        deposit = txn.deposit_amount or 0.0
+    passes = 0
+    while passes < MAX_REBALANCE_PASSES and abs(worst_residual) > BALANCE_REBALANCE_TOLERANCE:
+        segments = _build_residual_segments(
+            residuals,
+            tolerance=BALANCE_REBALANCE_TOLERANCE,
+            window=SEGMENT_WINDOW,
+        )
+        if not segments:
+            break
 
-        withdrawal, note = _normalize_withdrawal_for_balance(running_balance, withdrawal)
-        if note:
-            entry_notes.append(note)
+        changed = False
+        attempts = 0
+        for start_idx, end_idx in segments:
+            notify(
+                "balance_refine",
+                f"{start_idx + 1}〜{end_idx + 1} 行の差分をGeminiと照合しています…",
+            )
+            if _apply_segment_corrections(
+                corrected,
+                gemini_index,
+                start_idx,
+                end_idx,
+                expected_balances,
+            ):
+                changed = True
+                break
+            attempts += 1
+            if attempts >= MAX_SEGMENT_ATTEMPTS:
+                break
 
-        expected_balance = running_balance - withdrawal + deposit
-        balance = txn.balance
-        if balance is None:
-            balance = expected_balance
-            entry_notes.append("残高が欠損していたため再計算しました")
-        elif abs(balance - expected_balance) > BALANCE_REBALANCE_TOLERANCE:
-            balance = expected_balance
-            entry_notes.append("残高を再計算しました")
+        if not changed:
+            break
 
-        if balance < -BALANCE_TOLERANCE:
-            balance = 0.0
-            entry_notes.append("残高が負数のため 0 円に補正しました")
+        passes += 1
+        expected_balances, residuals = _compute_balance_residuals(corrected)
+        worst_idx, worst_residual = _find_worst_residual(residuals)
 
-        delta = balance - running_balance
-        if delta >= 0:
-            new_deposit = round(delta, 2)
-            if abs(new_deposit - (txn.deposit_amount or 0.0)) > BALANCE_TOLERANCE:
-                entry_notes.append("入金額を残高差に合わせて補正しました")
-            deposit = new_deposit
-            if withdrawal > BALANCE_TOLERANCE:
-                entry_notes.append("同一行の出金を 0 円に補正しました")
-            withdrawal = 0.0
+    if worst_idx is None or abs(worst_residual) <= BALANCE_REBALANCE_TOLERANCE:
+        notify("balance_refine", "AI補正が完了しました。")
+    else:
+        notify(
+            "balance_refine",
+            f"残高差 {abs(worst_residual):,.0f} 円 (行 {worst_idx + 1}) が残っています。CSVでご確認ください。",
+        )
+    return corrected
+
+
+def _build_gemini_index(transactions: List[TransactionLine]) -> Dict[str, List[TransactionLine]]:
+    index: Dict[str, List[TransactionLine]] = defaultdict(list)
+    for txn in transactions:
+        for key in _build_lookup_keys(txn):
+            index[key].append(txn)
+        index["__all__"].append(txn)
+    return index
+
+
+def _build_lookup_keys(txn: TransactionLine) -> List[str]:
+    keys: List[str] = []
+    date_key = txn.transaction_date.isoformat() if txn.transaction_date else ""
+    desc_key = _normalize_desc_token(txn.description)
+    amount_key: Optional[str] = None
+    if txn.deposit_amount:
+        amount_key = f"D:{round(txn.deposit_amount)}"
+    elif txn.withdrawal_amount:
+        amount_key = f"W:{round(txn.withdrawal_amount)}"
+
+    if date_key and desc_key:
+        keys.append(f"pair:{date_key}:{desc_key}")
+    if date_key and amount_key:
+        keys.append(f"date_amount:{date_key}:{amount_key}")
+    if desc_key and amount_key:
+        keys.append(f"desc_amount:{desc_key}:{amount_key}")
+    if date_key:
+        keys.append(f"date:{date_key}")
+    if desc_key:
+        keys.append(f"desc:{desc_key}")
+    if amount_key:
+        keys.append(f"amount:{amount_key}")
+    return keys or ["__all__"]
+
+
+def _normalize_desc_token(text: Optional[str]) -> str:
+    if not text:
+        return ""
+    cleaned = _clean_description(text)
+    normalized = re.sub(r"\s+", "", cleaned).lower()
+    return normalized
+
+
+def _find_worst_residual(residuals: List[float]) -> Tuple[Optional[int], float]:
+    worst_idx: Optional[int] = None
+    worst_value = 0.0
+    for idx, value in enumerate(residuals):
+        if abs(value) > abs(worst_value):
+            worst_value = value
+            worst_idx = idx
+    return worst_idx, worst_value
+
+
+def _build_residual_segments(
+    residuals: List[float], *, tolerance: float, window: int
+) -> List[Tuple[int, int]]:
+    segments: List[Tuple[int, int]] = []
+    idx = 0
+    total = len(residuals)
+    while idx < total:
+        if abs(residuals[idx]) > tolerance:
+            start = max(0, idx - window // 2)
+            end = min(total - 1, start + window - 1)
+            segments.append((start, end))
+            idx = end + 1
         else:
-            new_withdrawal = round(abs(delta), 2)
-            if abs(new_withdrawal - withdrawal) > BALANCE_TOLERANCE:
-                entry_notes.append("出金額を残高差に合わせて補正しました")
-            withdrawal = new_withdrawal
-            if deposit > BALANCE_TOLERANCE:
-                entry_notes.append("同一行の入金を 0 円に補正しました")
-            deposit = 0.0
+            idx += 1
+    return segments
 
-        running_balance = balance
-        update_fields: Dict[str, Any] = {
-            "withdrawal_amount": withdrawal or None,
-            "deposit_amount": deposit or None,
-            "balance": balance,
-            "correction_note": _merge_notes(txn.correction_note, entry_notes),
-        }
-        refined.append(txn.model_copy(update=update_fields))
 
-    notify("balance_refine", "AI補正が完了しました。")
-    return refined
+def _apply_segment_corrections(
+    transactions: List[TransactionLine],
+    gemini_index: Dict[str, List[TransactionLine]],
+    start_idx: int,
+    end_idx: int,
+    expected_balances: List[float],
+) -> bool:
+    changed = False
+    prev_balance = _balance_before_index(transactions, expected_balances, start_idx)
+
+    for idx in range(start_idx, min(end_idx + 1, len(transactions))):
+        azure_txn = transactions[idx]
+        azure_candidate = _prepare_candidate(prev_balance, azure_txn, source="azure")
+        gemini_candidate = _select_gemini_candidate(
+            azure_txn,
+            prev_balance,
+            gemini_index,
+        )
+
+        if gemini_candidate and abs(gemini_candidate["residual"]) + BALANCE_TOLERANCE < abs(azure_candidate["residual"]):
+            notes = list(gemini_candidate.get("notes", []))
+            notes.extend(
+                [
+                    "Geminiの結果で補正しました",
+                    f"残高差 {azure_candidate['residual']:,.0f}→{gemini_candidate['residual']:,.0f} 円",
+                ]
+            )
+            transactions[idx] = gemini_candidate["txn"].model_copy(
+                update={
+                    "balance": gemini_candidate["next_balance"],
+                    "correction_note": _merge_notes(gemini_candidate["txn"].correction_note, notes),
+                }
+            )
+            prev_balance = gemini_candidate["next_balance"]
+            changed = True
+        else:
+            prev_balance = azure_candidate["next_balance"]
+
+    return changed
+
+
+def _balance_before_index(
+    transactions: List[TransactionLine], expected_balances: List[float], idx: int
+) -> float:
+    if not transactions:
+        return 0.0
+    if idx <= 0:
+        first = transactions[0]
+        baseline = expected_balances[0] if expected_balances else 0.0
+        withdrawal = first.withdrawal_amount or 0.0
+        deposit = first.deposit_amount or 0.0
+        return baseline + withdrawal - deposit
+    if idx - 1 < len(expected_balances):
+        return expected_balances[idx - 1]
+    return expected_balances[-1] if expected_balances else 0.0
+
+
+def _opening_balance_before_first(transactions: List[TransactionLine]) -> float:
+    if not transactions:
+        return 0.0
+    first = transactions[0]
+    withdrawal = first.withdrawal_amount or 0.0
+    deposit = first.deposit_amount or 0.0
+    if first.balance is None:
+        return deposit - withdrawal
+    return float(first.balance) + withdrawal - deposit
+
+
+def _select_gemini_candidate(
+    azure_txn: TransactionLine,
+    prev_balance: float,
+    gemini_index: Dict[str, List[TransactionLine]],
+) -> Optional[Dict[str, Any]]:
+    lookup_keys = _build_lookup_keys(azure_txn) + ["__all__"]
+    seen: set[int] = set()
+    candidates: List[Dict[str, Any]] = []
+
+    for key in lookup_keys:
+        for txn in gemini_index.get(key, []):
+            txn_id = id(txn)
+            if txn_id in seen:
+                continue
+            seen.add(txn_id)
+            prepared = _prepare_candidate(prev_balance, txn, source="gemini")
+            penalty = _candidate_penalty(azure_txn, txn)
+            prepared["penalty"] = penalty
+            candidates.append(prepared)
+        if candidates:
+            break
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: (abs(item["residual"]), item.get("penalty", 0)))
+    return candidates[0]
+
+
+def _candidate_penalty(azure_txn: TransactionLine, gemini_txn: TransactionLine) -> int:
+    penalty = 0
+    if azure_txn.transaction_date and gemini_txn.transaction_date:
+        if azure_txn.transaction_date != gemini_txn.transaction_date:
+            penalty += 1
+    if _normalize_desc_token(azure_txn.description) and _normalize_desc_token(gemini_txn.description):
+        if _normalize_desc_token(azure_txn.description) != _normalize_desc_token(gemini_txn.description):
+            penalty += 1
+    return penalty
+
+
+def _has_significant_amount_gap(
+    azure_txn: Optional[TransactionLine],
+    gemini_txn: Optional[TransactionLine],
+) -> bool:
+    if not azure_txn or not gemini_txn:
+        return False
+    gap = _amount_gap(azure_txn, gemini_txn)
+    if gap >= AMOUNT_DISCREPANCY_THRESHOLD:
+        return True
+    ratio = _amount_ratio(azure_txn, gemini_txn)
+    if ratio >= AMOUNT_RATIO_THRESHOLD:
+        return True
+    missing_withdrawal = azure_txn.withdrawal_amount and gemini_txn.withdrawal_amount is None
+    missing_deposit = azure_txn.deposit_amount and gemini_txn.deposit_amount is None
+    if missing_withdrawal and abs(azure_txn.withdrawal_amount or 0.0) >= AMOUNT_DISCREPANCY_THRESHOLD:
+        return True
+    if missing_deposit and abs(azure_txn.deposit_amount or 0.0) >= AMOUNT_DISCREPANCY_THRESHOLD:
+        return True
+    return False
+
+
+def _amount_gap(a: TransactionLine, b: TransactionLine) -> float:
+    diffs: List[float] = []
+    if a.withdrawal_amount is not None and b.withdrawal_amount is not None:
+        diffs.append(abs(a.withdrawal_amount - b.withdrawal_amount))
+    if a.deposit_amount is not None and b.deposit_amount is not None:
+        diffs.append(abs(a.deposit_amount - b.deposit_amount))
+    return max(diffs) if diffs else 0.0
+
+
+def _amount_ratio(a: TransactionLine, b: TransactionLine) -> float:
+    ratios: List[float] = []
+    if a.withdrawal_amount and b.withdrawal_amount:
+        ratios.append(_safe_ratio(a.withdrawal_amount, b.withdrawal_amount))
+    if a.deposit_amount and b.deposit_amount:
+        ratios.append(_safe_ratio(a.deposit_amount, b.deposit_amount))
+    return max(ratios) if ratios else 1.0
+
+
+def _safe_ratio(a: float, b: float) -> float:
+    if b == 0:
+        return abs(a)
+    return max(abs(a / b), abs(b / a))
+
+
+SOURCE_PRIORITY = {"azure": 0, "gemini": 1}
+
+
+def _choose_best_transaction(
+    prev_balance: float,
+    azure_txn: Optional[TransactionLine],
+    gemini_txn: Optional[TransactionLine],
+    *,
+    prefer_gemini: bool = False,
+) -> tuple[TransactionLine, float]:
+    candidates: List[Dict[str, Any]] = []
+    if azure_txn:
+        candidates.append(_prepare_candidate(prev_balance, azure_txn, source="azure"))
+    if gemini_txn:
+        candidates.append(_prepare_candidate(prev_balance, gemini_txn, source="gemini"))
+    if not candidates:
+        placeholder = TransactionLine(
+            transaction_date=None,
+            description=None,
+            withdrawal_amount=None,
+            deposit_amount=None,
+            balance=prev_balance,
+        )
+        return placeholder, prev_balance
+
+    forced_source = "gemini" if prefer_gemini and gemini_txn else None
+    if forced_source:
+        preferred = [candidate for candidate in candidates if candidate["source"] == forced_source]
+        if preferred:
+            best = preferred[0]
+        else:
+            best = candidates[0]
+    else:
+        candidates.sort(key=lambda item: (abs(item["residual"]), SOURCE_PRIORITY.get(item["source"], 99)))
+        best = candidates[0]
+    notes = list(best["notes"])
+    if best["source"] == "gemini":
+        notes.append("Geminiの読み取り結果を採用しました")
+    if abs(best["residual"]) > BALANCE_TOLERANCE:
+        notes.append(f"残高差 {best['residual']:,.0f} 円が残っています")
+    updated = best["txn"].model_copy(
+        update={"correction_note": _merge_notes(best["txn"].correction_note, notes)}
+    )
+    return updated, best["next_balance"]
+
+
+def _prepare_candidate(
+    prev_balance: float,
+    txn: TransactionLine,
+    *,
+    source: str,
+) -> Dict[str, Any]:
+    notes: List[str] = []
+    withdrawal = txn.withdrawal_amount or 0.0
+    deposit = txn.deposit_amount or 0.0
+    expected_balance = prev_balance - withdrawal + deposit
+    actual_balance = txn.balance
+    updates: Dict[str, Any] = {}
+    if actual_balance is None:
+        actual_balance = expected_balance
+        updates["balance"] = actual_balance
+        notes.append("残高が欠損していたため再計算しました")
+    residual = actual_balance - expected_balance
+    normalized = txn.model_copy(update=updates) if updates else txn
+    return {
+        "source": source,
+        "txn": normalized,
+        "residual": residual,
+        "next_balance": actual_balance,
+        "notes": notes,
+    }
 
 
 def _compute_balance_residuals(transactions: List[TransactionLine]) -> Tuple[List[float], List[float]]:
@@ -595,45 +892,6 @@ def _merge_notes(existing: Optional[str], notes: List[str]) -> Optional[str]:
     parts.extend(note for note in notes if note)
     merged = "; ".join(part for part in parts if part)
     return merged or None
-
-
-def _normalize_withdrawal_for_balance(prev_balance: float, withdrawal: float) -> Tuple[float, Optional[str]]:
-    if withdrawal <= 0.0:
-        return withdrawal, None
-    cap = max(prev_balance * WITHDRAW_RATIO_LIMIT + WITHDRAW_ABS_MARGIN, WITHDRAW_ABS_MARGIN)
-    adjusted = withdrawal
-    divisor = 1.0
-    while adjusted > cap and divisor < WITHDRAW_MAX_DIVISOR:
-        adjusted /= 10.0
-        divisor *= 10.0
-    if abs(adjusted - withdrawal) <= BALANCE_TOLERANCE:
-        return withdrawal, None
-    note = f"出金を {withdrawal:,.0f} → {adjusted:,.2f} に補正しました"
-    return round(adjusted, 2), note
-
-
-def _merge_notes(existing: Optional[str], notes: List[str]) -> Optional[str]:
-    parts: List[str] = []
-    if existing:
-        parts.append(existing)
-    parts.extend(note for note in notes if note)
-    merged = "; ".join(part for part in parts if part)
-    return merged or None
-
-
-def _normalize_withdrawal_for_balance(prev_balance: float, withdrawal: float) -> Tuple[float, Optional[str]]:
-    if withdrawal <= 0.0:
-        return withdrawal, None
-    cap = max(prev_balance * WITHDRAW_RATIO_LIMIT + WITHDRAW_ABS_MARGIN, WITHDRAW_ABS_MARGIN)
-    adjusted = withdrawal
-    divisor = 1.0
-    while adjusted > cap and divisor < WITHDRAW_MAX_DIVISOR:
-        adjusted /= 10.0
-        divisor *= 10.0
-    if abs(adjusted - withdrawal) <= BALANCE_TOLERANCE:
-        return withdrawal, None
-    note = f"出金を {withdrawal:,.0f} → {adjusted:,.2f} に補正しました"
-    return round(adjusted, 2), note
 
 
 def _should_override_amount(current: Optional[float], expected: Optional[float]) -> bool:

@@ -7,6 +7,7 @@ import logging
 import re
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Sequence
 
 import requests
@@ -18,6 +19,16 @@ JSON_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 INLINE_LIMIT_BYTES = 4 * 1024 * 1024
 UPLOAD_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/files:upload"
 FILE_BASE_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/"
+
+
+@dataclass
+class GeminiExtraction:
+    lines: List[str]
+    transactions: List[Dict[str, Any]]
+
+    def extend(self, other: "GeminiExtraction") -> None:
+        self.lines.extend(other.lines)
+        self.transactions.extend(other.transactions)
 
 
 class GeminiError(RuntimeError):
@@ -43,7 +54,7 @@ class GeminiClient:
         self.model = model
         self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-    def extract_lines_from_pdf(self, pdf_bytes: bytes) -> List[str]:
+    def extract_lines_from_pdf(self, pdf_bytes: bytes) -> GeminiExtraction:
         last_error: GeminiError | None = None
         for index, api_key in enumerate(self.api_keys):
             try:
@@ -58,7 +69,7 @@ class GeminiClient:
             raise last_error
         raise GeminiError("Gemini API key configuration is empty")
 
-    def _extract_with_key(self, pdf_bytes: bytes, api_key: str) -> List[str]:
+    def _extract_with_key(self, pdf_bytes: bytes, api_key: str) -> GeminiExtraction:
         if len(pdf_bytes) <= INLINE_LIMIT_BYTES:
             payload = self._build_inline_payload(pdf_bytes)
             data = self._invoke_generate(payload, api_key)
@@ -179,10 +190,12 @@ class GeminiClient:
     @staticmethod
     def _prompt_text() -> str:
         return (
-            "You are assisting with converting Japanese bank and financial documents into plain text. "
-            "Read the attached PDF and return a JSON object with a single key `lines` containing an array "
-            "of strings. Preserve the reading order and include blank lines only when they are meaningful. "
-            "Do not add explanations or markdown. Return raw JSON only."
+            "You are assisting with converting Japanese bank and financial documents into structured text. "
+            "Read the attached PDF and return JSON with two keys: `lines` containing an array of strings "
+            "in reading order, and `transactions` containing an array of objects with the fields "
+            "`date` (YYYY-MM-DD), `description`, `withdrawal`, `deposit`, and `balance`. "
+            "Use null for unknown numeric values, keep amounts as plain numbers (no commas), and do not add "
+            "explanations or markdown. Return raw JSON only."
         )
 
     @staticmethod
@@ -218,7 +231,7 @@ class GeminiClient:
         return False
 
     @staticmethod
-    def _parse_response(data: Dict[str, Any]) -> List[str]:
+    def _parse_response(data: Dict[str, Any]) -> GeminiExtraction:
         candidates = data.get("candidates") or []
         if not candidates:
             raise GeminiError("No candidates returned from Gemini API")
@@ -235,8 +248,14 @@ class GeminiClient:
             except json.JSONDecodeError as exc:
                 raise GeminiError(f"Failed to decode JSON: {exc}") from exc
             lines = parsed.get("lines")
-            if isinstance(lines, list):
-                return [str(line) for line in lines]
-            raise GeminiError("Gemini JSON payload missing `lines` array")
+            if not isinstance(lines, list):
+                raise GeminiError("Gemini JSON payload missing `lines` array")
+            structured = parsed.get("transactions")
+            transactions: List[Dict[str, Any]] = []
+            if isinstance(structured, list):
+                for item in structured:
+                    if isinstance(item, dict):
+                        transactions.append(item)
+            return GeminiExtraction(lines=[str(line) for line in lines], transactions=transactions)
         logger.warning("Gemini response lacked JSON payload; falling back to raw text split")
-        return [line for line in text.splitlines() if line]
+        return GeminiExtraction(lines=[line for line in text.splitlines() if line], transactions=[])
