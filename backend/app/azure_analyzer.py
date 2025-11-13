@@ -572,7 +572,13 @@ def _build_gemini_index(transactions: List[TransactionLine]) -> Dict[str, List[T
 
 def _build_lookup_keys(txn: TransactionLine) -> List[str]:
     keys: List[str] = []
-    date_key = txn.transaction_date.isoformat() if txn.transaction_date else ""
+    date_value = txn.transaction_date
+    if isinstance(date_value, str):
+        date_key = date_value
+    elif date_value:
+        date_key = date_value.isoformat()
+    else:
+        date_key = ""
     desc_key = _normalize_desc_token(txn.description)
     amount_key: Optional[str] = None
     if txn.deposit_amount:
