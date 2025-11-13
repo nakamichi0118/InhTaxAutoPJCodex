@@ -429,10 +429,12 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             partial_files=latest_files,
         )
 
-    if not aggregated_assets or not latest_files:
+    final_assets = list(aggregated_assets.values())
+    if not final_assets or not latest_files:
         raise ValueError("CSV出力が空です")
 
     handle.update(stage="exporting", detail="CSV 生成中")
+    assets_payload = [asset.model_dump() for asset in final_assets]
     handle.update(
         status="completed",
         stage="completed",
@@ -442,6 +444,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         partial_files=latest_files,
         processed_chunks=total_chunks,
         total_chunks=total_chunks,
+        assets_payload=assets_payload,
     )
 
 
@@ -605,7 +608,15 @@ async def get_job_result(job_id: str) -> JobResultResponse:
     if job.status != "completed" or not job.result_files:
         raise HTTPException(status_code=409, detail="Job is not completed")
     document_type = job.document_type or "unknown"
-    return JobResultResponse(status="ok", job_id=job.job_id, document_type=document_type, files=job.result_files)
+    assets_payload = job.assets_payload or []
+    assets: List[AssetRecord] = [AssetRecord.model_validate(item) for item in assets_payload]
+    return JobResultResponse(
+        status="ok",
+        job_id=job.job_id,
+        document_type=document_type,
+        files=job.result_files,
+        assets=assets,
+    )
 
 
 @app.on_event("startup")

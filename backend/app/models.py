@@ -102,3 +102,4 @@ class JobResultResponse(BaseModel):
     job_id: str
     document_type: DocumentType
     files: Dict[str, str]
+    assets: List[AssetRecord]

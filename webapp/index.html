@@ -1103,27 +1103,25 @@
     }
 
     async function handleSingleFile(file, docType, dateFormat) {
-        setStatus(`「${file.name}」のレイアウト解析を開始しました…`, 'info');
-        const payload = await analyzeDocument(file, docType, dateFormat);
-        const assets = Array.isArray(payload.assets) ? payload.assets : [];
+        setStatus(`「${file.name}」の解析ジョブを登録しています…`, 'info');
+        const jobId = await enqueueJob(file, docType, dateFormat);
+        const result = await pollJobUntilComplete(jobId, { fileName: file.name });
+        const assets = Array.isArray(result.assets) ? result.assets : [];
         if (!assets.length) {
             throw new Error('取引情報が見つかりませんでした。');
         }
-        setStatus(`「${file.name}」のAI補正を適用しています…`, 'info');
-        const csvFiles = await exportCsv(assets);
-        setStatus(`「${file.name}」の結果を整形しています…`, 'info');
         return {
             id: createDocId(),
             name: file.name,
-            docType: docType || payload.document_type,
+            docType: docType || result.documentType || result.document_type,
             dateFormat,
             assets,
-            csvFiles,
-            raw: payload,
+            csvFiles: result.files,
+            jobId,
         };
     }
 
-    async function analyzeDocument(file, docType, dateFormat) {
+    async function enqueueJob(file, docType, dateFormat) {
         const base = normalizedApiBase();
         const form = new FormData();
         form.append('file', file);
@@ -1133,51 +1131,58 @@
         if (dateFormat) {
             form.append('date_format', normalizeDateFormat(dateFormat));
         }
-        state.currentAbortController = new AbortController();
-        let res;
-        try {
-            res = await fetch(`${base}/documents/analyze`, {
-                method: 'POST',
-                body: form,
-                signal: state.currentAbortController.signal,
-            });
-        } finally {
-            state.currentAbortController = null;
-        }
+        const res = await fetchWithAbort(`${base}/jobs`, {
+            method: 'POST',
+            body: form,
+        });
         if (!res.ok) {
             const text = await res.text();
-            throw new Error(`読み取り API でエラーが発生しました (HTTP ${res.status}): ${text}`);
+            throw new Error(`ジョブ登録でエラーが発生しました (HTTP ${res.status}): ${text}`);
         }
         const payload = await res.json();
-        if (payload.status !== 'ok') {
-            throw new Error('読み取り結果が取得できませんでした。');
+        if (payload.status !== 'accepted' || !payload.job_id) {
+            throw new Error('ジョブ登録に失敗しました。');
         }
-        return payload;
+        return payload.job_id;
     }
 
-    async function exportCsv(assets) {
+    async function pollJobUntilComplete(jobId, { fileName } = {}) {
         const base = normalizedApiBase();
-        state.currentAbortController = new AbortController();
-        let res;
-        try {
-            res = await fetch(`${base}/export`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ assets }),
-                signal: state.currentAbortController.signal,
-            });
-        } finally {
-            state.currentAbortController = null;
+        let attempt = 0;
+        while (true) {
+            if (state.cancelRequested) {
+                throw new Error('読み取りを中止しました。');
+            }
+            const res = await fetchWithAbort(`${base}/jobs/${jobId}`);
+            if (res.status === 404) {
+                throw new Error('ジョブが見つかりませんでした。');
+            }
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`ジョブ状況の取得に失敗しました (HTTP ${res.status}): ${text}`);
+            }
+            const statusPayload = await res.json();
+            updateJobStatusMessage(statusPayload, fileName);
+            if (statusPayload.status === 'failed') {
+                throw new Error(statusPayload.detail || 'ジョブが失敗しました。');
+            }
+            if (statusPayload.status === 'completed') {
+                const resultRes = await fetchWithAbort(`${base}/jobs/${jobId}/result`);
+                if (!resultRes.ok) {
+                    const text = await resultRes.text();
+                    throw new Error(`ジョブ結果の取得に失敗しました (HTTP ${resultRes.status}): ${text}`);
+                }
+                const resultPayload = await resultRes.json();
+                return {
+                    files: resultPayload.files || statusPayload.files || {},
+                    assets: resultPayload.assets || [],
+                    documentType: resultPayload.document_type || statusPayload.document_type,
+                };
+            }
+            attempt += 1;
+            const waitMs = Math.min(7000, 2000 + attempt * 400);
+            await sleep(waitMs);
         }
-        if (!res.ok) {
-            const text = await res.text();
-            throw new Error(`CSV 作成 API でエラーが発生しました (HTTP ${res.status}): ${text}`);
-        }
-        const data = await res.json();
-        if (!data.files) {
-            throw new Error('CSV ファイルが取得できませんでした。');
-        }
-        return data.files;
     }
 
     function renderDocuments() {
@@ -1472,6 +1477,61 @@
         } catch (error) {
             console.warn('Failed to display notification', error);
         }
+    }
+
+    async function fetchWithAbort(url, options = {}) {
+        const controller = new AbortController();
+        state.currentAbortController = controller;
+        const fetchOptions = { ...options, signal: controller.signal };
+        try {
+            return await fetch(url, fetchOptions);
+        } finally {
+            if (state.currentAbortController === controller) {
+                state.currentAbortController = null;
+            }
+        }
+    }
+
+    function updateJobStatusMessage(statusPayload, fileName) {
+        const parts = [];
+        if (fileName) {
+            parts.push(`「${fileName}」`);
+        }
+        const stageLabel = translateStage(statusPayload?.stage);
+        if (stageLabel) {
+            parts.push(stageLabel);
+        }
+        if (statusPayload?.detail) {
+            parts.push(statusPayload.detail);
+        }
+        const processed = Number(statusPayload?.processed_chunks || 0);
+        const total = Number(statusPayload?.total_chunks || 0);
+        if (total > 0) {
+            parts.push(`(${processed}/${total} ページ)`);
+        }
+        const message = parts.filter(Boolean).join(' ');
+        if (message) {
+            setStatus(message, 'info');
+        }
+    }
+
+    function translateStage(stage) {
+        switch (stage) {
+            case 'queued':
+                return '順番待ち';
+            case 'analyzing':
+                return 'レイアウト解析中…';
+            case 'exporting':
+                return 'CSV 整形中…';
+            case 'completed':
+                return '完了';
+            default:
+                return '';
+        }
+    }
+
+    function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     function setStatus(message, type) {

@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 from .models import DocumentType
 
@@ -29,6 +29,7 @@ class JobRecord:
     partial_files: Optional[Dict[str, str]] = None
     processed_chunks: int = 0
     total_chunks: int = 0
+    assets_payload: Optional[List[dict]] = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
