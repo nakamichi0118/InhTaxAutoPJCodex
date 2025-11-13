@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import base64
 import logging
-from collections import OrderedDict
 from datetime import datetime
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +15,7 @@ from .azure_analyzer import (
     build_transactions_from_lines,
     merge_transactions,
     post_process_transactions,
+    BALANCE_TOLERANCE,
     _reconcile_transactions,
 )
 from .config import get_settings
@@ -226,6 +226,89 @@ def _merge_line_lists(primary: List[str], supplementary: List[str]) -> List[str]
     return merged
 
 
+def _append_note(existing: Optional[str], additions: List[str]) -> Optional[str]:
+    parts: List[str] = []
+    if existing:
+        parts.append(existing)
+    parts.extend(note for note in additions if note)
+    combined = "; ".join(part for part in parts if part)
+    return combined or None
+
+
+def _enforce_continuity(
+    prev_balance: Optional[float],
+    transactions: List[TransactionLine],
+) -> tuple[List[TransactionLine], Optional[float]]:
+    if not transactions:
+        return [], prev_balance
+    updated: List[TransactionLine] = []
+    running_balance = prev_balance
+    for txn in transactions:
+        withdrawal = txn.withdrawal_amount or 0.0
+        deposit = txn.deposit_amount or 0.0
+        expected_balance = None
+        notes: List[str] = []
+        if running_balance is not None:
+            expected_balance = running_balance - withdrawal + deposit
+
+        actual_balance = txn.balance
+        if expected_balance is not None:
+            if actual_balance is None or abs(actual_balance - expected_balance) > BALANCE_TOLERANCE:
+                actual_balance = expected_balance
+                notes.append("前ページ残高との整合で再計算しました")
+
+        running_balance = actual_balance
+        if notes:
+            txn = txn.model_copy(
+                update={
+                    "balance": actual_balance,
+                    "correction_note": _append_note(txn.correction_note, notes),
+                }
+            )
+        elif actual_balance is not None and actual_balance != txn.balance:
+            txn = txn.model_copy(update={"balance": actual_balance})
+
+        updated.append(txn)
+
+    return updated, running_balance
+
+
+def _apply_global_reconciliation(
+    transactions: List[TransactionLine],
+    contents: bytes,
+    settings,
+    *,
+    date_format: str,
+) -> List[TransactionLine]:
+    try:
+        extraction = _analyze_with_gemini(contents, settings)
+    except (GeminiError, PdfChunkingError) as exc:
+        logger.warning("Gemini全体補正の取得に失敗しました: %s", exc)
+        return transactions
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Gemini全体補正で予期しないエラーが発生しました")
+        return transactions
+
+    gemini_transactions = _convert_gemini_structured_transactions(
+        extraction.transactions,
+        date_format=date_format,
+    )
+    if not gemini_transactions:
+        gemini_transactions = build_transactions_from_lines(
+            extraction.lines,
+            date_format=date_format,
+        )
+    if not gemini_transactions:
+        return transactions
+
+    gemini_transactions = post_process_transactions(gemini_transactions)
+    try:
+        return _reconcile_transactions(transactions, gemini_transactions, None)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("全体の残高補正に失敗しました: %s", exc)
+        return transactions
+
+
 def _convert_gemini_structured_transactions(
     items: List[Dict[str, Any]],
     *,
@@ -364,33 +447,79 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     with open(job.file_path, "rb") as stream:
         contents = stream.read()
     source_name = job.file_name or "uploaded.pdf"
+    plan = PdfChunkingPlan(
+        max_bytes=settings.azure_chunk_max_bytes,
+        max_pages=1,
+    )
+    try:
+        chunks = chunk_pdf_by_limits(contents, plan)
+    except PdfChunkingError as exc:
+        raise ValueError(str(exc)) from exc
 
-    progress = {"total": 0}
+    if not chunks:
+        raise ValueError("PDFにページが含まれていません")
 
-    def progress_reporter(done: int, total: int) -> None:
-        progress["total"] = total
-        handle.update(
-            stage="analyzing",
-            detail=f"{done}/{total} ページ解析中…",
-            processed_chunks=done,
-            total_chunks=total,
-        )
-
-    doc_type, assets, _ = _resolve_document_assets(
-        contents,
-        job.content_type,
-        job.document_type_hint,
-        job.date_format,
-        settings,
-        source_name,
-        progress_reporter=progress_reporter,
+    total_chunks = len(chunks)
+    handle.update(
+        stage="analyzing",
+        detail="レイアウト解析を開始します…",
+        processed_chunks=0,
+        total_chunks=total_chunks,
     )
 
-    if not assets:
-        raise ValueError("解析結果が空でした")
+    all_transactions: List[TransactionLine] = []
+    prev_balance: Optional[float] = None
+    document_type: Optional[DocumentType] = None
 
-    handle.update(stage="exporting", detail="AI補正とCSV整形を実行しています…")
-    payload = {"assets": [asset.to_export_payload() for asset in assets]}
+    for index, chunk in enumerate(chunks, start=1):
+        handle.update(
+            stage="analyzing",
+            detail=f"{index}/{total_chunks} ページ解析中…",
+            processed_chunks=index - 1,
+            total_chunks=total_chunks,
+        )
+        chunk_result = _analyze_with_azure(
+            chunk,
+            settings,
+            source_name,
+            date_format=job.date_format,
+        )
+        document_type = chunk_result.assets[0].category if chunk_result.assets else "transaction_history"
+        chunk_transactions: List[TransactionLine] = []
+        for asset in chunk_result.assets:
+            chunk_transactions.extend(asset.transactions)
+        chunk_transactions, prev_balance = _enforce_continuity(prev_balance, chunk_transactions)
+        all_transactions.extend(chunk_transactions)
+        handle.update(
+            stage="analyzing",
+            detail=f"{index}/{total_chunks} ページ完了",
+            processed_chunks=index,
+            total_chunks=total_chunks,
+        )
+
+    if not all_transactions:
+        raise ValueError("取引が抽出できませんでした")
+
+    handle.update(stage="analyzing", detail="Gemini補正を統合しています…")
+    reconciled_transactions = _apply_global_reconciliation(
+        all_transactions,
+        contents,
+        settings,
+        date_format=job.date_format,
+    )
+    reconciled_transactions = post_process_transactions(reconciled_transactions)
+
+    asset = AssetRecord(
+        category=document_type or "transaction_history",
+        type="transaction_history",
+        source_document=source_name,
+        asset_name="預金取引推移表",
+        transactions=reconciled_transactions,
+    )
+
+    asset_payload = asset.to_export_payload()
+    payload = {"assets": [asset_payload]}
+    handle.update(stage="exporting", detail="CSV を書き出しています…")
     csv_map = export_to_csv_strings(payload)
     if not csv_map:
         raise ValueError("CSV出力が空です")
@@ -398,13 +527,13 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
         for name, content in csv_map.items()
     }
-    assets_payload = [asset.model_dump() for asset in assets]
-    total_chunks = progress.get("total", 0) or len(assets_payload)
+    assets_payload = [asset_payload]
+
     handle.update(
         status="completed",
         stage="completed",
         detail="完了",
-        document_type=doc_type,
+        document_type=asset.category,
         result_files=encoded,
         partial_files=encoded,
         processed_chunks=total_chunks,

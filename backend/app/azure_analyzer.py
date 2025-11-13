@@ -469,6 +469,8 @@ def _reconcile_transactions(
     azure_transactions: List[TransactionLine],
     gemini_transactions: List[TransactionLine],
     progress_callback: Optional[ProgressCallback] = None,
+    *,
+    initial_balance: Optional[float] = None,
 ) -> List[TransactionLine]:
     if not azure_transactions:
         return []
@@ -483,7 +485,11 @@ def _reconcile_transactions(
 
     gemini_index = _build_gemini_index(gemini_transactions)
     corrected: List[TransactionLine] = []
-    prev_balance = _opening_balance_before_first(azure_transactions)
+    prev_balance = (
+        initial_balance
+        if initial_balance is not None
+        else _opening_balance_before_first(azure_transactions)
+    )
 
     for azure_txn in azure_transactions:
         candidate = _select_gemini_candidate(azure_txn, prev_balance, gemini_index)
