@@ -612,6 +612,30 @@ def _normalize_withdrawal_for_balance(prev_balance: float, withdrawal: float) ->
     return round(adjusted, 2), note
 
 
+def _merge_notes(existing: Optional[str], notes: List[str]) -> Optional[str]:
+    parts: List[str] = []
+    if existing:
+        parts.append(existing)
+    parts.extend(note for note in notes if note)
+    merged = "; ".join(part for part in parts if part)
+    return merged or None
+
+
+def _normalize_withdrawal_for_balance(prev_balance: float, withdrawal: float) -> Tuple[float, Optional[str]]:
+    if withdrawal <= 0.0:
+        return withdrawal, None
+    cap = max(prev_balance * WITHDRAW_RATIO_LIMIT + WITHDRAW_ABS_MARGIN, WITHDRAW_ABS_MARGIN)
+    adjusted = withdrawal
+    divisor = 1.0
+    while adjusted > cap and divisor < WITHDRAW_MAX_DIVISOR:
+        adjusted /= 10.0
+        divisor *= 10.0
+    if abs(adjusted - withdrawal) <= BALANCE_TOLERANCE:
+        return withdrawal, None
+    note = f"出金を {withdrawal:,.0f} → {adjusted:,.2f} に補正しました"
+    return round(adjusted, 2), note
+
+
 def _should_override_amount(current: Optional[float], expected: Optional[float]) -> bool:
     if expected is None:
         return False
