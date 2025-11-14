@@ -126,6 +126,7 @@ def _analyze_with_azure(
     *,
     date_format: str,
     progress_reporter: Optional[Callable[[int, int], None]] = None,
+    perform_global_reconciliation: bool = True,
 ) -> AzureAnalysisResult:
     if not settings.azure_form_recognizer_endpoint or not settings.azure_form_recognizer_key:
         raise HTTPException(status_code=503, detail="Azure Form Recognizer is not configured")
@@ -171,33 +172,38 @@ def _analyze_with_azure(
     if azure_line_transactions:
         combined_transactions = merge_transactions(combined_transactions, azure_line_transactions)
 
-    gemini_transactions: List[TransactionLine] = []
-    try:
-        gemini_extraction = _analyze_with_gemini(contents, settings)
-    except (GeminiError, PdfChunkingError) as exc:
-        logger.warning("Gemini補完の取得に失敗しました: %s", exc)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Gemini補完処理で予期しないエラーが発生しました")
-    else:
-        gemini_transactions = _convert_gemini_structured_transactions(
-            gemini_extraction.transactions,
-            date_format=date_format,
-        )
-        if not gemini_transactions:
-            gemini_transactions = build_transactions_from_lines(
-                gemini_extraction.lines,
+    combined_lines = list(combined_lines)
+
+    if perform_global_reconciliation:
+        gemini_transactions: List[TransactionLine] = []
+        try:
+            gemini_extraction = _analyze_with_gemini(contents, settings)
+        except (GeminiError, PdfChunkingError) as exc:
+            logger.warning("Gemini補完の取得に失敗しました: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Gemini補完処理で予期しないエラーが発生しました")
+        else:
+            gemini_transactions = _convert_gemini_structured_transactions(
+                gemini_extraction.transactions,
                 date_format=date_format,
             )
-        combined_lines = _merge_line_lists(combined_lines, gemini_extraction.lines)
+            if not gemini_transactions:
+                gemini_transactions = build_transactions_from_lines(
+                    gemini_extraction.lines,
+                    date_format=date_format,
+                )
+            combined_lines = _merge_line_lists(combined_lines, gemini_extraction.lines)
 
-    combined_transactions = post_process_transactions(combined_transactions)
-    if gemini_transactions:
-        gemini_transactions = post_process_transactions(gemini_transactions)
-        combined_transactions = _reconcile_transactions(
-            combined_transactions,
-            gemini_transactions,
-            None,
-        )
+        if gemini_transactions:
+            combined_transactions = post_process_transactions(combined_transactions)
+            gemini_transactions = post_process_transactions(gemini_transactions)
+            combined_transactions = _reconcile_transactions(
+                combined_transactions,
+                gemini_transactions,
+                None,
+            )
+    else:
+        combined_transactions = post_process_transactions(combined_transactions)
 
     asset = AssetRecord(
         category="bank_deposit",
@@ -246,27 +252,37 @@ def _enforce_continuity(
     for txn in transactions:
         withdrawal = txn.withdrawal_amount or 0.0
         deposit = txn.deposit_amount or 0.0
-        expected_balance = None
         notes: List[str] = []
-        if running_balance is not None:
-            expected_balance = running_balance - withdrawal + deposit
-
         actual_balance = txn.balance
-        if expected_balance is not None:
-            if actual_balance is None or abs(actual_balance - expected_balance) > BALANCE_TOLERANCE:
-                actual_balance = expected_balance
-                notes.append("前ページ残高との整合で再計算しました")
+        if running_balance is not None:
+            if actual_balance is not None:
+                balance_delta = running_balance - actual_balance
+                if abs(balance_delta) > BALANCE_TOLERANCE:
+                    if balance_delta > 0:
+                        withdrawal = abs(balance_delta)
+                        deposit = 0.0
+                        notes.append("残高差から出金額を再算出しました")
+                    elif balance_delta < 0:
+                        deposit = abs(balance_delta)
+                        withdrawal = 0.0
+                        notes.append("残高差から入金額を再算出しました")
+                    actual_balance = running_balance - withdrawal + deposit
+            if actual_balance is None:
+                actual_balance = running_balance - withdrawal + deposit
+                notes.append("残高を前行から補完しました")
 
         running_balance = actual_balance
+        update_fields: Dict[str, Any] = {}
+        if actual_balance is not None and actual_balance != txn.balance:
+            update_fields["balance"] = actual_balance
+        if (withdrawal or None) != txn.withdrawal_amount:
+            update_fields["withdrawal_amount"] = withdrawal or None
+        if (deposit or None) != txn.deposit_amount:
+            update_fields["deposit_amount"] = deposit or None
         if notes:
-            txn = txn.model_copy(
-                update={
-                    "balance": actual_balance,
-                    "correction_note": _append_note(txn.correction_note, notes),
-                }
-            )
-        elif actual_balance is not None and actual_balance != txn.balance:
-            txn = txn.model_copy(update={"balance": actual_balance})
+            update_fields["correction_note"] = _append_note(txn.correction_note, notes)
+        if update_fields:
+            txn = txn.model_copy(update=update_fields)
 
         updated.append(txn)
 
@@ -275,29 +291,36 @@ def _enforce_continuity(
 
 def _apply_global_reconciliation(
     transactions: List[TransactionLine],
-    contents: bytes,
-    settings,
     *,
     date_format: str,
+    raw_lines: Optional[List[str]] = None,
+    contents: Optional[bytes] = None,
+    settings=None,
 ) -> List[TransactionLine]:
-    try:
-        extraction = _analyze_with_gemini(contents, settings)
-    except (GeminiError, PdfChunkingError) as exc:
-        logger.warning("Gemini全体補正の取得に失敗しました: %s", exc)
-        return transactions
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("Gemini全体補正で予期しないエラーが発生しました")
-        return transactions
+    gemini_transactions: List[TransactionLine] = []
+    if raw_lines:
+        gemini_transactions = build_transactions_from_lines(raw_lines, date_format=date_format)
 
-    gemini_transactions = _convert_gemini_structured_transactions(
-        extraction.transactions,
-        date_format=date_format,
-    )
-    if not gemini_transactions:
-        gemini_transactions = build_transactions_from_lines(
-            extraction.lines,
+    if not gemini_transactions and contents is not None and settings is not None:
+        try:
+            extraction = _analyze_with_gemini(contents, settings)
+        except (GeminiError, PdfChunkingError) as exc:
+            logger.warning("Gemini全体補正の取得に失敗しました: %s", exc)
+            return transactions
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Gemini全体補正で予期しないエラーが発生しました")
+            return transactions
+
+        gemini_transactions = _convert_gemini_structured_transactions(
+            extraction.transactions,
             date_format=date_format,
         )
+        if not gemini_transactions:
+            gemini_transactions = build_transactions_from_lines(
+                extraction.lines,
+                date_format=date_format,
+            )
+
     if not gemini_transactions:
         return transactions
 
@@ -483,6 +506,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             settings,
             source_name,
             date_format=job.date_format,
+            perform_global_reconciliation=False,
         )
         document_type = chunk_result.assets[0].category if chunk_result.assets else "transaction_history"
         chunk_transactions: List[TransactionLine] = []
@@ -500,13 +524,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     if not all_transactions:
         raise ValueError("取引が抽出できませんでした")
 
-    handle.update(stage="analyzing", detail="Gemini補正を統合しています…")
-    reconciled_transactions = _apply_global_reconciliation(
-        all_transactions,
-        contents,
-        settings,
-        date_format=job.date_format,
-    )
+    handle.update(stage="analyzing", detail="残高を整合しています…")
+    reconciled_transactions, _ = _enforce_continuity(None, all_transactions)
     reconciled_transactions = post_process_transactions(reconciled_transactions)
 
     asset = AssetRecord(
