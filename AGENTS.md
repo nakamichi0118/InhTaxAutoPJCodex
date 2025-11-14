@@ -1,24 +1,19 @@
-Ôªø# Repository Guidelines
+# Repository Guidelines
 
 ## Project Structure & Module Organization
-The CLI exporter `src/export_csv.py` turns normalised JSON into `dist/assets.csv` and `dist/bank_transactions.csv`. FastAPI code lives in `backend/app` (`main.py`, `parser.py`, `exporter.py`), while shared Azure helpers sit in `backend/scripts`. Specifications are kept under `Docs/`, canonical payloads under `examples/`, static assets in `webapp/`, and sample PDFs inside `test/`.
+The CLI exporter lives in `src/export_csv.py` and turns normalized JSON into `dist/assets.csv` and `dist/bank_transactions.csv`. FastAPI endpoints and Gemini-driven orchestration sit in `backend/app` (notably `main.py`, `parser.py`, `exporter.py`), while shared scripts reside under `backend/scripts`. Specifications are in `Docs/`, canonical payloads in `examples/`, web assets in `webapp/`, and sample PDFs for manual validation in `test/`. Generated CSVs and other artifacts belong in `dist/`.
 
 ## Build, Test, and Development Commands
-Create a virtual environment with `python -m venv .venv` and install dependencies via `pip install -r requirements.txt`. Validate CSV generation by running `python src/export_csv.py examples/sample_assets.json --output-dir dist --force`. Start the API locally with `uvicorn backend.app.main:app --reload` and confirm readiness at `GET /api/ping`. To inspect Azure layout output, execute `python backend/scripts/analyze_pdf.py "test/1Âè∑/touki_tate1.pdf" --out tmp.json`.
+Create an isolated environment with `python -m venv .venv` and activate it before running `pip install -r requirements.txt`. Regenerate CSV fixtures via `python src/export_csv.py examples/sample_assets.json --output-dir dist --force`, then inspect the new files in `dist/`. Start the API locally with `uvicorn backend.app.main:app --reload` and verify readiness at `GET /api/ping`. To inspect Gemini layout analysis, run `python backend/scripts/analyze_pdf.py "test/1çÜ/touki_tate1.pdf"`.
 
 ## Coding Style & Naming Conventions
-Target Python 3.11+, use four-space indentation, and follow `snake_case` for functions, variables, and modules. Reserve `PascalCase` for Pydantic models. Keep CSV formatting logic inside `export_csv.py`, parser improvements in `backend/app/parser.py`, and load environment-specific values from `backend/app/config.py`. Prefer explicit type hints and dataclasses where they clarify intent.
+Target Python 3.11+, use four-space indentation, and prefer explicit type hints. Follow `snake_case` for functions, variables, and modules; reserve `PascalCase` for Pydantic models and dataclasses. Keep CSV formatting logic inside `src/export_csv.py`, parser changes in `backend/app/parser.py`, and environment-specific settings in `backend/app/config.py`. Add succinct comments only when logic is non-obvious.
 
 ## Testing Guidelines
-No automated suite exists yet. Use JSON fixtures in `examples/` and PDFs in `test/` for manual verification. After parser or exporter changes, regenerate CSVs into `dist/` and check headers, row counts, and BOM encoding. For API updates, post the sample payload to `/api/export` and ensure the response writes to valid CSV files.
+No automated suite exists yet, so rely on fixtures inside `examples/` and PDFs under `test/`. After parser or exporter changes, regenerate CSVs into `dist/` and confirm headers, row counts, and BOM preservation. For API updates, post a sample payload to `/api/export`, verify the response writes valid CSV files, and attach representative snippets to reviews.
 
 ## Commit & Pull Request Guidelines
-Write imperative, present-tense commits (e.g., `Adjust bankbook parser for multi-page statements`). Pull requests should call out motivation, summarize behaviour changes, list manual or automated checks, and reference related tickets. Include representative CSV or API snippets when behaviour changes, and never commit `.env` or credential material.
+Write imperative, present-tense commit messages (e.g., `Adjust bankbook parser for multi-page statements`). Pull requests should explain motivation, summarize behavioral changes, reference related tickets, and list manual checks performed. Include CSV diffs or API response samples whenever behavior shifts, exclude `.env` or credentials, and clean temporary files before pushing.
 
-## Security & Configuration Tips
-Store secrets in environment variables or Azure Key Vault instead of source control. Point the web client at alternate endpoints via the `?api=` query parameter during testing. Keep generated artifacts in `dist/` and clean temporary files before pushing. Always push your branch once assigned work is complete.
-
-## Document Intelligence Handling
-Large PDFs are automatically split before hitting Azure. Tweak the thresholds via `AZURE_DOCUMENT_MAX_MB` (default 4 MB) and `AZURE_CHUNK_PAGE_LIMIT` (default 20 pages). If Azure still rejects a single page, the API returns HTTP 413 so we can consider compressing or routing to Gemini.
-Gemini analysis runs when `GEMINI_API_KEY` is present (override the model with `GEMINI_MODEL`, default `gemini-1.5-flash-latest`). If Gemini fails, the service automatically falls back to Azure.
-Gemini uploads oversized PDFs automatically via the Files API, so keep the API key valid and rotate if quotas are exhausted.
+## Security & Document Intelligence Tips
+Store secrets in environment variables or secret managers compatible with your deployment target. Override Gemini behavior with `GEMINI_MODEL`, `GEMINI_DOCUMENT_MAX_MB`, and `GEMINI_CHUNK_PAGE_LIMIT`; a 413 response indicates the PDF still exceeds the configured chunk size. Ensure `GEMINI_API_KEY` stays valid, rotate it when needed, and verify rate limits before large batches.

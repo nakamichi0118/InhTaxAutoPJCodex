@@ -127,6 +127,7 @@ def _analyze_with_azure(
     date_format: str,
     progress_reporter: Optional[Callable[[int, int], None]] = None,
     perform_global_reconciliation: bool = True,
+    gemini_cache: Optional[Dict[int, List[TransactionLine]]] = None,
 ) -> AzureAnalysisResult:
     if not settings.azure_form_recognizer_endpoint or not settings.azure_form_recognizer_key:
         raise HTTPException(status_code=503, detail="Azure Form Recognizer is not configured")
@@ -174,36 +175,7 @@ def _analyze_with_azure(
 
     combined_lines = list(combined_lines)
 
-    if perform_global_reconciliation:
-        gemini_transactions: List[TransactionLine] = []
-        try:
-            gemini_extraction = _analyze_with_gemini(contents, settings)
-        except (GeminiError, PdfChunkingError) as exc:
-            logger.warning("Gemini補完の取得に失敗しました: %s", exc)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Gemini補完処理で予期しないエラーが発生しました")
-        else:
-            gemini_transactions = _convert_gemini_structured_transactions(
-                gemini_extraction.transactions,
-                date_format=date_format,
-            )
-            if not gemini_transactions:
-                gemini_transactions = build_transactions_from_lines(
-                    gemini_extraction.lines,
-                    date_format=date_format,
-                )
-            combined_lines = _merge_line_lists(combined_lines, gemini_extraction.lines)
-
-        if gemini_transactions:
-            combined_transactions = post_process_transactions(combined_transactions)
-            gemini_transactions = post_process_transactions(gemini_transactions)
-            combined_transactions = _reconcile_transactions(
-                combined_transactions,
-                gemini_transactions,
-                None,
-            )
-    else:
-        combined_transactions = post_process_transactions(combined_transactions)
+    combined_transactions = post_process_transactions(combined_transactions)
 
     asset = AssetRecord(
         category="bank_deposit",

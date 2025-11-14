@@ -1,11 +1,11 @@
-ï»¿# InhTaxAutoPJ CSV Exporter
+# InhTaxAutoPJ CSV Exporter
 
 ## Components
 - `src/export_csv.py` - CLI utility that converts normalised JSON into `assets.csv` / `bank_transactions.csv`.
 - `Docs/CSV_SPEC.md` - specification of the CSV schema and the expected JSON payload.
 - `examples/sample_assets.json` - sample JSON matching the spec.
-- `backend/app` - FastAPI backend (Azure Document Intelligence integration + CSV export API).
-- `backend/scripts/analyze_pdf.py` - CLI helper to run the Azure layout model against local PDFs.
+- `backend/app` - FastAPI backend (Gemini-powered document analysis + CSV export API).
+- `backend/scripts/analyze_pdf.py` - CLI helper to run the Gemini layout flow against local PDFs.
 - `webapp/index.html`
  - Static Web UI that talks to the deployed API and downloads CSVs.
 
@@ -24,22 +24,22 @@ Endpoints:
 - `POST /api/analyze/pdf`
 - `POST /api/export`
 
-ç’°å¢ƒå¤‰æ•°ã¯ `.env` ã‚’åˆ©ç”¨ã—ã¾ã™ã€‚ãƒ­ãƒ¼ã‚«ãƒ«ã§ PDF ã‚’è©¦ã™å ´åˆ:
+ŠÂ‹«•Ï”‚Í `.env` ‚ğŠˆ—p‚µ‚Ä‚­‚¾‚³‚¢Bƒ[ƒJƒ‹‚Å PDF ‚ğŠm”F‚·‚éê‡:
 ```bash
-python backend/scripts/analyze_pdf.py test/1çµ„/touki_tate1.pdf --out tmp.json
+python backend/scripts/analyze_pdf.py test/1†/touki_tate1.pdf
 ```
 
-## Web ãƒ‡ãƒ¢
-1. `webapp/index.html` ã‚’ãƒ–ãƒ©ã‚¦ã‚¶ã§é–‹ãï¼ˆCloudflare Pages ã§ã‚‚åŒã˜ï¼‰ã€‚
-2. API ã‚¨ãƒ³ãƒ‰ãƒã‚¤ãƒ³ãƒˆã« Railway ã® URLï¼ˆä¾‹: `https://inhtaxautopjcodex-production.up.railway.app/api`ï¼‰ã‚’è¨­å®šã€‚
-3. JSON ã‚’è²¼ã‚Šä»˜ã‘ã¦ã€Œãƒãƒƒã‚¯ã‚¨ãƒ³ãƒ‰ã§CSVç”Ÿæˆã€ã‚’å®Ÿè¡Œã™ã‚‹ã¨ã€API çµŒç”±ã§ CSV ã‚’ç”Ÿæˆã—ãƒ€ã‚¦ãƒ³ãƒ­ãƒ¼ãƒ‰ã§ãã¾ã™ã€‚
+## Web ƒtƒ[
+1. `webapp/index.html` ‚ğƒuƒ‰ƒEƒU‚Å‹N“®iCloudflare Pages ‚È‚Ç‚Å‚ÌƒzƒXƒeƒBƒ“ƒO‘z’èjB
+2. API ƒGƒ“ƒhƒ|ƒCƒ“ƒg‚Í Railway ‚È‚Ç‚Ì URLi—á: `https://inhtaxautopjcodex-production.up.railway.app/api`j‚ğw’èB
+3. JSON ‚ğƒAƒbƒvƒ[ƒh‚µ‚ÄuƒoƒbƒNƒGƒ“ƒh‚ÅCSV¶¬v‚ğÀs‚·‚é‚ÆAAPI Œo—R‚Å CSV ‚ª¶¬Eƒ_ƒEƒ“ƒ[ƒh‚Å‚«‚Ü‚·B
 
-ãƒ¡ãƒ¢:
-- API ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ã¯ã‚¯ã‚¨ãƒª `?api=` ã§ã‚‚å·®ã—æ›¿ãˆå¯èƒ½ã€‚
-- CSV ã¯ UTF-8 BOM ä»˜ãã§å‡ºåŠ›ã•ã‚Œã€Excel ã§ã‚‚æ–‡å­—åŒ–ã‘ã—ã¾ã›ã‚“ã€‚
-- `webapp/index.html` ã® UI ã‹ã‚‰ã‚µãƒ³ãƒ—ãƒ« JSON ã‚’èª­ã¿è¾¼ã‚“ã§å‹•ä½œç¢ºèªã§ãã¾ã™ã€‚
+”õl:
+- API ƒpƒ‰ƒ[ƒ^‚ÍƒNƒGƒŠ `?api=` ‚ÅØ‚è‘Ö‚¦‰Â”\B
+- CSV ‚Í UTF-8 BOM •t‚«‚Åo—Í‚³‚êAExcel ‚Å•¶š‰»‚¯‚µ‚Ü‚¹‚ñB
+- `webapp/index.html` ‚Ì UI ‚Å‚ÍƒTƒ“ƒvƒ‹ JSON ‚ğ“Ç‚İ‚İƒeƒXƒg‚Å‚«‚Ü‚·B
 
 
-Large PDF uploads are automatically split before they reach Azure. Control chunking with `AZURE_DOCUMENT_MAX_MB` and per-chunk page count via `AZURE_CHUNK_PAGE_LIMIT`.
-Gemini-based analysis is enabled when `GEMINI_API_KEY` is present. Override the model with `GEMINI_MODEL` (default `gemini-1.5-flash-latest`). Gemini failures fall back to Azure automatically.
-Gemini runs large PDFs by uploading them through the Files API automatically; no manual preprocessing is needed.
+Large PDF uploads are automatically split before they hit Gemini. Control chunking with `GEMINI_DOCUMENT_MAX_MB` and per-chunk page count via `GEMINI_CHUNK_PAGE_LIMIT`.
+Gemini-based analysis requires `GEMINI_API_KEY`. Override the model with `GEMINI_MODEL` (default `gemini-1.5-flash-latest`).
+Gemini handles oversized PDFs by uploading them through the Files API automatically; no manual preprocessing is needed.
