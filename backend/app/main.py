@@ -221,6 +221,8 @@ def _collect_diagnostics(
     transactions: List[TransactionLine],
     start_balance: Optional[float],
     store: List[Dict[str, Any]],
+    *,
+    stage: str,
 ) -> None:
     running = start_balance
     for idx, txn in enumerate(transactions, start=1):
@@ -235,6 +237,7 @@ def _collect_diagnostics(
             diff = txn.balance - running
         store.append(
             {
+                "stage": stage,
                 "transaction_date": txn.transaction_date,
                 "description": txn.description,
                 "withdrawal": txn.withdrawal_amount,
@@ -248,6 +251,7 @@ def _collect_diagnostics(
 
 def _build_diagnostics_csv(rows: List[Dict[str, Any]]) -> str:
     headers = [
+        "stage",
         "transaction_date",
         "description",
         "withdrawal",
@@ -565,12 +569,18 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             perform_global_reconciliation=False,
         )
         document_type = chunk_result.assets[0].category if chunk_result.assets else "transaction_history"
+        raw_transactions = build_transactions_from_lines(
+            chunk_result.raw_lines,
+            date_format=job.date_format,
+        )
+        _collect_diagnostics(raw_transactions, prev_balance, diagnostics, stage="azure_raw")
+
         chunk_transactions: List[TransactionLine] = []
         for asset in chunk_result.assets:
             chunk_transactions.extend(asset.transactions)
-        _collect_diagnostics(chunk_transactions, prev_balance, diagnostics)
         chunk_start_balance = prev_balance
         chunk_transactions, prev_balance = _enforce_continuity(prev_balance, chunk_transactions)
+        _collect_diagnostics(chunk_transactions, chunk_start_balance, diagnostics, stage="adjusted")
 
         if _needs_balance_fix(chunk_transactions):
             handle.update(
