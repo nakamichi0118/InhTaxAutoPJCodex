@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="InhTaxAutoPJ Backend", version="0.5.0")
 
+CHUNK_RESIDUAL_TOLERANCE = 500.0
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -213,6 +215,81 @@ def _append_note(existing: Optional[str], additions: List[str]) -> Optional[str]
     return combined or None
 
 
+def _compute_chunk_residuals(transactions: List[TransactionLine]) -> List[float]:
+    residuals: List[float] = []
+    if not transactions:
+        return residuals
+    running_balance = transactions[0].balance
+    if running_balance is None:
+        running_balance = (transactions[0].deposit_amount or 0.0) - (transactions[0].withdrawal_amount or 0.0)
+    residuals.append(_balance_difference(transactions[0].balance, running_balance))
+    for txn in transactions[1:]:
+        withdrawal = txn.withdrawal_amount or 0.0
+        deposit = txn.deposit_amount or 0.0
+        running_balance = running_balance - withdrawal + deposit if running_balance is not None else None
+        expected = running_balance if running_balance is not None else 0.0
+        residuals.append(_balance_difference(txn.balance, expected))
+    return residuals
+
+
+def _balance_difference(actual: Optional[float], expected: float) -> float:
+    if actual is None:
+        return 0.0
+    return float(actual) - expected
+
+
+def _needs_balance_fix(transactions: List[TransactionLine]) -> bool:
+    if not transactions:
+        return False
+    for diff in _compute_chunk_residuals(transactions):
+        if abs(diff) > CHUNK_RESIDUAL_TOLERANCE:
+            return True
+    return False
+
+
+def _gemini_refine_chunk(
+    chunk_bytes: bytes,
+    azure_transactions: List[TransactionLine],
+    initial_balance: Optional[float],
+    settings,
+    *,
+    date_format: str,
+) -> Optional[List[TransactionLine]]:
+    try:
+        extraction = _analyze_with_gemini(chunk_bytes, settings)
+    except (GeminiError, PdfChunkingError) as exc:
+        logger.warning("Gemini補正に失敗しました: %s", exc)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Gemini補正処理で予期しないエラーが発生しました")
+        return None
+
+    gemini_transactions = _convert_gemini_structured_transactions(
+        extraction.transactions,
+        date_format=date_format,
+    )
+    if not gemini_transactions:
+        gemini_transactions = build_transactions_from_lines(
+            extraction.lines,
+            date_format=date_format,
+        )
+    if not gemini_transactions:
+        return None
+
+    gemini_transactions = post_process_transactions(gemini_transactions)
+    try:
+        reconciled = _reconcile_transactions(
+            azure_transactions,
+            gemini_transactions,
+            None,
+            initial_balance=initial_balance,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Gemini補正の適用に失敗しました: %s", exc)
+        return None
+    return reconciled
+
+
 def _enforce_continuity(
     prev_balance: Optional[float],
     transactions: List[TransactionLine],
@@ -259,49 +336,6 @@ def _enforce_continuity(
         updated.append(txn)
 
     return updated, running_balance
-
-
-def _apply_global_reconciliation(
-    transactions: List[TransactionLine],
-    *,
-    date_format: str,
-    raw_lines: Optional[List[str]] = None,
-    contents: Optional[bytes] = None,
-    settings=None,
-) -> List[TransactionLine]:
-    gemini_transactions: List[TransactionLine] = []
-    if raw_lines:
-        gemini_transactions = build_transactions_from_lines(raw_lines, date_format=date_format)
-
-    if not gemini_transactions and contents is not None and settings is not None:
-        try:
-            extraction = _analyze_with_gemini(contents, settings)
-        except (GeminiError, PdfChunkingError) as exc:
-            logger.warning("Gemini全体補正の取得に失敗しました: %s", exc)
-            return transactions
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Gemini全体補正で予期しないエラーが発生しました")
-            return transactions
-
-        gemini_transactions = _convert_gemini_structured_transactions(
-            extraction.transactions,
-            date_format=date_format,
-        )
-        if not gemini_transactions:
-            gemini_transactions = build_transactions_from_lines(
-                extraction.lines,
-                date_format=date_format,
-            )
-
-    if not gemini_transactions:
-        return transactions
-
-    gemini_transactions = post_process_transactions(gemini_transactions)
-    try:
-        return _reconcile_transactions(transactions, gemini_transactions, None)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("全体の残高補正に失敗しました: %s", exc)
-        return transactions
 
 
 def _convert_gemini_structured_transactions(
@@ -484,7 +518,27 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         chunk_transactions: List[TransactionLine] = []
         for asset in chunk_result.assets:
             chunk_transactions.extend(asset.transactions)
+        chunk_start_balance = prev_balance
         chunk_transactions, prev_balance = _enforce_continuity(prev_balance, chunk_transactions)
+
+        if _needs_balance_fix(chunk_transactions):
+            handle.update(
+                stage="analyzing",
+                detail=f"{index}/{total_chunks} ページのAI補正を適用しています…",
+                processed_chunks=index - 1,
+                total_chunks=total_chunks,
+            )
+            refined = _gemini_refine_chunk(
+                chunk,
+                chunk_transactions,
+                chunk_start_balance,
+                settings,
+                date_format=job.date_format,
+            )
+            if refined:
+                chunk_transactions = refined
+                chunk_transactions, prev_balance = _enforce_continuity(chunk_start_balance, chunk_transactions)
+
         all_transactions.extend(chunk_transactions)
         handle.update(
             stage="analyzing",
