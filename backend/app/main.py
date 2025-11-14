@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import csv
 import logging
 from datetime import datetime
+from io import StringIO
 from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -213,6 +215,53 @@ def _append_note(existing: Optional[str], additions: List[str]) -> Optional[str]
     parts.extend(note for note in additions if note)
     combined = "; ".join(part for part in parts if part)
     return combined or None
+
+
+def _collect_diagnostics(
+    transactions: List[TransactionLine],
+    start_balance: Optional[float],
+    store: List[Dict[str, Any]],
+) -> None:
+    running = start_balance
+    for idx, txn in enumerate(transactions, start=1):
+        withdrawal = txn.withdrawal_amount or 0.0
+        deposit = txn.deposit_amount or 0.0
+        if running is None:
+            running = txn.balance
+        else:
+            running = running - withdrawal + deposit
+        diff = None
+        if txn.balance is not None and running is not None:
+            diff = txn.balance - running
+        store.append(
+            {
+                "transaction_date": txn.transaction_date,
+                "description": txn.description,
+                "withdrawal": txn.withdrawal_amount,
+                "deposit": txn.deposit_amount,
+                "azure_balance": txn.balance,
+                "computed_balance": running,
+                "difference": diff,
+            }
+        )
+
+
+def _build_diagnostics_csv(rows: List[Dict[str, Any]]) -> str:
+    headers = [
+        "transaction_date",
+        "description",
+        "withdrawal",
+        "deposit",
+        "azure_balance",
+        "computed_balance",
+        "difference",
+    ]
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow([row.get(col, "") for col in headers])
+    return buffer.getvalue()
 
 
 def _compute_chunk_residuals(transactions: List[TransactionLine]) -> List[float]:
@@ -497,6 +546,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     )
 
     all_transactions: List[TransactionLine] = []
+    diagnostics: List[Dict[str, Any]] = []
     prev_balance: Optional[float] = None
     document_type: Optional[DocumentType] = None
 
@@ -518,6 +568,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         chunk_transactions: List[TransactionLine] = []
         for asset in chunk_result.assets:
             chunk_transactions.extend(asset.transactions)
+        _collect_diagnostics(chunk_transactions, prev_balance, diagnostics)
         chunk_start_balance = prev_balance
         chunk_transactions, prev_balance = _enforce_continuity(prev_balance, chunk_transactions)
 
@@ -572,6 +623,11 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
         for name, content in csv_map.items()
     }
+    if diagnostics:
+        debug_csv = _build_diagnostics_csv(diagnostics)
+        encoded["azure_balance_diagnostics.csv"] = base64.b64encode(
+            debug_csv.encode("utf-8-sig")
+        ).decode("ascii")
     assets_payload = [asset_payload]
 
     handle.update(
