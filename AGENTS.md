@@ -30,3 +30,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - Gemini単体実行時に1ページずつ解析+処理進捗を返すよう改善し、タイムアウト後の再解析による遅延を緩和。`backend/app/main.py`でGeminiチャンク進捗をジョブステータスに反映し、検証時の安定性を高めた。
 - Gemini 2.5 Proを標準解析フローに設定し、UIの解析エンジン選択もPro単体が初期値となるよう更新。残高と入出金の符号チェックを追加してGemini出力の逆転誤りを自動補正するよう`backend/app/main.py`を拡張。
 - 入出金逆転の再発に備え、摘要キーワード（振込資金/手数料など）と残高推移の両方から補正を行うよう`_enforce_continuity`を拡張。Web UIには読み取り完了秒数を表示するサマリを追加し、検証時の速度比較が容易になった。
+- 利用ガイド`docs/USAGE.md`を追加し、読み取り手順とFAQ（画質/口座単位PDF/600dpi推奨など）を集約。READMEにも参照リンクを追記し、開発者以外でも正しい手順が把握できるようにした。

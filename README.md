@@ -8,6 +8,8 @@
 - `backend/scripts/analyze_pdf.py` - CLI helper to run the Gemini layout flow against local PDFs.
 - `webapp/index.html`
  - Static Web UI that talks to the deployed API and downloads CSVs.
+- `docs/USAGE.md`
+ - How-to guide (usage + FAQ).
 
 ## CLI usage
 ```bash
@@ -24,20 +26,20 @@ Endpoints:
 - `POST /api/analyze/pdf`
 - `POST /api/export`
 
-ŠÂ‹«•Ï”‚Í `.env` ‚ğŠˆ—p‚µ‚Ä‚­‚¾‚³‚¢Bƒ[ƒJƒ‹‚Å PDF ‚ğŠm”F‚·‚éê‡:
+Â‹Ï `.env` pÄ‚B[J PDF mFê‡:
 ```bash
-python backend/scripts/analyze_pdf.py test/1†/touki_tate1.pdf
+python backend/scripts/analyze_pdf.py test/1/touki_tate1.pdf
 ```
 
-## Web ƒtƒ[
-1. `webapp/index.html` ‚ğƒuƒ‰ƒEƒU‚Å‹N“®iCloudflare Pages ‚È‚Ç‚Å‚ÌƒzƒXƒeƒBƒ“ƒO‘z’èjB
-2. API ƒGƒ“ƒhƒ|ƒCƒ“ƒg‚Í Railway ‚È‚Ç‚Ì URLi—á: `https://inhtaxautopjcodex-production.up.railway.app/api`j‚ğw’èB
-3. JSON ‚ğƒAƒbƒvƒ[ƒh‚µ‚ÄuƒoƒbƒNƒGƒ“ƒh‚ÅCSV¶¬v‚ğÀs‚·‚é‚ÆAAPI Œo—R‚Å CSV ‚ª¶¬Eƒ_ƒEƒ“ƒ[ƒh‚Å‚«‚Ü‚·B
+## Web t[
+1. `webapp/index.html` uEUÅ‹NiCloudflare Pages È‚Ç‚Å‚ÌƒzXeBOzjB
+2. API Gh|Cg Railway È‚Ç‚ URLi: `https://inhtaxautopjcodex-production.up.railway.app/api`jwB
+3. JSON Abv[hÄuobNGhCSVvsÆAAPI oR CSV E_E[hÅ‚Ü‚B
 
-”õl:
-- API ƒpƒ‰ƒ[ƒ^‚ÍƒNƒGƒŠ `?api=` ‚ÅØ‚è‘Ö‚¦‰Â”\B
-- CSV ‚Í UTF-8 BOM •t‚«‚Åo—Í‚³‚êAExcel ‚Å•¶š‰»‚¯‚µ‚Ü‚¹‚ñB
-- `webapp/index.html` ‚Ì UI ‚Å‚ÍƒTƒ“ƒvƒ‹ JSON ‚ğ“Ç‚İ‚İƒeƒXƒg‚Å‚«‚Ü‚·B
+l:
+- API p[^ÍƒNG `?api=` ÅØ‚Ö‚Â”\B
+- CSV  UTF-8 BOM tÅoÍ‚AExcel Å•Ü‚B
+- `webapp/index.html`  UI Å‚ÍƒTv JSON Ç‚İİƒeXgÅ‚Ü‚B
 
 
 Large PDF uploads are automatically split before they hit Gemini. Control chunking with `GEMINI_DOCUMENT_MAX_MB` and per-chunk page count via `GEMINI_CHUNK_PAGE_LIMIT`.
