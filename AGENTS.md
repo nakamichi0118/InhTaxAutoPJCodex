@@ -49,3 +49,5 @@ Store secrets in environment variables or secret managers compatible with your d
 - エージェント側で検証済みの成果物のみを共有し、ユーザ側で未確認のまま受領することはない方針で運用する。
 - 入出金補正はAzure残高を基準に行い、その後にのみ残高を再計算する順序へ修正。これにより補正結果が後段処理で上書きされないようにした。
 - 過度な後処理で残高が書き換わる不具合が見つかったため、入出金補正はコミット `1ea52e5` 相当のロジックへ戻し、最終CSVではAzureの残高をそのまま維持する方針に戻した。
+- 最終行比較で残高差に合わない入出金を正規化する検証パス`_finalize_transactions_from_balance`を追加。これは残高には触れず、入出金欄のみを修正して整合性を保つ。
+- 最終段で残高差と入出金の符号を照合する`_finalize_transactions_from_balance`を追加し、残高を変更せずに入出金欄だけを入れ替える検証パスを実装。

@@ -67,6 +67,7 @@ WITHDRAWAL_NOTE_KEYWORDS = (
     "出金扱い",
     "出金を前行",
 )
+BALANCE_DIRECTION_TOLERANCE = 0.5
 
 app.add_middleware(
     CORSMiddleware,
@@ -648,6 +649,39 @@ def _finalize_transaction_directions(transactions: List[TransactionLine]) -> Lis
     return finalized
 
 
+def _finalize_transactions_from_balance(transactions: List[TransactionLine]) -> List[TransactionLine]:
+    finalized: List[TransactionLine] = []
+    prev_balance: Optional[float] = None
+    for txn in transactions:
+        current = txn
+        balance = current.balance
+        deposit = current.deposit_amount or 0.0
+        withdrawal = current.withdrawal_amount or 0.0
+        updates: Dict[str, Any] = {}
+        if prev_balance is not None and balance is not None:
+            delta = balance - prev_balance
+            if delta > BALANCE_DIRECTION_TOLERANCE and withdrawal and not deposit:
+                updates["deposit_amount"] = withdrawal
+                updates["withdrawal_amount"] = None
+                updates["correction_note"] = _append_note(
+                    current.correction_note,
+                    ["残高差に合わせて入出金を入れ替えました"],
+                )
+            elif delta < -BALANCE_DIRECTION_TOLERANCE and deposit and not withdrawal:
+                updates["withdrawal_amount"] = deposit
+                updates["deposit_amount"] = None
+                updates["correction_note"] = _append_note(
+                    current.correction_note,
+                    ["残高差に合わせて入出金を入れ替えました"],
+                )
+        if updates:
+            current = current.model_copy(update=updates)
+        finalized.append(current)
+        if balance is not None:
+            prev_balance = balance
+    return finalized
+
+
 def _convert_gemini_structured_transactions(
     items: List[Dict[str, Any]],
     *,
@@ -829,6 +863,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             transactions, _ = _enforce_continuity(None, transactions)
             transactions = _finalize_transaction_directions(transactions)
             transactions = post_process_transactions(transactions)
+            transactions = _finalize_transactions_from_balance(transactions)
             asset.transactions = transactions
             export_assets.append(asset.to_export_payload())
 
@@ -958,6 +993,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     reconciled_transactions, _ = _enforce_continuity(None, all_transactions)
     reconciled_transactions = _finalize_transaction_directions(reconciled_transactions)
     reconciled_transactions = post_process_transactions(reconciled_transactions)
+    reconciled_transactions = _finalize_transactions_from_balance(reconciled_transactions)
 
     asset = AssetRecord(
         category=document_type or "transaction_history",
