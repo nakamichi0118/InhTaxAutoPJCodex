@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="InhTaxAutoPJ Backend", version="0.5.0")
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
+SUPPORTED_GEMINI_MODELS = {"gemini-2.5-flash", "gemini-2.5-pro"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,8 +90,14 @@ def _with_pdf_chunks(
             )
 
 
-def _analyze_with_gemini(contents: bytes, settings) -> GeminiExtraction:
-    client = GeminiClient(api_keys=settings.gemini_api_keys, model=settings.gemini_model)
+def _analyze_with_gemini(
+    contents: bytes,
+    settings,
+    *,
+    model_override: Optional[str] = None,
+) -> GeminiExtraction:
+    model = model_override or settings.gemini_model
+    client = GeminiClient(api_keys=settings.gemini_api_keys, model=model)
     plan = PdfChunkingPlan(
         max_bytes=settings.gemini_max_document_bytes,
         max_pages=settings.gemini_chunk_page_limit,
@@ -108,8 +115,9 @@ def _build_gemini_transaction_result(
     source_name: str,
     *,
     date_format: str,
+    model_override: Optional[str] = None,
 ) -> AzureAnalysisResult:
-    extraction = _analyze_with_gemini(contents, settings)
+    extraction = _analyze_with_gemini(contents, settings, model_override=model_override)
     transactions = _convert_gemini_structured_transactions(extraction.transactions, date_format=date_format)
     if not transactions:
         transactions = build_transactions_from_lines(extraction.lines, date_format=date_format)
@@ -343,9 +351,10 @@ def _gemini_refine_chunk(
     settings,
     *,
     date_format: str,
+    model_override: Optional[str] = None,
 ) -> Optional[List[TransactionLine]]:
     try:
-        extraction = _analyze_with_gemini(chunk_bytes, settings)
+        extraction = _analyze_with_gemini(chunk_bytes, settings, model_override=model_override)
     except (GeminiError, PdfChunkingError) as exc:
         logger.warning("Gemini補正に失敗しました: %s", exc)
         return None
@@ -565,6 +574,58 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     with open(job.file_path, "rb") as stream:
         contents = stream.read()
     source_name = job.file_name or "uploaded.pdf"
+
+    if job.processing_mode == "gemini":
+        model_label = job.gemini_model or settings.gemini_model
+        handle.update(
+            stage="analyzing",
+            detail=f"Gemini ({model_label}) で解析しています…",
+            processed_chunks=0,
+            total_chunks=1,
+        )
+        try:
+            gemini_result = _build_gemini_transaction_result(
+                contents,
+                settings,
+                source_name,
+                date_format=job.date_format,
+                model_override=job.gemini_model,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(str(exc)) from exc
+        assets = gemini_result.assets or []
+        if not assets:
+            raise ValueError("取引が抽出できませんでした")
+
+        export_assets: List[dict] = []
+        document_type = assets[0].category if assets else "transaction_history"
+        for asset in assets:
+            transactions = asset.transactions or []
+            transactions, _ = _enforce_continuity(None, transactions)
+            transactions = post_process_transactions(transactions)
+            asset.transactions = transactions
+            export_assets.append(asset.to_export_payload())
+
+        payload = {"assets": export_assets}
+        handle.update(stage="exporting", detail="CSV を書き出しています…")
+        csv_map = export_to_csv_strings(payload)
+        encoded = {
+            name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
+            for name, content in csv_map.items()
+        }
+        handle.update(
+            status="completed",
+            stage="completed",
+            detail="完了",
+            document_type=document_type,
+            result_files=encoded,
+            partial_files=encoded,
+            processed_chunks=1,
+            total_chunks=1,
+            assets_payload=export_assets,
+        )
+        return
+
     plan = PdfChunkingPlan(
         max_bytes=settings.azure_chunk_max_bytes,
         max_pages=1,
@@ -636,6 +697,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
                 chunk_start_balance,
                 settings,
                 date_format=job.date_format,
+                model_override=job.gemini_model,
             )
             if refined:
                 chunk_transactions = refined
@@ -816,18 +878,33 @@ async def enqueue_document_job(
     file: UploadFile = File(...),
     document_type: Optional[DocumentType] = Form(None),
     date_format: Optional[str] = Form("auto"),
+    processing_mode: Optional[str] = Form("hybrid"),
+    gemini_model: Optional[str] = Form(None),
 ) -> JobCreateResponse:
     contents, content_type = await _load_file_bytes(file)
     source_name = file.filename or "uploaded.pdf"
     date_format_normalized = (date_format or "auto").lower()
     if date_format_normalized not in {"auto", "western", "wareki"}:
         date_format_normalized = "auto"
+    processing_mode_normalized = (processing_mode or "hybrid").lower()
+    if processing_mode_normalized not in {"hybrid", "gemini"}:
+        processing_mode_normalized = "hybrid"
+    gemini_model_normalized: Optional[str] = None
+    if gemini_model:
+        candidate = gemini_model.strip()
+        if candidate not in SUPPORTED_GEMINI_MODELS:
+            raise HTTPException(status_code=400, detail="Unsupported Gemini model specified")
+        gemini_model_normalized = candidate
+    if processing_mode_normalized != "gemini":
+        gemini_model_normalized = None
     job = job_manager.submit(
         contents,
         content_type,
         source_name,
         document_type,
         date_format_normalized,
+        processing_mode=processing_mode_normalized,
+        gemini_model=gemini_model_normalized,
     )
     return JobCreateResponse(status="accepted", job_id=job.job_id)
 

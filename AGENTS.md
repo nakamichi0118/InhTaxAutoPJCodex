@@ -26,3 +26,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - `parser.py`と`azure_analyzer.py`で銀行通帳OCR行から口座情報・取引を抽出し、`models.py`がPydanticでJSONペイロードを定義している点を整理。`job_manager.py`がバックグラウンド処理+一時ファイル管理と進捗追跡を担当することを把握。
 - `webapp/index.html`でのシングルページUIがRailway上のAPIにPOSTしCSVダウンロードをトリガー、`backend/scripts/analyze_pdf.py`でGemini解析を単体で確認できることを理解。環境変数の設定(`backend/app/config.py`)とGemini APIキーのローテーションロジックも確認済み。
 - Azure生データの確認を容易にするため、ジョブ完了時に`azure_raw_transactions.csv`を新たに返却するよう`backend/app/main.py`を拡張。ページ番号と行番号付きでAzureが抽出した取引そのままをCSV化し、Web UIのダウンロード一覧から取得できるようにした。
+- Gemini単体モードをジョブAPI・Web UIに追加し、`processing_mode=gemini`と`gemini-2.5-flash/pro`の切替をサポート。UIで解析エンジンを選ぶとFastAPI側がGeminiのみでCSVを生成し、Azureを経由せずモデル別の比較が可能になった。

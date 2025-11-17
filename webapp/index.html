@@ -561,6 +561,7 @@
         cancelRequested: false,
         isProcessing: false,
         currentAbortController: null,
+        analysisMode: 'hybrid',
     };
 
     const TAB_DEFINITIONS = [
@@ -642,6 +643,18 @@
         auto: '自動判定',
         western: '西暦 (YYYY/MM/DD)',
         wareki: '和暦 (令和/平成)',
+    };
+
+    const ANALYSIS_MODE_OPTIONS = [
+        { value: 'hybrid', label: 'ハイブリッド (Azure + Gemini)' },
+        { value: 'gemini_flash', label: 'Gemini 2.5 Flash【単独】' },
+        { value: 'gemini_pro', label: 'Gemini 2.5 Pro【単独】' },
+    ];
+
+    const ANALYSIS_MODE_LABELS = {
+        hybrid: 'ハイブリッド (Azure + Gemini)',
+        gemini_flash: 'Gemini 2.5 Flash（単独解析）',
+        gemini_pro: 'Gemini 2.5 Pro（単独解析）',
     };
 
     init();
@@ -910,6 +923,37 @@
                     controlsContainer.appendChild(dateControls);
                 }
 
+                const modeControls = document.createElement('div');
+                modeControls.className = 'input-row';
+
+                const modeLabel = document.createElement('label');
+                modeLabel.style.fontSize = '0.9rem';
+                modeLabel.style.color = '#1f3b8c';
+                modeLabel.textContent = '解析エンジン';
+                modeControls.appendChild(modeLabel);
+
+                const modeSelect = document.createElement('select');
+                modeSelect.className = 'text-input';
+                ANALYSIS_MODE_OPTIONS.forEach((option) => {
+                    const opt = document.createElement('option');
+                    opt.value = option.value;
+                    opt.textContent = option.label;
+                    modeSelect.appendChild(opt);
+                });
+                modeSelect.value = state.analysisMode || 'hybrid';
+                modeSelect.addEventListener('change', () => {
+                    state.analysisMode = modeSelect.value || 'hybrid';
+                });
+                modeControls.appendChild(modeSelect);
+
+                const modeHint = document.createElement('span');
+                modeHint.style.fontSize = '0.8rem';
+                modeHint.style.color = '#6b7280';
+                modeHint.textContent = 'Gemini単体を選ぶとAzureを経由せずGemini 2.5の指定モデルだけで読み取ります。';
+                modeControls.appendChild(modeHint);
+
+                controlsContainer.appendChild(modeControls);
+
                 const uploadRow = document.createElement('div');
                 uploadRow.className = 'input-row';
 
@@ -1007,6 +1051,7 @@
             docType: tab.docType,
             getDocType,
             dateFormat: getDateFormat ? getDateFormat() : 'auto',
+            getProcessingConfig: () => getProcessingModeConfig(),
         });
     }
 
@@ -1028,6 +1073,9 @@
         const docTypeGetter = typeof tabConfig.getDocType === 'function'
             ? tabConfig.getDocType
             : () => tabConfig.docType || '';
+        const processingConfigGetter = typeof tabConfig.getProcessingConfig === 'function'
+            ? tabConfig.getProcessingConfig
+            : () => getProcessingModeConfig();
         const label = tabConfig.label || '';
         const dateFormat = normalizeDateFormat(tabConfig.dateFormat);
         const initialDocType = docTypeGetter() || '';
@@ -1055,7 +1103,8 @@
                 break;
             }
             try {
-                const doc = await handleSingleFile(file, currentDocType, dateFormat);
+                const processingConfig = processingConfigGetter() || {};
+                const doc = await handleSingleFile(file, currentDocType, dateFormat, processingConfig);
                 state.documents.push(doc);
                 state.activeDocId = doc.id;
                 notifyCompletion(doc);
@@ -1102,9 +1151,9 @@
         );
     }
 
-    async function handleSingleFile(file, docType, dateFormat) {
+    async function handleSingleFile(file, docType, dateFormat, processingConfig = {}) {
         setStatus(`「${file.name}」の解析ジョブを登録しています…`, 'info');
-        const jobId = await enqueueJob(file, docType, dateFormat);
+        const jobId = await enqueueJob(file, docType, dateFormat, processingConfig);
         const result = await pollJobUntilComplete(jobId, { fileName: file.name });
         const assets = Array.isArray(result.assets) ? result.assets : [];
         if (!assets.length) {
@@ -1121,7 +1170,7 @@
         };
     }
 
-    async function enqueueJob(file, docType, dateFormat) {
+    async function enqueueJob(file, docType, dateFormat, processingConfig = {}) {
         const base = normalizedApiBase();
         const form = new FormData();
         form.append('file', file);
@@ -1130,6 +1179,12 @@
         }
         if (dateFormat) {
             form.append('date_format', normalizeDateFormat(dateFormat));
+        }
+        if (processingConfig && processingConfig.processing_mode) {
+            form.append('processing_mode', processingConfig.processing_mode);
+        }
+        if (processingConfig && processingConfig.gemini_model) {
+            form.append('gemini_model', processingConfig.gemini_model);
         }
         const res = await fetchWithAbort(`${base}/jobs`, {
             method: 'POST',
@@ -1573,6 +1628,17 @@
             return normalized;
         }
         return 'auto';
+    }
+
+    function getProcessingModeConfig() {
+        const mode = state.analysisMode || 'hybrid';
+        if (mode === 'gemini_flash') {
+            return { processing_mode: 'gemini', gemini_model: 'gemini-2.5-flash' };
+        }
+        if (mode === 'gemini_pro') {
+            return { processing_mode: 'gemini', gemini_model: 'gemini-2.5-pro' };
+        }
+        return { processing_mode: 'hybrid' };
     }
 
     function normalizedApiBase() {
