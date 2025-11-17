@@ -59,3 +59,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - `_analyze_page_with_gemini`ヘルパーと`GeminiPageResult` dataclassを新設し、ページごとの生取引を抽出する責務を分離。`_enforce_continuity`や`_finalize_transaction_directions`など既存の入出金補正ロジックを統合後にのみ流す構成を維持し、精度要件を満たすようにした。
 - バージョン0.8.0へ更新し、FastAPI/フロント双方をGemini単独構成に固定。`processing_mode`に別値が来た場合も強制的にGeminiへフォールバックし、UIからハイブリッド選択肢を排除した。
 - `webapp/index.html`と`webapp/help.html`、`docs/USAGE.md`で注意事項を整理。PDFのみ対応・1口座=1ファイル・サーバー保存なし・合算記帳は非推奨と明記し、FAQからAzure/処理時間/API関連の項目を削除した。
+- 使い方ページとFAQの表現を平易化し、新FAQ（横向き画像可否、処理時間目安、遅延時の対処、アップロード上限、銀行別精度、データ保存方針）を追加。Docs/USAGE.mdも同内容へ更新。

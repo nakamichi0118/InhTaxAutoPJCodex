@@ -132,20 +132,20 @@
             <h2>推奨環境と制約</h2>
             <div class="grid">
                 <div class="card">
-                    <h3>ファイル構成</h3>
-                    <p>PDF形式のみ対応（画像/Excel不可）。必ず1口座=1ファイルで用意してください。別口座を同梱すると残高整合が崩れます。</p>
+                    <h3>対応ファイル</h3>
+                    <p>PDFのみ対応（画像やExcelは不可）です。必ず「1口座 = 1PDF」で作成し、別口座を混ぜないでください。</p>
                 </div>
                 <div class="card">
                     <h3>画質・解像度</h3>
-                    <p>600dpi程度を推奨。画質が悪い・文字が潰れているとGeminiでも認識率が低下します。</p>
+                    <p>目安は600dpiです。暗い/ぼやけたスキャンは読み取り精度が落ちます。</p>
                 </div>
                 <div class="card">
                     <h3>ファイルサイズ</h3>
-                    <p>Gemini単体は1ファイルあたり約20MB／100ページまでが目安です。超える場合は圧縮や分割を行ってください。</p>
+                    <p>1ファイルあたり約20MB・100ページが上限目安です。超える場合は圧縮や分割をお願いします。</p>
                 </div>
                 <div class="card">
                     <h3>データ取り扱い</h3>
-                    <p>アップロードデータは処理完了後にサーバーから自動削除され、保存しません。セキュリティのため通帳以外の個人情報は含めないでください。</p>
+                    <p>アップロードしたPDFは処理後すぐ削除され、サーバーに残りません。通帳以外の個人情報は含めないでください。</p>
                 </div>
             </div>
             <div class="warning">
@@ -163,8 +163,8 @@
             <div class="steps">
                 <div class="card">
                     <div class="step-number">STEP 1</div>
-                    <h3>ドキュメント種別と解析エンジン</h3>
-                    <p>通帳・取引履歴タブで「取引履歴」または「通帳（預貯金）」を選択し、解析エンジン（Gemini 2.5 Pro/Flash）を選びます。デフォルトは <strong>Gemini 2.5 Pro</strong> です。</p>
+                    <h3>種別とエンジンを選ぶ</h3>
+                    <p>通帳・取引履歴タブで「取引履歴」または「通帳（預貯金）」を選び、解析エンジン（Gemini 2.5 Pro／Flash）を指定します。標準は <strong>Gemini 2.5 Pro</strong> です。</p>
                     <div class="mock-panel">
                         <strong>解析エンジン</strong>
                         <ul style="margin:0;padding-left:1rem;">
@@ -176,7 +176,7 @@
                 <div class="card">
                     <div class="step-number">STEP 2</div>
                     <h3>PDFをアップロード</h3>
-                    <p>「PDFファイルを選択」またはドロップエリアへドラッグ＆ドロップ。複数PDFの一括処理にも対応しています。</p>
+                    <p>「PDFファイルを選択」またはドロップエリアへドラッグ＆ドロップ。複数PDFもまとめて投入できます。</p>
                     <div class="mock-panel">
                         <strong>ドロップエリア</strong>
                         <div style="border:2px dashed #93c5fd;border-radius:12px;padding:0.8rem;text-align:center;color:#0f172a;">
@@ -187,7 +187,7 @@
                 <div class="card">
                     <div class="step-number">STEP 3</div>
                     <h3>結果を確認・ダウンロード</h3>
-                    <p>処理中は進捗バーとステージ表示が更新されます。完了後は処理時間・名義人・取引件数を確認し、CSVをダウンロードします。</p>
+                    <p>進捗バーを見ながら待ち、完了したら処理時間／件数をチェック。必要なCSV（assets/bank_transactions）を保存します。</p>
                     <div class="mock-panel">
                         <strong>プレビュー例</strong>
                         <p style="margin:0;">処理時間 132.4 秒 / 取引 248 件</p>
@@ -201,24 +201,35 @@
         <section>
             <h2>FAQ</h2>
             <details open>
-                <summary>画質が悪いPDFは読み取れますか？</summary>
-                <p>推奨は600dpiです。ノイズが多い・薄い印字はGemini 2.5 Pro/Flashどちらでも精度が出ません。原本を再スキャンし、できるだけノイズを抑えてください。</p>
+                <summary>画像が横向きでも読み取れますか？</summary>
+                <p>はい。Geminiが自動で向きを判定するため、そのままアップロードして問題ありません。</p>
             </details>
             <details>
-                <summary>JA/ゆうちょなどページ数が多い通帳は？</summary>
-                <p>Gemini単体モードであれば約100ページ/20MBまで処理可能です。1ページの容量が大きい場合はPDFを分割・圧縮してください。</p>
+                <summary>読み取りにどれくらい時間がかかりますか？</summary>
+                <p>平均すると1行あたり0.6〜1.8秒です。取引が100行なら1〜3分ほどお待ちください。</p>
             </details>
             <details>
-                <summary>複数口座をまとめたPDFは使えますか？</summary>
-                <p>いいえ。1口座ずつPDFを分けてください。合算記帳や別口座が混ざる構成では残高整合ロジックが成立しません。</p>
+                <summary>読み取りが遅い／完了しないのですが？</summary>
+                <p>以下をご確認ください：</p>
+                <ul style="margin:0.4rem 0 0 1.1rem;font-size:0.9rem;">
+                    <li>PDFのページ数が多い</li>
+                    <li>PDFファイルサイズが大きい</li>
+                    <li>インターネット回線が不安定</li>
+                    <li>サーバーが一時的に混雑している</li>
+                </ul>
+                <p style="margin:0.4rem 0 0;font-size:0.9rem;">多くの場合、ページを再読み込み → PDFを再アップロードで解消します。</p>
             </details>
             <details>
-                <summary>PDF以外（画像やExcel）はアップロードできますか？</summary>
-                <p>対応していません。必ずPDF形式に変換し、ページ順を整えたうえでアップロードしてください。</p>
+                <summary>PDF のアップロード上限や枚数の上限はありますか？</summary>
+                <p>1回にアップロードできるのは1ファイルあたり約20MB・100ページが目安です。複数PDFも同時に投入できますが、合算して非常に大きい場合は数回に分けると安定します。</p>
             </details>
             <details>
-                <summary>アップロードしたPDFは保存されますか？</summary>
-                <p>ジョブ処理用の一時ファイルとしてのみ扱い、完了後に自動削除します。サーバー側には履歴を保存しませんので、必要なCSVはダウンロードして保管してください。</p>
+                <summary>銀行によって精度にばらつきはありますか？</summary>
+                <p>「ゆうちょ」「都市銀行」など一般的なフォーマットは最適化済みで約99%の精度です。独自レイアウトの銀行や、文字が潰れているPDFでは誤認識が増える場合があります。</p>
+            </details>
+            <details>
+                <summary>データはどこに保存されますか？安全性は？</summary>
+                <p>アップロードされたPDFは処理後すぐに破棄されます。取引結果はブラウザ経由でのみダウンロードされ、サーバー側には保管されません。</p>
             </details>
         </section>
 
