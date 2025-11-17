@@ -37,3 +37,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - 残高差と補正メモを最終段で再検査する`_finalize_transaction_directions`を実装し、ゆうちょ/JAで入出金欄が逆転しても強制的に入れ替えるよう改善。
 - Web UIの通知機能を再確認し、すでに通知許可が与えられている場合は自動的に有効化するよう修正。バージョン番号を 0.7.0 へ更新。
 - 残高差と入出金額の整合を厳密に照合し、差分がある場合は入金/出金額を残高から再設定する処理を追加。期待値シートで指摘されたカード行の逆転を自動補正。
+- ゆうちょ/カード系摘要を確実に出金判定できるよう`WITHDRAWAL_DESC_HINTS`にカード/ATM/取扱店を追加。

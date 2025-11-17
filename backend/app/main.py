@@ -49,6 +49,10 @@ WITHDRAWAL_DESC_HINTS = (
     "送金",
     "資金移動",
     "手数料",
+    "カード",
+    "ＡＴＭ",
+    "ATM",
+    "取扱店",
 )
 DEPOSIT_DESC_HINTS = (
     "入金",
