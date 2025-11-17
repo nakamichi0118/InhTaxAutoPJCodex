@@ -41,3 +41,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - post_process_transactions後にも`_finalize_transaction_directions`を再実行し、後段の調整で再び入出金が逆転しないよう再補正パスを追加。
 - `_finalize_transaction_directions`で最終残高も再計算するようにし、入出金を入れ替えた後に残高が元へ戻らないよう修正。ゆうちょ等の期待値ファイルで指摘されたズレを解消。
 - 残高を真値とみなし、差分と一致しない入出金は残高差から算出した金額に置き換えるよう後処理を更新。これにより残高の再計算は行わず、金額のみを補正する。
+- Azure経由の解析を停止し、チャンク単位でGemini 2.5 Proのみを使用するフローへ統一。`_resolve_document_assets`/ジョブ処理ともにGemini完結になり、Azure設定に依存しなくなった。

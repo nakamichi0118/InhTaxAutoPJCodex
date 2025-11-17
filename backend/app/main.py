@@ -378,7 +378,7 @@ def _extract_transactions_with_gemini_chunk(
     *,
     date_format: str,
     model_override: Optional[str] = None,
-) -> List[TransactionLine]:
+) -> tuple[List[TransactionLine], List[str]]:
     result = _build_gemini_transaction_result(
         chunk_bytes,
         settings,
@@ -390,7 +390,7 @@ def _extract_transactions_with_gemini_chunk(
     transactions: List[TransactionLine] = []
     for asset in result.assets:
         transactions.extend(asset.transactions)
-    return transactions
+    return transactions, result.raw_lines
 
 
 def _compute_chunk_residuals(transactions: List[TransactionLine]) -> List[float]:
@@ -762,28 +762,18 @@ def _resolve_document_assets(
     *,
     progress_reporter: Optional[Callable[[int, int], None]] = None,
 ) -> tuple[DocumentType, List[AssetRecord], List[str]]:
-    if document_type == "transaction_history":
-        azure_result = _analyze_with_azure(
-            contents,
-            settings,
-            source_name,
-            date_format=date_format_normalized,
-            progress_reporter=progress_reporter,
-        )
-        return "transaction_history", azure_result.assets, azure_result.raw_lines
+    gemini_result = _build_gemini_transaction_result(
+        contents,
+        settings,
+        source_name,
+        date_format=date_format_normalized,
+        model_override=settings.gemini_model,
+    )
+    if gemini_result.assets:
+        return "transaction_history", gemini_result.assets, gemini_result.raw_lines
 
     lines = _analyze_layout(contents, content_type)
     detected_type = document_type or detect_document_type(lines)
-    if detected_type == "transaction_history":
-        azure_result = _analyze_with_azure(
-            contents,
-            settings,
-            source_name,
-            date_format=date_format_normalized,
-            progress_reporter=progress_reporter,
-        )
-        return detected_type, azure_result.assets, azure_result.raw_lines
-
     assets = build_assets(detected_type, lines, source_name=source_name)
     return detected_type, assets, lines
 
@@ -894,39 +884,24 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             processed_chunks=index - 1,
             total_chunks=total_chunks,
         )
-        chunk_result = _analyze_with_azure(
+        chunk_transactions, chunk_raw_lines = _extract_transactions_with_gemini_chunk(
             chunk,
             settings,
-            source_name,
+            f"{source_name}#chunk{index}",
             date_format=job.date_format,
-            perform_global_reconciliation=False,
+            model_override=job.gemini_model,
         )
-        document_type = chunk_result.assets[0].category if chunk_result.assets else "transaction_history"
+        document_type = "transaction_history"
         raw_transactions = build_transactions_from_lines(
-            chunk_result.raw_lines,
+            chunk_raw_lines,
             date_format=job.date_format,
         )
-        _collect_diagnostics(raw_transactions, prev_balance, diagnostics, stage="azure_raw")
+        _collect_diagnostics(raw_transactions, prev_balance, diagnostics, stage="gemini_raw")
 
-        chunk_transactions: List[TransactionLine] = []
         chunk_row_number = 0
-        for asset in chunk_result.assets:
-            for txn in asset.transactions:
-                chunk_row_number += 1
-                azure_raw_rows.append(_build_azure_raw_row(index, chunk_row_number, txn))
-                chunk_transactions.append(txn)
-        if not chunk_transactions:
-            fallback_txns = _extract_transactions_with_gemini_chunk(
-                chunk,
-                settings,
-                f"{source_name}#chunk{index}",
-                date_format=job.date_format,
-                model_override=job.gemini_model,
-            )
-            for txn in fallback_txns:
-                chunk_row_number += 1
-                azure_raw_rows.append(_build_azure_raw_row(index, chunk_row_number, txn))
-            chunk_transactions = fallback_txns
+        for txn in chunk_transactions:
+            chunk_row_number += 1
+            azure_raw_rows.append(_build_azure_raw_row(index, chunk_row_number, txn))
         chunk_start_balance = prev_balance
         chunk_transactions, prev_balance = _enforce_continuity(prev_balance, chunk_transactions)
         _collect_diagnostics(chunk_transactions, chunk_start_balance, diagnostics, stage="adjusted")
