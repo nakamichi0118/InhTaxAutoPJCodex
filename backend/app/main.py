@@ -607,10 +607,34 @@ def _finalize_transaction_directions(transactions: List[TransactionLine]) -> Lis
 
         if prev_balance is not None and current.balance is not None:
             delta = current.balance - prev_balance
-            if delta > BALANCE_TOLERANCE and withdrawal and not deposit:
-                _swap(to_deposit=True)
-            elif delta < -BALANCE_TOLERANCE and deposit and not withdrawal:
-                _swap(to_deposit=False)
+            if delta > BALANCE_TOLERANCE:
+                if not deposit or abs(delta - deposit) > BALANCE_TOLERANCE:
+                    deposit = float(abs(delta))
+                    withdrawal = 0.0
+                    note_text = _append_note(note_text, ["残高整合から入金額を再設定しました"]) or ""
+                    current = current.model_copy(
+                        update={
+                            "deposit_amount": deposit,
+                            "withdrawal_amount": None,
+                            "correction_note": note_text,
+                        }
+                    )
+                elif withdrawal and not deposit:
+                    _swap(to_deposit=True)
+            elif delta < -BALANCE_TOLERANCE:
+                if not withdrawal or abs(abs(delta) - withdrawal) > BALANCE_TOLERANCE:
+                    withdrawal = float(abs(delta))
+                    deposit = 0.0
+                    note_text = _append_note(note_text, ["残高整合から出金額を再設定しました"]) or ""
+                    current = current.model_copy(
+                        update={
+                            "withdrawal_amount": withdrawal,
+                            "deposit_amount": None,
+                            "correction_note": note_text,
+                        }
+                    )
+                elif deposit and not withdrawal:
+                    _swap(to_deposit=False)
         else:
             if withdrawal and not deposit and _note_mentions_deposit(note_text):
                 _swap(to_deposit=True)
