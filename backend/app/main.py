@@ -579,6 +579,51 @@ def _enforce_continuity(
     return updated, running_balance
 
 
+def _finalize_transaction_directions(transactions: List[TransactionLine]) -> List[TransactionLine]:
+    finalized: List[TransactionLine] = []
+    prev_balance: Optional[float] = None
+    for txn in transactions:
+        current = txn
+        deposit = txn.deposit_amount or 0.0
+        withdrawal = txn.withdrawal_amount or 0.0
+        note_text = txn.correction_note or ""
+
+        def _swap(to_deposit: bool) -> None:
+            nonlocal current, deposit, withdrawal, note_text
+            if to_deposit:
+                deposit = withdrawal
+                withdrawal = 0.0
+            else:
+                withdrawal = deposit
+                deposit = 0.0
+            note_text = _append_note(note_text, ["残高整合に合わせて入出金を入れ替えました"]) or ""
+            current = current.model_copy(
+                update={
+                    "deposit_amount": deposit or None,
+                    "withdrawal_amount": withdrawal or None,
+                    "correction_note": note_text,
+                }
+            )
+
+        if prev_balance is not None and current.balance is not None:
+            delta = current.balance - prev_balance
+            if delta > BALANCE_TOLERANCE and withdrawal and not deposit:
+                _swap(to_deposit=True)
+            elif delta < -BALANCE_TOLERANCE and deposit and not withdrawal:
+                _swap(to_deposit=False)
+        else:
+            if withdrawal and not deposit and _note_mentions_deposit(note_text):
+                _swap(to_deposit=True)
+            elif deposit and not withdrawal and _note_mentions_withdrawal(note_text):
+                _swap(to_deposit=False)
+
+        finalized.append(current)
+        if current.balance is not None:
+            prev_balance = current.balance
+
+    return finalized
+
+
 def _convert_gemini_structured_transactions(
     items: List[Dict[str, Any]],
     *,
@@ -758,6 +803,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         for asset in assets:
             transactions = asset.transactions or []
             transactions, _ = _enforce_continuity(None, transactions)
+            transactions = _finalize_transaction_directions(transactions)
             transactions = post_process_transactions(transactions)
             asset.transactions = transactions
             export_assets.append(asset.to_export_payload())
@@ -886,6 +932,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
 
     handle.update(stage="analyzing", detail="残高を整合しています…")
     reconciled_transactions, _ = _enforce_continuity(None, all_transactions)
+    reconciled_transactions = _finalize_transaction_directions(reconciled_transactions)
     reconciled_transactions = post_process_transactions(reconciled_transactions)
 
     asset = AssetRecord(
