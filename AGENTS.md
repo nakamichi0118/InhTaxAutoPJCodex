@@ -17,3 +17,11 @@ Write imperative, present-tense commit messages (e.g., `Adjust bankbook parser f
 
 ## Security & Document Intelligence Tips
 Store secrets in environment variables or secret managers compatible with your deployment target. Override Gemini behavior with `GEMINI_MODEL`, `GEMINI_DOCUMENT_MAX_MB`, and `GEMINI_CHUNK_PAGE_LIMIT`; a 413 response indicates the PDF still exceeds the configured chunk size. Ensure `GEMINI_API_KEY` stays valid, rotate it when needed, and verify rate limits before large batches.
+
+## Progress Log
+
+### 2025-11-17
+- READMEとDocs/CSV_SPEC.mdを精読し、CLIエクスポーター(`src/export_csv.py`)が正規化済みJSONを`assets.csv`と`bank_transactions.csv`へ整形する中心ロジックである点を把握。UTF-8 BOM付き出力やUUIDベースの`record_id`生成、取引IDの決定論的生成を確認。
+- FastAPIバックエンド(`backend/app`)のレイヤー構成を調査。`main.py`でCORS許可済みAPIを公開し、PDFアップロードをGemini/Azureに渡す処理フロー、PdfChunk計画による分割制御、Geminiフォールバック戦略、Bankbook解析後の`exporter.py`経由CSV生成を理解。
+- `parser.py`と`azure_analyzer.py`で銀行通帳OCR行から口座情報・取引を抽出し、`models.py`がPydanticでJSONペイロードを定義している点を整理。`job_manager.py`がバックグラウンド処理+一時ファイル管理と進捗追跡を担当することを把握。
+- `webapp/index.html`でのシングルページUIがRailway上のAPIにPOSTしCSVダウンロードをトリガー、`backend/scripts/analyze_pdf.py`でGemini解析を単体で確認できることを理解。環境変数の設定(`backend/app/config.py`)とGemini APIキーのローテーションロジックも確認済み。
