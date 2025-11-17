@@ -831,8 +831,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         for asset in assets:
             transactions = asset.transactions or []
             transactions, _ = _enforce_continuity(None, transactions)
-            transactions = _finalize_transaction_directions(transactions)
             transactions = post_process_transactions(transactions)
+            transactions = _finalize_transaction_directions(transactions)
             asset.transactions = transactions
             export_assets.append(asset.to_export_payload())
 
@@ -960,8 +960,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
 
     handle.update(stage="analyzing", detail="残高を整合しています…")
     reconciled_transactions, _ = _enforce_continuity(None, all_transactions)
-    reconciled_transactions = _finalize_transaction_directions(reconciled_transactions)
     reconciled_transactions = post_process_transactions(reconciled_transactions)
+    reconciled_transactions = _finalize_transaction_directions(reconciled_transactions)
 
     asset = AssetRecord(
         category=document_type or "transaction_history",
