@@ -367,6 +367,28 @@ def _build_azure_raw_transactions_csv(rows: List[Dict[str, Any]]) -> str:
     return buffer.getvalue()
 
 
+def _extract_transactions_with_gemini_chunk(
+    chunk_bytes: bytes,
+    settings,
+    source_name: str,
+    *,
+    date_format: str,
+    model_override: Optional[str] = None,
+) -> List[TransactionLine]:
+    result = _build_gemini_transaction_result(
+        chunk_bytes,
+        settings,
+        source_name,
+        date_format=date_format,
+        model_override=model_override,
+        chunk_page_limit_override=1,
+    )
+    transactions: List[TransactionLine] = []
+    for asset in result.assets:
+        transactions.extend(asset.transactions)
+    return transactions
+
+
 def _compute_chunk_residuals(transactions: List[TransactionLine]) -> List[float]:
     residuals: List[float] = []
     if not transactions:
@@ -815,6 +837,18 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
                 chunk_row_number += 1
                 azure_raw_rows.append(_build_azure_raw_row(index, chunk_row_number, txn))
                 chunk_transactions.append(txn)
+        if not chunk_transactions:
+            fallback_txns = _extract_transactions_with_gemini_chunk(
+                chunk,
+                settings,
+                f"{source_name}#chunk{index}",
+                date_format=job.date_format,
+                model_override=job.gemini_model,
+            )
+            for txn in fallback_txns:
+                chunk_row_number += 1
+                azure_raw_rows.append(_build_azure_raw_row(index, chunk_row_number, txn))
+            chunk_transactions = fallback_txns
         chunk_start_balance = prev_balance
         chunk_transactions, prev_balance = _enforce_continuity(prev_balance, chunk_transactions)
         _collect_diagnostics(chunk_transactions, chunk_start_balance, diagnostics, stage="adjusted")

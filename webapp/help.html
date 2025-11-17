@@ -53,6 +53,46 @@
             gap: 0.3rem;
             margin-top: 1rem;
         }
+        .step-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.2rem;
+        }
+        .step-card {
+            border: 1px solid rgba(37, 99, 235, 0.2);
+            border-radius: 14px;
+            padding: 1rem;
+            background: #f8fafc;
+        }
+        .step-card h3 {
+            margin: 0 0 0.4rem;
+            font-size: 1rem;
+            color: #1f3b8c;
+        }
+        .step-card p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: #475569;
+        }
+        .mock-panel {
+            border: 1px dashed #94a3b8;
+            border-radius: 12px;
+            padding: 1rem;
+            background: #fff;
+            margin-top: 1rem;
+        }
+        .mock-panel strong {
+            display: block;
+            margin-bottom: 0.4rem;
+        }
+        .warning {
+            background: #fff7ed;
+            border: 1px solid #fdba74;
+            border-radius: 12px;
+            padding: 1rem;
+            margin-top: 1rem;
+            color: #9a3412;
+        }
     </style>
 </head>
 <body>
@@ -67,18 +107,50 @@
                 <li><strong>ブラウザ:</strong> Google Chrome / Microsoft Edge 最新版。</li>
                 <li><strong>ファイル形式:</strong> PDF。<b>1口座ごとに1ファイル</b>へまとめてください。合算記帳のままだと残高計算が崩れます。</li>
                 <li><strong>解像度:</strong> 600dpi程度を推奨。画質が悪い/文字が潰れている場合、Gemini/Azureともに精度が大きく低下します。</li>
-                <li><strong>ファイルサイズ:</strong> 1ページ6MB以上のPDFはAzureが分割できません。Gemini fallbackは20MBまでですが、ページが重い場合は事前に圧縮してください。</li>
+                <li><strong>ファイルサイズ/ページ数:</strong> 1ページ6MBを超えるとAzureが分割できません。Gemini fallbackは合計20MB・約100ページまで対応しますが、重いPDFは分割・圧縮を推奨します。</li>
+                <li><strong>ゆうちょ/JAの長編PDF:</strong> 文字間隔が詰まったレイアウトはGeminiフォールバックで処理します。ページを6MB未満に抑えると安定します。</li>
             </ul>
+            <div class="warning">
+                <strong>※ 合算記帳について</strong>
+                複数口座の残高を合算して記帳する形式は補正ロジックの想定外です。可能な限り口座単位で書き出したPDFをご用意ください。
+            </div>
         </section>
         <section>
             <h2>操作手順</h2>
-            <ol>
-                <li>Webアプリ（<code>webapp/index.html</code>）をブラウザで開きます。右上のAPI設定で接続先を指定できます。</li>
-                <li>解析エンジンを選択します。デフォルトは <strong>Gemini 2.5 Pro 単体（精度約99%）</strong>です。速度を優先したい場合はFlashやハイブリッドへ切り替え可能です。</li>
-                <li>日付形式（西暦/和暦）を選択し、PDFをアップロードするかドラッグ＆ドロップします。</li>
-                <li>読み取り完了後、結果タブで <strong>処理時間・名義人・取引件数</strong> を確認できます。CSVダウンロードカードから `bank_transactions.csv` などを保存してください。</li>
-                <li>必要に応じて `azure_raw_transactions.csv` や `azure_balance_diagnostics.csv` を確認し、OCRの生ログをレビューします。</li>
-            </ol>
+            <div class="step-grid">
+                <div class="step-card">
+                    <h3>1. ドキュメント種別を選択</h3>
+                    <p>通帳・取引履歴タブで書類種別と解析エンジンを選択。デフォルトは <strong>Gemini 2.5 Pro</strong>（精度約99%）。</p>
+                    <div class="mock-panel">
+                        <strong>解析エンジン</strong>
+                        <ul style="margin:0;padding-left:1rem;">
+                            <li>Gemini 2.5 Pro（高精度）</li>
+                            <li>Gemini 2.5 Flash（高速）</li>
+                            <li>ハイブリッド（Azure + Gemini）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="step-card">
+                    <h3>2. PDFをアップロード</h3>
+                    <p>「PDFファイルを選択」ボタン、または下図のエリアへドラッグ＆ドロップします。複数ファイルの一括処理に対応。</p>
+                    <div class="mock-panel">
+                        <strong>ドロップエリア</strong>
+                        <div style="border:2px dashed #93c5fd;border-radius:12px;padding:0.8rem;text-align:center;color:#0f172a;">
+                            ここにPDFをドロップ<br><small>1口座1ファイルでアップロード</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="step-card">
+                    <h3>3. 結果を確認</h3>
+                    <p>処理中は進捗バーが表示され、完了後はサマリカードに <strong>処理時間・名義人・取引件数</strong> を表示。CSVをダウンロードできます。</p>
+                    <div class="mock-panel">
+                        <strong>プレビュー例</strong>
+                        <p style="margin:0;">処理時間 126.4秒 / 取引 240件</p>
+                        <p style="margin:0;">CSV: assets.csv / bank_transactions.csv</p>
+                    </div>
+                </div>
+            </div>
+            <p style="margin-top:1rem;">※ 解析結果が空、不正確な場合は `azure_raw_transactions.csv`（OCR行）や `azure_balance_diagnostics.csv`（残高検算）を確認してください。</p>
         </section>
         <section>
             <h2>FAQ</h2>
