@@ -52,3 +52,8 @@ Store secrets in environment variables or secret managers compatible with your d
 - ユーザから事実確認・作業証跡の明示を求められているため、作業していないのに「少し時間ください」等の曖昧な回答を禁止する。進捗は実測結果に基づいて報告する。
 - 最終行比較で残高差に合わない入出金を正規化する検証パス`_finalize_transactions_from_balance`を追加。これは残高には触れず、入出金欄のみを修正して整合性を保つ。
 - 最終段で残高差と入出金の符号を照合する`_finalize_transactions_from_balance`を追加し、残高を変更せずに入出金欄だけを入れ替える検証パスを実装。
+- ユーザは「エージェントが未テストの成果物は確認しない」方針を宣言。未検証のものは共有しない、もしくは明確に未検証と記述して要確認として扱う。
+
+### 2025-11-18
+- Gemini単体処理をページ単位チャンクに分解し、`ThreadPoolExecutor(max_workers=4)`で並列にGeminiへ投げてから全ページを結合→既存の残高整合パイプラインを一度だけ適用するよう`backend/app/main.py`を刷新。Gemini呼び出し時間がページ数に比例して伸びるボトルネックを解消する下地を整備。
+- `_analyze_page_with_gemini`ヘルパーと`GeminiPageResult` dataclassを新設し、ページごとの生取引を抽出する責務を分離。`_enforce_continuity`や`_finalize_transaction_directions`など既存の入出金補正ロジックを統合後にのみ流す構成を維持し、精度要件を満たすようにした。

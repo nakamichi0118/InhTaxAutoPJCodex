@@ -3,6 +3,9 @@ from __future__ import annotations
 import base64
 import csv
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime
 from io import StringIO
 from typing import Any, Callable, Dict, List, Optional
@@ -36,7 +39,7 @@ from .models import (
 from .parser import build_assets, detect_document_type
 from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="InhTaxAutoPJ Backend", version="0.5.0")
 
@@ -68,6 +71,13 @@ WITHDRAWAL_NOTE_KEYWORDS = (
     "出金を前行",
 )
 BALANCE_DIRECTION_TOLERANCE = 0.5
+
+
+@dataclass
+class GeminiPageResult:
+    page_index: int
+    transactions: List[TransactionLine]
+    raw_lines: List[str]
 
 app.add_middleware(
     CORSMiddleware,
@@ -173,6 +183,29 @@ def _build_gemini_transaction_result(
         transactions=transactions,
     )
     return AzureAnalysisResult(raw_lines=extraction.lines, assets=[asset])
+
+
+def _analyze_page_with_gemini(
+    job_id: str,
+    page_index: int,
+    chunk: bytes,
+    settings,
+    *,
+    date_format: str,
+    model_override: Optional[str],
+) -> GeminiPageResult:
+    page_timer = time.perf_counter()
+    extraction = _analyze_with_gemini(
+        chunk,
+        settings,
+        model_override=model_override,
+        chunk_page_limit_override=1,
+    )
+    transactions = _convert_gemini_structured_transactions(extraction.transactions, date_format=date_format)
+    if not transactions:
+        transactions = build_transactions_from_lines(extraction.lines, date_format=date_format)
+    _log_timing(job_id, "GEMINI_PAGE", page_index, page_timer)
+    return GeminiPageResult(page_index=page_index, transactions=transactions, raw_lines=list(extraction.lines))
 
 
 def _analyze_with_azure(
@@ -816,6 +849,7 @@ def _resolve_document_assets(
 
 def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     settings = get_settings()
+    job_timer = time.perf_counter()
     handle.update(stage="queued", detail="ジョブを初期化しています…")
     with open(job.file_path, "rb") as stream:
         contents = stream.read()
@@ -829,41 +863,87 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             processed_chunks=0,
             total_chunks=1,
         )
-        progress_state = {"total": 0}
-
-        def _report_progress(current: int, total: int) -> None:
-            progress_state["total"] = total
-            handle.update(
-                stage="analyzing",
-                detail=f"Gemini ({model_label}) 解析中… {current}/{total}",
-                processed_chunks=current,
-                total_chunks=total,
-            )
-
+        plan = PdfChunkingPlan(
+            max_bytes=settings.gemini_max_document_bytes,
+            max_pages=1,
+        )
         try:
-            gemini_result = _build_gemini_transaction_result(
-                contents,
-                settings,
-                source_name,
-                date_format=job.date_format,
-                model_override=job.gemini_model,
-                chunk_page_limit_override=1,
-                progress_callback=_report_progress,
-            )
-        except Exception as exc:  # noqa: BLE001
+            chunk_timer = time.perf_counter()
+            chunks = chunk_pdf_by_limits(contents, plan)
+            _log_timing(job.job_id, "PDF_CHUNKING", 0, chunk_timer)
+        except PdfChunkingError as exc:
             raise ValueError(str(exc)) from exc
-        assets = gemini_result.assets or []
-        if not assets:
-            raise ValueError("取引が抽出できませんでした")
+        if not chunks:
+            raise ValueError("PDFにページが含まれていません")
+        total_chunks = len(chunks)
+        handle.update(
+            stage="analyzing",
+            detail=f"Gemini ({model_label}) 解析中… 0/{total_chunks}",
+            processed_chunks=0,
+            total_chunks=total_chunks,
+        )
+        gemini_timer = time.perf_counter()
+        page_results: List[GeminiPageResult] = []
+        max_workers = min(4, total_chunks)
+        futures = []
+        with ThreadPoolExecutor(max_workers=max_workers or 1) as executor:
+            for page_index, chunk in enumerate(chunks, start=1):
+                futures.append(
+                    executor.submit(
+                        _analyze_page_with_gemini,
+                        job.job_id,
+                        page_index,
+                        chunk,
+                        settings,
+                        date_format=job.date_format,
+                        model_override=model_label,
+                    )
+                )
+            completed = 0
+            try:
+                for future in as_completed(futures):
+                    page_results.append(future.result())
+                    completed += 1
+                    handle.update(
+                        stage="analyzing",
+                        detail=f"Gemini ({model_label}) 解析中… {completed}/{total_chunks}",
+                        processed_chunks=completed,
+                        total_chunks=total_chunks,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                for pending in futures:
+                    pending.cancel()
+                raise ValueError(str(exc)) from exc
+        _log_timing(job.job_id, "GEMINI_JOB", 0, gemini_timer)
+        page_results.sort(key=lambda result: result.page_index)
+        combined_transactions: List[TransactionLine] = []
+        for result in page_results:
+            combined_transactions.extend(result.transactions)
+        asset = AssetRecord(
+            category="bank_deposit",
+            type="transaction_history",
+            source_document=source_name,
+            asset_name="預金取引推移表",
+            transactions=combined_transactions,
+        )
+        assets: List[AssetRecord] = [asset]
 
         export_assets: List[dict] = []
         document_type = assets[0].category if assets else "transaction_history"
         for asset in assets:
             transactions = asset.transactions or []
+            enforce_timer = time.perf_counter()
             transactions, _ = _enforce_continuity(None, transactions)
+            _log_timing(job.job_id, "PY_ENFORCE", 0, enforce_timer)
+            finalize_timer = time.perf_counter()
             transactions = _finalize_transaction_directions(transactions)
+            _log_timing(job.job_id, "PY_FINALIZE_DIR", 0, finalize_timer)
+            post_timer = time.perf_counter()
             transactions = post_process_transactions(transactions)
+            _log_timing(job.job_id, "PY_POST_PROCESS", 0, post_timer)
+            balance_timer = time.perf_counter()
             transactions = _finalize_transactions_from_balance(transactions)
+            _log_timing(job.job_id, "PY_FINALIZE_BAL", 0, balance_timer)
             asset.transactions = transactions
             export_assets.append(asset.to_export_payload())
 
@@ -874,7 +954,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
             for name, content in csv_map.items()
         }
-        gemini_total_chunks = progress_state["total"] or 1
+        gemini_total_chunks = total_chunks or 1
         handle.update(
             status="completed",
             stage="completed",
@@ -886,6 +966,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             total_chunks=gemini_total_chunks,
             assets_payload=export_assets,
         )
+        _log_timing(job.job_id, "JOB_TOTAL", 0, job_timer)
         return
 
     plan = PdfChunkingPlan(
@@ -893,7 +974,9 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         max_pages=1,
     )
     try:
+        chunk_timer = time.perf_counter()
         chunks = chunk_pdf_by_limits(contents, plan)
+        _log_timing(job.job_id, "PDF_CHUNKING", 0, chunk_timer)
     except PdfChunkingError as exc:
         raise ValueError(str(exc)) from exc
 
@@ -921,6 +1004,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             processed_chunks=index - 1,
             total_chunks=total_chunks,
         )
+        azure_timer = time.perf_counter()
         chunk_result = _analyze_with_azure(
             chunk,
             settings,
@@ -928,6 +1012,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             date_format=job.date_format,
             perform_global_reconciliation=False,
         )
+        _log_timing(job.job_id, "AZURE_CALL", index, azure_timer)
         document_type = chunk_result.assets[0].category if chunk_result.assets else "transaction_history"
         raw_transactions = build_transactions_from_lines(
             chunk_result.raw_lines,
@@ -955,7 +1040,9 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
                 azure_raw_rows.append(_build_azure_raw_row(index, chunk_row_number, txn))
             chunk_transactions = fallback_txns
         chunk_start_balance = prev_balance
+        enforce_timer = time.perf_counter()
         chunk_transactions, prev_balance = _enforce_continuity(prev_balance, chunk_transactions)
+        _log_timing(job.job_id, "PY_ENFORCE", index, enforce_timer)
         _collect_diagnostics(chunk_transactions, chunk_start_balance, diagnostics, stage="adjusted")
 
         if _needs_balance_fix(chunk_transactions):
@@ -965,6 +1052,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
                 processed_chunks=index - 1,
                 total_chunks=total_chunks,
             )
+            refine_timer = time.perf_counter()
             refined = _gemini_refine_chunk(
                 chunk,
                 chunk_transactions,
@@ -975,8 +1063,11 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
                 chunk_page_limit_override=1 if job.gemini_model else None,
             )
             if refined:
+                _log_timing(job.job_id, "GEMINI_REFINE", index, refine_timer)
                 chunk_transactions = refined
+                enforce_timer = time.perf_counter()
                 chunk_transactions, prev_balance = _enforce_continuity(chunk_start_balance, chunk_transactions)
+                _log_timing(job.job_id, "PY_ENFORCE", index, enforce_timer)
 
         all_transactions.extend(chunk_transactions)
         handle.update(
@@ -990,10 +1081,18 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         raise ValueError("取引が抽出できませんでした")
 
     handle.update(stage="analyzing", detail="残高を整合しています…")
+    enforce_timer = time.perf_counter()
     reconciled_transactions, _ = _enforce_continuity(None, all_transactions)
+    _log_timing(job.job_id, "PY_ENFORCE", 0, enforce_timer)
+    finalize_timer = time.perf_counter()
     reconciled_transactions = _finalize_transaction_directions(reconciled_transactions)
+    _log_timing(job.job_id, "PY_FINALIZE_DIR", 0, finalize_timer)
+    post_timer = time.perf_counter()
     reconciled_transactions = post_process_transactions(reconciled_transactions)
+    _log_timing(job.job_id, "PY_POST_PROCESS", 0, post_timer)
+    balance_timer = time.perf_counter()
     reconciled_transactions = _finalize_transactions_from_balance(reconciled_transactions)
+    _log_timing(job.job_id, "PY_FINALIZE_BAL", 0, balance_timer)
 
     asset = AssetRecord(
         category=document_type or "transaction_history",
@@ -1006,6 +1105,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     asset_payload = asset.to_export_payload()
     payload = {"assets": [asset_payload]}
     handle.update(stage="exporting", detail="CSV を書き出しています…")
+    csv_timer = time.perf_counter()
     csv_map = export_to_csv_strings(payload)
     if not csv_map:
         raise ValueError("CSV出力が空です")
@@ -1013,6 +1113,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
         for name, content in csv_map.items()
     }
+    _log_timing(job.job_id, "CSV_EXPORT", 0, csv_timer)
     if diagnostics:
         debug_csv = _build_diagnostics_csv(diagnostics)
         encoded["azure_balance_diagnostics.csv"] = base64.b64encode(
@@ -1036,6 +1137,12 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         total_chunks=total_chunks,
         assets_payload=assets_payload,
     )
+    _log_timing(job.job_id, "JOB_TOTAL", 0, job_timer)
+
+
+def _log_timing(job_id: str, component: str, page: int, start_ts: float) -> None:
+    duration_ms = (time.perf_counter() - start_ts) * 1000.0
+    logger.info("TIMING|%s|%s|%s|%.2f", job_id, component, page, duration_ms)
 
 
 job_manager = JobManager(_process_job_record)
