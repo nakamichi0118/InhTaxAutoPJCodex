@@ -6,180 +6,219 @@
     <title>SOROBOCR｜使い方ガイド</title>
     <link rel="icon" type="image/png" href="./image/TitleLog.png" />
     <style>
+        :root {
+            color-scheme: light;
+        }
         body {
             margin: 0;
             font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
-            background: #f5f7fb;
-            color: #1f2937;
+            background: #eef2ff;
+            color: #0f172a;
         }
         header {
-            background: linear-gradient(135deg, #050d26 0%, #15418f 100%);
+            background: linear-gradient(135deg, #08113a 0%, #1b3faa 60%, #2563eb 100%);
             color: #fff;
-            padding: 2rem 3rem;
+            padding: 2.4rem 3rem 2rem;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 2.3rem;
+        }
+        header p {
+            margin: 0.4rem 0 0;
+            max-width: 760px;
+            line-height: 1.7;
+            color: rgba(255, 255, 255, 0.88);
         }
         main {
-            max-width: 960px;
+            max-width: 1080px;
             margin: 0 auto;
             padding: 2rem 1.5rem 3rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
         }
         section {
             background: #fff;
-            border-radius: 16px;
+            border-radius: 20px;
             padding: 1.8rem;
-            margin-bottom: 1.6rem;
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.1);
-        }
-        h1 {
-            margin: 0;
-            font-size: 2rem;
+            box-shadow: 0 24px 50px rgba(15, 23, 42, 0.12);
         }
         h2 {
             margin-top: 0;
-            font-size: 1.3rem;
-            color: #1f3b8c;
+            color: #1d3a8a;
+            font-size: 1.35rem;
         }
-        ul {
-            padding-left: 1.2rem;
-        }
-        a {
-            color: #2563eb;
-        }
-        .faq-item + .faq-item {
-            margin-top: 1rem;
-        }
-        .back-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-            margin-top: 1rem;
-        }
-        .step-grid {
+        .grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 1.2rem;
+            gap: 1rem;
         }
-        .step-card {
-            border: 1px solid rgba(37, 99, 235, 0.2);
-            border-radius: 14px;
-            padding: 1rem;
-            background: #f8fafc;
+        .card {
+            border: 1px solid rgba(37, 99, 235, 0.18);
+            border-radius: 16px;
+            padding: 1.1rem;
+            background: #f8fbff;
         }
-        .step-card h3 {
+        .card h3 {
             margin: 0 0 0.4rem;
-            font-size: 1rem;
-            color: #1f3b8c;
+            font-size: 1.05rem;
+            color: #1f2f70;
         }
-        .step-card p {
+        .card p {
             margin: 0;
             font-size: 0.9rem;
             color: #475569;
         }
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.2rem;
+        }
+        .step-number {
+            font-weight: 700;
+            color: #2563eb;
+            font-size: 0.9rem;
+        }
         .mock-panel {
             border: 1px dashed #94a3b8;
             border-radius: 12px;
-            padding: 1rem;
+            padding: 0.8rem;
+            margin-top: 0.7rem;
             background: #fff;
-            margin-top: 1rem;
-        }
-        .mock-panel strong {
-            display: block;
-            margin-bottom: 0.4rem;
+            font-size: 0.85rem;
+            color: #1e293b;
         }
         .warning {
             background: #fff7ed;
             border: 1px solid #fdba74;
-            border-radius: 12px;
+            border-radius: 14px;
             padding: 1rem;
-            margin-top: 1rem;
             color: #9a3412;
+            margin-top: 1rem;
+        }
+        details {
+            border: 1px solid rgba(148, 163, 184, 0.6);
+            border-radius: 14px;
+            padding: 1rem;
+            background: #fdfdff;
+        }
+        details + details {
+            margin-top: 0.7rem;
+        }
+        summary {
+            font-weight: 600;
+            cursor: pointer;
+            color: #1d3a8a;
+        }
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            margin-top: 1rem;
+            color: #2563eb;
+            text-decoration: none;
+            font-weight: 600;
         }
     </style>
 </head>
 <body>
     <header>
         <h1>SOROBOCR 使い方ガイド</h1>
-        <p>高精度な通帳OCRを利用するための手順とFAQをまとめました。Webアプリからいつでも参照できます。</p>
+        <p>相続財産OCRワークフローの操作手順・注意事項・FAQをまとめたページです。Gemini 2.5 Pro単体解析が標準モードであり、最も高い精度を提供します。</p>
     </header>
     <main>
         <section>
-            <h2>推奨環境と準備</h2>
-            <ul>
-                <li><strong>ブラウザ:</strong> Google Chrome / Microsoft Edge 最新版。</li>
-                <li><strong>ファイル形式:</strong> PDF。<b>1口座ごとに1ファイル</b>へまとめてください。合算記帳のままだと残高計算が崩れます。</li>
-                <li><strong>解像度:</strong> 600dpi程度を推奨。画質が悪い/文字が潰れている場合、Gemini/Azureともに精度が大きく低下します。</li>
-                <li><strong>ファイルサイズ/ページ数:</strong> 1ページ6MBを超えるとAzureが分割できません。Gemini fallbackは合計20MB・約100ページまで対応しますが、重いPDFは分割・圧縮を推奨します。</li>
-                <li><strong>ゆうちょ/JAの長編PDF:</strong> 文字間隔が詰まったレイアウトはGeminiフォールバックで処理します。ページを6MB未満に抑えると安定します。</li>
-            </ul>
+            <h2>推奨環境と制約</h2>
+            <div class="grid">
+                <div class="card">
+                    <h3>ファイル構成</h3>
+                    <p>PDF形式／1口座1ファイル。合算記帳や途中で別口座が混ざる構成は残高整合が崩れます。</p>
+                </div>
+                <div class="card">
+                    <h3>画質・解像度</h3>
+                    <p>600dpi程度を推奨。画質が悪い・文字が潰れているとGeminiでも認識率が低下します。</p>
+                </div>
+                <div class="card">
+                    <h3>ファイルサイズ</h3>
+                    <p>Gemini単体は1ファイルあたり約20MB／100ページまでが目安。超える場合は分割・圧縮してください。</p>
+                </div>
+                <div class="card">
+                    <h3>ハイブリッド利用時</h3>
+                    <p>Azure処理を併用する場合は1ページ6MB以内が上限です。巨大なJA/ゆうちょ通帳はGemini単体モードを推奨します。</p>
+                </div>
+            </div>
             <div class="warning">
-                <strong>※ 合算記帳について</strong>
-                複数口座の残高を合算して記帳する形式は補正ロジックの想定外です。可能な限り口座単位で書き出したPDFをご用意ください。
+                <strong>合算記帳に注意:</strong> 複数口座の残高をまとめて記帳する通帳は、補正ロジックが想定していません。可能な限り口座単位の明細をご用意ください。
             </div>
         </section>
+
         <section>
             <h2>操作手順</h2>
-            <div class="step-grid">
-                <div class="step-card">
-                    <h3>1. ドキュメント種別を選択</h3>
-                    <p>通帳・取引履歴タブで書類種別と解析エンジンを選択。デフォルトは <strong>Gemini 2.5 Pro</strong>（精度約99%）。</p>
+            <div class="steps">
+                <div class="card">
+                    <div class="step-number">STEP 1</div>
+                    <h3>ドキュメント種別と解析エンジン</h3>
+                    <p>通帳・取引履歴タブで「取引履歴」または「通帳（預貯金）」を選択し、解析エンジンを選びます。デフォルトは <strong>Gemini 2.5 Pro</strong> です。</p>
                     <div class="mock-panel">
                         <strong>解析エンジン</strong>
                         <ul style="margin:0;padding-left:1rem;">
                             <li>Gemini 2.5 Pro（高精度）</li>
                             <li>Gemini 2.5 Flash（高速）</li>
-                            <li>ハイブリッド（Azure + Gemini）</li>
+                            <li>ハイブリッド（Azure+Gemini）</li>
                         </ul>
                     </div>
                 </div>
-                <div class="step-card">
-                    <h3>2. PDFをアップロード</h3>
-                    <p>「PDFファイルを選択」ボタン、または下図のエリアへドラッグ＆ドロップします。複数ファイルの一括処理に対応。</p>
+                <div class="card">
+                    <div class="step-number">STEP 2</div>
+                    <h3>PDFをアップロード</h3>
+                    <p>「PDFファイルを選択」またはドロップエリアへドラッグ＆ドロップ。複数PDFの一括処理にも対応しています。</p>
                     <div class="mock-panel">
                         <strong>ドロップエリア</strong>
                         <div style="border:2px dashed #93c5fd;border-radius:12px;padding:0.8rem;text-align:center;color:#0f172a;">
-                            ここにPDFをドロップ<br><small>1口座1ファイルでアップロード</small>
+                            ここにPDFをドロップ<br><small>1口座＝1PDFでアップロード</small>
                         </div>
                     </div>
                 </div>
-                <div class="step-card">
-                    <h3>3. 結果を確認</h3>
-                    <p>処理中は進捗バーが表示され、完了後はサマリカードに <strong>処理時間・名義人・取引件数</strong> を表示。CSVをダウンロードできます。</p>
+                <div class="card">
+                    <div class="step-number">STEP 3</div>
+                    <h3>結果を確認・ダウンロード</h3>
+                    <p>処理中は進捗バーとステージ表示が更新されます。完了後は処理時間・名義人・取引件数を確認し、CSVをダウンロードします。</p>
                     <div class="mock-panel">
                         <strong>プレビュー例</strong>
-                        <p style="margin:0;">処理時間 126.4秒 / 取引 240件</p>
+                        <p style="margin:0;">処理時間 132.4 秒 / 取引 248 件</p>
                         <p style="margin:0;">CSV: assets.csv / bank_transactions.csv</p>
                     </div>
                 </div>
             </div>
-            <p style="margin-top:1rem;">※ 解析結果が空、不正確な場合は `azure_raw_transactions.csv`（OCR行）や `azure_balance_diagnostics.csv`（残高検算）を確認してください。</p>
+            <p style="margin-top:1rem;font-size:0.9rem;">※ OCRの生ログが必要な場合は `azure_raw_transactions.csv`、残高検算は `azure_balance_diagnostics.csv` を参照してください。</p>
         </section>
+
         <section>
             <h2>FAQ</h2>
-            <div class="faq-item">
-                <strong>Q. 画質が悪いPDFは読み取れますか？</strong>
-                <p>A. 推奨は600dpiです。コントラストが低い・手書きが多い場合はGeminiでも精度が出ません。再スキャンをお願いします。</p>
-            </div>
-            <div class="faq-item">
-                <strong>Q. 通帳をまとめて1つのPDFにしても良いですか？</strong>
-                <p>A. 1口座1ファイルにしてください。合算記帳や途中で口座が切り替わるPDFは残高が連続しないため、補正ロジックが正常に働きません。</p>
-            </div>
-            <div class="faq-item">
-                <strong>Q. JA/ゆうちょのような大判PDFが読み取れません。</strong>
-                <p>A. 1ページが6MBを超えるとAzureがチャンク化できず、Gemini fallbackでもタイムアウトしやすくなります。PDFを分割・圧縮し、ページ単位で6MB未満にしてください。</p>
-            </div>
-            <div class="faq-item">
-                <strong>Q. 入出金が逆転することがあります。</strong>
-                <p>A. 最新版では摘要キーワードと残高推移から自動補正しますが、特殊な記載（例: 「カード」など品目のみ）の場合は逆転が残ることがあります。CSV内の補正メモを確認し、必要に応じて手修正してください。</p>
-            </div>
-            <div class="faq-item">
-                <strong>Q. 読み取り完了までの時間は？</strong>
-                <p>A. 結果タブに「処理時間 ◯◯秒」が表示されます。Gemini 2.5 Pro はページ数によって数分〜10分かかることがありますが、進捗バーで完了率を確認できます。</p>
-            </div>
-            <div class="faq-item">
-                <strong>Q. APIを直接呼び出すには？</strong>
-                <p>A. <code>/api/jobs</code> に PDF をPOSTし、<code>processing_mode</code> と <code>gemini_model</code> を指定します（例: <code>processing_mode=gemini</code>, <code>gemini_model=gemini-2.5-pro</code>）。レスポンスの <code>job_id</code> をポーリングして結果を取得してください。</p>
-            </div>
+            <details open>
+                <summary>画質が悪いPDFは読み取れますか？</summary>
+                <p>推奨は600dpiです。ノイズが多い・薄い印字はGemini/Flash/ハイブリッドいずれでも精度が出ません。再スキャンをお願いします。</p>
+            </details>
+            <details>
+                <summary>JA/ゆうちょなどページ数が多い通帳は？</summary>
+                <p>Gemini単体モードであれば約100ページ/20MBまで処理可能です。1ページの容量が大きい場合はPDFを分割・圧縮してください。</p>
+            </details>
+            <details>
+                <summary>入出金が逆転することがあります。</summary>
+                <p>摘要キーワードと残高推移から自動補正しますが、特殊な摘要（例: 「カード」だけ）では逆転が残る場合があります。CSV内の補正メモを確認し、必要に応じて手修正してください。</p>
+            </details>
+            <details>
+                <summary>処理時間はどこで確認できますか？</summary>
+                <p>結果タブのサマリに「処理時間 ◯◯秒」を表示しています。Gemini 2.5 Proはページ数に応じて数分〜10分程度かかることがあります。</p>
+            </details>
+            <details>
+                <summary>APIを直接呼び出すには？</summary>
+                <p><code>/api/jobs</code> にPDFをPOSTし、<code>processing_mode=gemini</code>、<code>gemini_model=gemini-2.5-pro</code>（任意でflash）を指定します。レスポンスの <code>job_id</code> をポーリングして結果を取得してください。</p>
+            </details>
         </section>
-        <a class="back-link" href="./index.html">&larr; Webアプリに戻る</a>
+
+        <a class="back-link" href="./index.html">&larr; SOROBOCRに戻る</a>
     </main>
 </body>
 </html>
