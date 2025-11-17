@@ -45,3 +45,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - Azure+Geminiハイブリッド構成に戻し、Azureで残高を取得した上でGemini補正を行う従来フローを復活。Gemini単体モードも選択肢として維持。
 - 最終行の残高と期待残高を比較するバリデーションを追加。ズレがある場合はCSVに警告を追記し、入出金補正ロジックでも残高差と一致させるようにした。
 - 入出金補正後に残高を再計算する`_recompute_balances`を追加し、最終行まで残高と入出金の整合性を保つようにした。
+- 入出金入れ替え処理を最終段に移し、`_recompute_balances`→`_finalize_transaction_directions`→`_recompute_balances` の順で適用することで補正後に他の処理で戻らないようにした。
