@@ -40,3 +40,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - ゆうちょ/カード系摘要を確実に出金判定できるよう`WITHDRAWAL_DESC_HINTS`にカード/ATM/取扱店を追加。
 - post_process_transactions後にも`_finalize_transaction_directions`を再実行し、後段の調整で再び入出金が逆転しないよう再補正パスを追加。
 - `_finalize_transaction_directions`で最終残高も再計算するようにし、入出金を入れ替えた後に残高が元へ戻らないよう修正。ゆうちょ等の期待値ファイルで指摘されたズレを解消。
+- 残高を真値とみなし、差分と一致しない入出金は残高差から算出した金額に置き換えるよう後処理を更新。これにより残高の再計算は行わず、金額のみを補正する。
