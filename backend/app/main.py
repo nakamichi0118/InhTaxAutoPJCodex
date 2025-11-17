@@ -49,10 +49,6 @@ WITHDRAWAL_DESC_HINTS = (
     "送金",
     "資金移動",
     "手数料",
-    "カード",
-    "ＡＴＭ",
-    "ATM",
-    "取扱店",
 )
 DEPOSIT_DESC_HINTS = (
     "入金",
@@ -611,12 +607,11 @@ def _finalize_transaction_directions(transactions: List[TransactionLine]) -> Lis
 
         if prev_balance is not None and current.balance is not None:
             delta = current.balance - prev_balance
-            recorded_delta = deposit - withdrawal
-            if abs(delta - recorded_delta) > BALANCE_TOLERANCE:
-                if delta > BALANCE_TOLERANCE:
-                    deposit = float(delta)
+            if delta > BALANCE_TOLERANCE:
+                if not deposit or abs(delta - deposit) > BALANCE_TOLERANCE:
+                    deposit = float(abs(delta))
                     withdrawal = 0.0
-                    note_text = _append_note(note_text, ["残高の増加量に合わせて入金額を補正しました"]) or ""
+                    note_text = _append_note(note_text, ["残高整合から入金額を再設定しました"]) or ""
                     current = current.model_copy(
                         update={
                             "deposit_amount": deposit,
@@ -624,10 +619,13 @@ def _finalize_transaction_directions(transactions: List[TransactionLine]) -> Lis
                             "correction_note": note_text,
                         }
                     )
-                elif delta < -BALANCE_TOLERANCE:
-                    withdrawal = float(-delta)
+                elif withdrawal and not deposit:
+                    _swap(to_deposit=True)
+            elif delta < -BALANCE_TOLERANCE:
+                if not withdrawal or abs(abs(delta) - withdrawal) > BALANCE_TOLERANCE:
+                    withdrawal = float(abs(delta))
                     deposit = 0.0
-                    note_text = _append_note(note_text, ["残高の減少量に合わせて出金額を補正しました"]) or ""
+                    note_text = _append_note(note_text, ["残高整合から出金額を再設定しました"]) or ""
                     current = current.model_copy(
                         update={
                             "withdrawal_amount": withdrawal,
@@ -635,8 +633,6 @@ def _finalize_transaction_directions(transactions: List[TransactionLine]) -> Lis
                             "correction_note": note_text,
                         }
                     )
-                elif withdrawal and not deposit:
-                    _swap(to_deposit=True)
                 elif deposit and not withdrawal:
                     _swap(to_deposit=False)
         else:
@@ -645,40 +641,11 @@ def _finalize_transaction_directions(transactions: List[TransactionLine]) -> Lis
             elif deposit and not withdrawal and _note_mentions_withdrawal(note_text):
                 _swap(to_deposit=False)
 
+        finalized.append(current)
         if current.balance is not None:
             prev_balance = current.balance
-        elif prev_balance is not None:
-            # 保守的に残高は変更しない
-            pass
-
-        finalized.append(current)
 
     return finalized
-
-
-def _recompute_balances(transactions: List[TransactionLine]) -> List[TransactionLine]:
-    recomputed: List[TransactionLine] = []
-    running: Optional[float] = None
-    initialized = False
-    for txn in transactions:
-        withdrawal = txn.withdrawal_amount or 0.0
-        deposit = txn.deposit_amount or 0.0
-        update_fields: Dict[str, Any] = {}
-        if not initialized and txn.balance is not None:
-            running = float(txn.balance)
-            initialized = True
-        else:
-            if running is None:
-                running = deposit - withdrawal
-            else:
-                running = running - withdrawal + deposit
-            update_fields["balance"] = running
-        if update_fields:
-            txn = txn.model_copy(update=update_fields)
-        recomputed.append(txn)
-    return recomputed
-
-
 
 
 def _convert_gemini_structured_transactions(
@@ -860,9 +827,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         for asset in assets:
             transactions = asset.transactions or []
             transactions, _ = _enforce_continuity(None, transactions)
-            transactions = post_process_transactions(transactions)
             transactions = _finalize_transaction_directions(transactions)
-            transactions = _recompute_balances(transactions)
+            transactions = post_process_transactions(transactions)
             asset.transactions = transactions
             export_assets.append(asset.to_export_payload())
 
@@ -990,9 +956,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
 
     handle.update(stage="analyzing", detail="残高を整合しています…")
     reconciled_transactions, _ = _enforce_continuity(None, all_transactions)
-    reconciled_transactions = post_process_transactions(reconciled_transactions)
     reconciled_transactions = _finalize_transaction_directions(reconciled_transactions)
-    reconciled_transactions = _recompute_balances(reconciled_transactions)
+    reconciled_transactions = post_process_transactions(reconciled_transactions)
 
     asset = AssetRecord(
         category=document_type or "transaction_history",
