@@ -35,3 +35,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - Web UIに`help.html`を追加し、ブラウザ上で使い方/FAQを参照可能に。JA/ゆうちょ大判PDFに備えてサイズ・画質の注意も追記し、UIヘッダーにもリンクを表示。入出金逆転検知の最終チェックを強化し、補正メモに基づいて残高差から欄を入れ替えるフォールバックを実装。
 - JA/ゆうちょ等でAzureが空配列を返した場合にGeminiでチャンクを再解析するフォールバックを追加。ヘルプページをリッチなHTMLに刷新し、ドロップエリア等の説明を図解した。
 - 残高差と補正メモを最終段で再検査する`_finalize_transaction_directions`を実装し、ゆうちょ/JAで入出金欄が逆転しても強制的に入れ替えるよう改善。
+- Web UIの通知機能を再確認し、すでに通知許可が与えられている場合は自動的に有効化するよう修正。バージョン番号を 0.7.0 へ更新。

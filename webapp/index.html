@@ -500,8 +500,8 @@
         <div class="hero-copy">
             <span class="hero-subtitle">相続書類 AI オートメーション</span>
             <h1>SOROBOCR</h1>
-            <p class="tagline">相続財産に関わる PDF・スキャンデータをまとめて解析し、分類から CSV 出力までをワンストップで支援します。</p>
-            <p class="version">バージョン 0.6.0</p>
+                    <p class="tagline">相続財産に関わる PDF・スキャンデータをまとめて解析し、分類から CSV 出力までをワンストップで支援します。</p>
+                    <p class="version">バージョン 0.7.0</p>
             <div class="header-links">
                 <a href="./help.html" target="_blank" rel="noopener">使い方・FAQ</a>
             </div>
@@ -751,6 +751,9 @@
             return;
         }
         notificationButton.addEventListener('click', handleNotificationRequest);
+        if (Notification.permission === 'granted') {
+            state.notificationsEnabled = true;
+        }
         updateNotificationButton();
     }
 
@@ -1541,10 +1544,7 @@
     }
 
     function notifyCompletion(doc) {
-        if (!('Notification' in window)) {
-            return;
-        }
-        if (Notification.permission !== 'granted') {
+        if (!state.notificationsEnabled) {
             return;
         }
         const transactionCount = doc.assets?.[0]?.transactions?.length || 0;
