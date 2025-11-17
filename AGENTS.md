@@ -48,3 +48,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - 入出金入れ替え処理を最終段に移し、`_recompute_balances`→`_finalize_transaction_directions`→`_recompute_balances` の順で適用することで補正後に他の処理で戻らないようにした。
 - エージェント側で検証済みの成果物のみを共有し、ユーザ側で未確認のまま受領することはない方針で運用する。
 - 入出金補正はAzure残高を基準に行い、その後にのみ残高を再計算する順序へ修正。これにより補正結果が後段処理で上書きされないようにした。
+- 最終CSVに対して簡易な残高整合チェックを追加し、差異がある場合はPython側で入出金を再設定する検証レイヤーを実装。
