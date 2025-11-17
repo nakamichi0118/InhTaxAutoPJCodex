@@ -268,6 +268,42 @@ def _build_diagnostics_csv(rows: List[Dict[str, Any]]) -> str:
     return buffer.getvalue()
 
 
+def _build_azure_raw_row(
+    page_number: int,
+    row_number: int,
+    txn: TransactionLine,
+) -> Dict[str, Any]:
+    return {
+        "page_number": page_number,
+        "row_number": row_number,
+        "transaction_date": txn.transaction_date,
+        "description": txn.description,
+        "withdrawal_amount": txn.withdrawal_amount,
+        "deposit_amount": txn.deposit_amount,
+        "balance": txn.balance,
+        "line_confidence": txn.line_confidence,
+    }
+
+
+def _build_azure_raw_transactions_csv(rows: List[Dict[str, Any]]) -> str:
+    headers = [
+        "page_number",
+        "row_number",
+        "transaction_date",
+        "description",
+        "withdrawal_amount",
+        "deposit_amount",
+        "balance",
+        "line_confidence",
+    ]
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow([row.get(col, "") for col in headers])
+    return buffer.getvalue()
+
+
 def _compute_chunk_residuals(transactions: List[TransactionLine]) -> List[float]:
     residuals: List[float] = []
     if not transactions:
@@ -553,6 +589,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     diagnostics: List[Dict[str, Any]] = []
     prev_balance: Optional[float] = None
     document_type: Optional[DocumentType] = None
+    azure_raw_rows: List[Dict[str, Any]] = []
 
     for index, chunk in enumerate(chunks, start=1):
         handle.update(
@@ -576,8 +613,12 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         _collect_diagnostics(raw_transactions, prev_balance, diagnostics, stage="azure_raw")
 
         chunk_transactions: List[TransactionLine] = []
+        chunk_row_number = 0
         for asset in chunk_result.assets:
-            chunk_transactions.extend(asset.transactions)
+            for txn in asset.transactions:
+                chunk_row_number += 1
+                azure_raw_rows.append(_build_azure_raw_row(index, chunk_row_number, txn))
+                chunk_transactions.append(txn)
         chunk_start_balance = prev_balance
         chunk_transactions, prev_balance = _enforce_continuity(prev_balance, chunk_transactions)
         _collect_diagnostics(chunk_transactions, chunk_start_balance, diagnostics, stage="adjusted")
@@ -637,6 +678,11 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         debug_csv = _build_diagnostics_csv(diagnostics)
         encoded["azure_balance_diagnostics.csv"] = base64.b64encode(
             debug_csv.encode("utf-8-sig")
+        ).decode("ascii")
+    if azure_raw_rows:
+        raw_csv = _build_azure_raw_transactions_csv(azure_raw_rows)
+        encoded["azure_raw_transactions.csv"] = base64.b64encode(
+            raw_csv.encode("utf-8-sig")
         ).decode("ascii")
     assets_payload = [asset_payload]
 
