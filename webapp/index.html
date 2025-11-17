@@ -501,7 +501,7 @@
             <span class="hero-subtitle">相続書類 AI オートメーション</span>
             <h1>SOROBOCR</h1>
                     <p class="tagline">相続財産に関わる PDF・スキャンデータをまとめて解析し、分類から CSV 出力までをワンストップで支援します。</p>
-                    <p class="version">バージョン 0.7.0</p>
+                <p class="version">バージョン 0.8.0</p>
             <div class="header-links">
                 <a href="./help.html" target="_blank" rel="noopener">使い方・FAQ</a>
             </div>
@@ -662,15 +662,13 @@
     };
 
     const ANALYSIS_MODE_OPTIONS = [
-        { value: 'gemini_pro', label: 'Gemini 2.5 Pro【単独】' },
-        { value: 'gemini_flash', label: 'Gemini 2.5 Flash【単独】' },
-        { value: 'hybrid', label: 'ハイブリッド (Azure + Gemini)' },
+        { value: 'gemini_pro', label: 'Gemini 2.5 Pro【推奨】' },
+        { value: 'gemini_flash', label: 'Gemini 2.5 Flash【高速】' },
     ];
 
     const ANALYSIS_MODE_LABELS = {
-        hybrid: 'ハイブリッド (Azure + Gemini)',
-        gemini_flash: 'Gemini 2.5 Flash（単独解析）',
-        gemini_pro: 'Gemini 2.5 Pro（単独解析）',
+        gemini_flash: 'Gemini 2.5 Flash（高速）',
+        gemini_pro: 'Gemini 2.5 Pro（高精度）',
     };
 
     init();
@@ -730,14 +728,14 @@
         if (!uploadGuidance) return;
         if (fallback) {
             uploadGuidance.textContent =
-                'サイズ上限を取得できませんでした。通常は1ページあたり約6MBまでのPDFに対応しています。';
+                'PDFのみ対応（1口座=1ファイル）。通常は1ファイルあたり20MB前後までのPDFを目安にしてください。';
             return;
         }
-        const limitMb = state.limits?.azure?.chunk_max_mb;
+        const limitMb = state.limits?.gemini?.document_max_mb;
         if (limitMb) {
-            uploadGuidance.textContent = `1ページあたり最大 ${limitMb}MB までのPDFを読み取れます。これを超える場合はPDFを分割・圧縮してください。`;
+            uploadGuidance.textContent = `PDFのみ対応／1口座=1ファイル。Geminiの上限目安は1ファイル最大 ${limitMb}MB です。超える場合は分割・圧縮してください。`;
         } else {
-            uploadGuidance.textContent = '読み取り可能サイズを確認しています…';
+            uploadGuidance.textContent = 'PDFのみ対応（1口座=1ファイル）。読み取り可能サイズを確認しています…';
         }
     }
 
@@ -959,16 +957,16 @@
                     opt.textContent = option.label;
                     modeSelect.appendChild(opt);
                 });
-                modeSelect.value = state.analysisMode || 'hybrid';
+                modeSelect.value = state.analysisMode || 'gemini_pro';
                 modeSelect.addEventListener('change', () => {
-                    state.analysisMode = modeSelect.value || 'hybrid';
+                    state.analysisMode = modeSelect.value || 'gemini_pro';
                 });
                 modeControls.appendChild(modeSelect);
 
                 const modeHint = document.createElement('span');
                 modeHint.style.fontSize = '0.8rem';
                 modeHint.style.color = '#6b7280';
-                modeHint.textContent = 'Gemini単体を選ぶとAzureを経由せずGemini 2.5の指定モデルだけで読み取ります。';
+                modeHint.textContent = 'Gemini 2.5 Pro/Flash のどちらかで読み取ります。用途に応じて精度か速度を選択してください。';
                 modeControls.appendChild(modeHint);
 
                 controlsContainer.appendChild(modeControls);
@@ -1634,11 +1632,11 @@
     }
 
     function buildDropMessage(labelText) {
-        const limitMb = state.limits?.azure?.chunk_max_mb;
+        const limitMb = state.limits?.gemini?.document_max_mb;
         if (limitMb) {
-            return `${labelText}の書類を読み取ります（1ページ最大 ${limitMb}MB）`;
+            return `${labelText}の書類を読み取ります（PDFのみ／1ファイル最大 ${limitMb}MB）`;
         }
-        return `${labelText}の書類を読み取ります。`;
+        return `${labelText}の書類を読み取ります（PDFのみ対応）`;
     }
 
     function describeDateFormat(value) {
@@ -1655,14 +1653,8 @@
     }
 
     function getProcessingModeConfig() {
-        const mode = state.analysisMode || 'gemini_pro';
-        if (mode === 'gemini_flash') {
-            return { processing_mode: 'gemini', gemini_model: 'gemini-2.5-flash' };
-        }
-        if (mode === 'gemini_pro') {
-            return { processing_mode: 'gemini', gemini_model: 'gemini-2.5-pro' };
-        }
-        return { processing_mode: 'hybrid' };
+        const mode = state.analysisMode === 'gemini_flash' ? 'gemini-2.5-flash' : 'gemini-2.5-pro';
+        return { processing_mode: 'gemini', gemini_model: mode };
     }
 
     function normalizedApiBase() {

@@ -41,7 +41,7 @@ from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 
 logger = logging.getLogger("uvicorn.error")
 
-app = FastAPI(title="InhTaxAutoPJ Backend", version="0.5.0")
+app = FastAPI(title="InhTaxAutoPJ Backend", version="0.8.0")
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
 SUPPORTED_GEMINI_MODELS = {"gemini-2.5-flash", "gemini-2.5-pro"}
@@ -1270,9 +1270,10 @@ async def enqueue_document_job(
     date_format_normalized = (date_format or "auto").lower()
     if date_format_normalized not in {"auto", "western", "wareki"}:
         date_format_normalized = "auto"
-    processing_mode_normalized = (processing_mode or "hybrid").lower()
-    if processing_mode_normalized not in {"hybrid", "gemini"}:
-        processing_mode_normalized = "hybrid"
+    incoming_mode = (processing_mode or "").strip().lower()
+    processing_mode_normalized = "gemini"
+    if incoming_mode and incoming_mode != "gemini":
+        logger.warning("Unsupported processing_mode '%s' was requested; forcing gemini-only flow.", incoming_mode)
     gemini_model_normalized: Optional[str] = None
     if gemini_model:
         candidate = gemini_model.strip()
@@ -1280,8 +1281,6 @@ async def enqueue_document_job(
             raise HTTPException(status_code=400, detail="Unsupported Gemini model specified")
         if candidate:
             gemini_model_normalized = candidate
-    if processing_mode_normalized != "gemini":
-        gemini_model_normalized = None
     job = job_manager.submit(
         contents,
         content_type,

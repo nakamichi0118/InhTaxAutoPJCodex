@@ -57,3 +57,5 @@ Store secrets in environment variables or secret managers compatible with your d
 ### 2025-11-18
 - Gemini単体処理をページ単位チャンクに分解し、`ThreadPoolExecutor(max_workers=4)`で並列にGeminiへ投げてから全ページを結合→既存の残高整合パイプラインを一度だけ適用するよう`backend/app/main.py`を刷新。Gemini呼び出し時間がページ数に比例して伸びるボトルネックを解消する下地を整備。
 - `_analyze_page_with_gemini`ヘルパーと`GeminiPageResult` dataclassを新設し、ページごとの生取引を抽出する責務を分離。`_enforce_continuity`や`_finalize_transaction_directions`など既存の入出金補正ロジックを統合後にのみ流す構成を維持し、精度要件を満たすようにした。
+- バージョン0.8.0へ更新し、FastAPI/フロント双方をGemini単独構成に固定。`processing_mode`に別値が来た場合も強制的にGeminiへフォールバックし、UIからハイブリッド選択肢を排除した。
+- `webapp/index.html`と`webapp/help.html`、`docs/USAGE.md`で注意事項を整理。PDFのみ対応・1口座=1ファイル・サーバー保存なし・合算記帳は非推奨と明記し、FAQからAzure/処理時間/API関連の項目を削除した。

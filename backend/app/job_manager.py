@@ -30,7 +30,7 @@ class JobRecord:
     processed_chunks: int = 0
     total_chunks: int = 0
     assets_payload: Optional[List[dict]] = None
-    processing_mode: str = "hybrid"
+    processing_mode: str = "gemini"
     gemini_model: Optional[str] = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
@@ -62,7 +62,7 @@ class JobManager:
         document_type_hint: Optional[DocumentType],
         date_format: str,
         *,
-        processing_mode: str = "hybrid",
+        processing_mode: str = "gemini",
         gemini_model: Optional[str] = None,
     ) -> JobRecord:
         temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")

@@ -133,7 +133,7 @@
             <div class="grid">
                 <div class="card">
                     <h3>ファイル構成</h3>
-                    <p>PDF形式／1口座1ファイル。合算記帳や途中で別口座が混ざる構成は残高整合が崩れます。</p>
+                    <p>PDF形式のみ対応（画像/Excel不可）。必ず1口座=1ファイルで用意してください。別口座を同梱すると残高整合が崩れます。</p>
                 </div>
                 <div class="card">
                     <h3>画質・解像度</h3>
@@ -141,15 +141,20 @@
                 </div>
                 <div class="card">
                     <h3>ファイルサイズ</h3>
-                    <p>Gemini単体は1ファイルあたり約20MB／100ページまでが目安。超える場合は分割・圧縮してください。</p>
+                    <p>Gemini単体は1ファイルあたり約20MB／100ページまでが目安です。超える場合は圧縮や分割を行ってください。</p>
                 </div>
                 <div class="card">
-                    <h3>ハイブリッド利用時</h3>
-                    <p>Azure処理を併用する場合は1ページ6MB以内が上限です。巨大なJA/ゆうちょ通帳はGemini単体モードを推奨します。</p>
+                    <h3>データ取り扱い</h3>
+                    <p>アップロードデータは処理完了後にサーバーから自動削除され、保存しません。セキュリティのため通帳以外の個人情報は含めないでください。</p>
                 </div>
             </div>
             <div class="warning">
-                <strong>合算記帳に注意:</strong> 複数口座の残高をまとめて記帳する通帳は、補正ロジックが想定していません。可能な限り口座単位の明細をご用意ください。
+                <strong>必ずご確認ください</strong>
+                <ul style="padding-left:1.2rem;margin:0.5rem 0 0;font-size:0.9rem;line-height:1.5;">
+                    <li>PDF以外の形式や暗号化付きPDFは処理できません。</li>
+                    <li>1口座=1ファイルが前提です。合算記帳・別口座混在PDFでは精度を保証できません。</li>
+                    <li>カード明細など入出金が混在する摘要は、残高差で自動補正しますが念のためCSVを確認してください。</li>
+                </ul>
             </div>
         </section>
 
@@ -159,13 +164,12 @@
                 <div class="card">
                     <div class="step-number">STEP 1</div>
                     <h3>ドキュメント種別と解析エンジン</h3>
-                    <p>通帳・取引履歴タブで「取引履歴」または「通帳（預貯金）」を選択し、解析エンジンを選びます。デフォルトは <strong>Gemini 2.5 Pro</strong> です。</p>
+                    <p>通帳・取引履歴タブで「取引履歴」または「通帳（預貯金）」を選択し、解析エンジン（Gemini 2.5 Pro/Flash）を選びます。デフォルトは <strong>Gemini 2.5 Pro</strong> です。</p>
                     <div class="mock-panel">
                         <strong>解析エンジン</strong>
                         <ul style="margin:0;padding-left:1rem;">
                             <li>Gemini 2.5 Pro（高精度）</li>
-                            <li>Gemini 2.5 Flash（高速）</li>
-                            <li>ハイブリッド（Azure+Gemini）</li>
+                            <li>Gemini 2.5 Flash（高速・軽量）</li>
                         </ul>
                     </div>
                 </div>
@@ -191,30 +195,30 @@
                     </div>
                 </div>
             </div>
-            <p style="margin-top:1rem;font-size:0.9rem;">※ OCRの生ログが必要な場合は `azure_raw_transactions.csv`、残高検算は `azure_balance_diagnostics.csv` を参照してください。</p>
+            <p style="margin-top:1rem;font-size:0.9rem;">※ 出力ファイルは `assets.csv` / `bank_transactions.csv` の2種類です。必要に応じて補正メモを確認し、社内フローへ取り込んでください。</p>
         </section>
 
         <section>
             <h2>FAQ</h2>
             <details open>
                 <summary>画質が悪いPDFは読み取れますか？</summary>
-                <p>推奨は600dpiです。ノイズが多い・薄い印字はGemini/Flash/ハイブリッドいずれでも精度が出ません。再スキャンをお願いします。</p>
+                <p>推奨は600dpiです。ノイズが多い・薄い印字はGemini 2.5 Pro/Flashどちらでも精度が出ません。原本を再スキャンし、できるだけノイズを抑えてください。</p>
             </details>
             <details>
                 <summary>JA/ゆうちょなどページ数が多い通帳は？</summary>
                 <p>Gemini単体モードであれば約100ページ/20MBまで処理可能です。1ページの容量が大きい場合はPDFを分割・圧縮してください。</p>
             </details>
             <details>
-                <summary>入出金が逆転することがあります。</summary>
-                <p>摘要キーワードと残高推移から自動補正しますが、特殊な摘要（例: 「カード」だけ）では逆転が残る場合があります。CSV内の補正メモを確認し、必要に応じて手修正してください。</p>
+                <summary>複数口座をまとめたPDFは使えますか？</summary>
+                <p>いいえ。1口座ずつPDFを分けてください。合算記帳や別口座が混ざる構成では残高整合ロジックが成立しません。</p>
             </details>
             <details>
-                <summary>処理時間はどこで確認できますか？</summary>
-                <p>結果タブのサマリに「処理時間 ◯◯秒」を表示しています。Gemini 2.5 Proはページ数に応じて数分〜10分程度かかることがあります。</p>
+                <summary>PDF以外（画像やExcel）はアップロードできますか？</summary>
+                <p>対応していません。必ずPDF形式に変換し、ページ順を整えたうえでアップロードしてください。</p>
             </details>
             <details>
-                <summary>APIを直接呼び出すには？</summary>
-                <p><code>/api/jobs</code> にPDFをPOSTし、<code>processing_mode=gemini</code>、<code>gemini_model=gemini-2.5-pro</code>（任意でflash）を指定します。レスポンスの <code>job_id</code> をポーリングして結果を取得してください。</p>
+                <summary>アップロードしたPDFは保存されますか？</summary>
+                <p>ジョブ処理用の一時ファイルとしてのみ扱い、完了後に自動削除します。サーバー側には履歴を保存しませんので、必要なCSVはダウンロードして保管してください。</p>
             </details>
         </section>
 
