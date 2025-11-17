@@ -1153,12 +1153,14 @@
 
     async function handleSingleFile(file, docType, dateFormat, processingConfig = {}) {
         setStatus(`「${file.name}」の解析ジョブを登録しています…`, 'info');
+        const startedAt = performance.now();
         const jobId = await enqueueJob(file, docType, dateFormat, processingConfig);
         const result = await pollJobUntilComplete(jobId, { fileName: file.name });
         const assets = Array.isArray(result.assets) ? result.assets : [];
         if (!assets.length) {
             throw new Error('取引情報が見つかりませんでした。');
         }
+        const durationSeconds = Math.max(0, (performance.now() - startedAt) / 1000);
         return {
             id: createDocId(),
             name: file.name,
@@ -1167,6 +1169,7 @@
             assets,
             csvFiles: result.files,
             jobId,
+            durationSeconds,
         };
     }
 
@@ -1353,8 +1356,13 @@
         });
 
         const formattedBalance = latestBalance !== null ? formatNumber(latestBalance) : '';
+        const durationValue =
+            typeof doc.durationSeconds === 'number'
+                ? `${doc.durationSeconds.toFixed(1)} 秒`
+                : '計測中';
 
         return [
+            { label: '処理時間', value: durationValue },
             { label: '資料種別', value: describeDocType(doc.docType) },
             { label: '名義人', value: owners.size ? Array.from(owners).join('、') : '未検出' },
             { label: '口座番号', value: accounts.size ? Array.from(accounts).join('、') : '未検出' },

@@ -42,6 +42,21 @@ app = FastAPI(title="InhTaxAutoPJ Backend", version="0.5.0")
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
 SUPPORTED_GEMINI_MODELS = {"gemini-2.5-flash", "gemini-2.5-pro"}
+WITHDRAWAL_DESC_HINTS = (
+    "振込資金",
+    "振込手数料",
+    "振込料",
+    "送金",
+    "資金移動",
+    "手数料",
+)
+DEPOSIT_DESC_HINTS = (
+    "入金",
+    "預入",
+    "配当",
+    "給与",
+    "お利息",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -427,17 +442,37 @@ def _enforce_continuity(
         deposit = original_deposit or 0.0
         notes: List[str] = []
         actual_balance = txn.balance
+        description = (txn.description or "").lower()
+        has_withdrawal = original_withdrawal is not None and original_withdrawal != 0
+        has_deposit = original_deposit is not None and original_deposit != 0
+
+        if has_deposit and not has_withdrawal:
+            if any(hint in description for hint in WITHDRAWAL_DESC_HINTS):
+                withdrawal = deposit
+                deposit = 0.0
+                has_withdrawal = True
+                has_deposit = False
+                notes.append("摘要から出金扱いに補正しました")
+        if has_withdrawal and not has_deposit:
+            if any(hint in description for hint in DEPOSIT_DESC_HINTS):
+                deposit = withdrawal
+                withdrawal = 0.0
+                has_withdrawal = False
+                has_deposit = True
+                notes.append("摘要から入金扱いに補正しました")
         if running_balance is not None and actual_balance is not None:
             balance_change = actual_balance - running_balance
-            has_withdrawal = (original_withdrawal is not None and original_withdrawal != 0)
-            has_deposit = (original_deposit is not None and original_deposit != 0)
             if balance_change < 0 and not has_withdrawal and has_deposit:
                 withdrawal = deposit
                 deposit = 0.0
+                has_withdrawal = True
+                has_deposit = False
                 notes.append("残高推移に合わせて入出金を入れ替えました")
             elif balance_change > 0 and has_withdrawal and not has_deposit:
                 deposit = withdrawal
                 withdrawal = 0.0
+                has_withdrawal = False
+                has_deposit = True
                 notes.append("残高推移に合わせて入出金を入れ替えました")
         if running_balance is not None:
             if actual_balance is not None:
