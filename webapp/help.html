@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SOROBOCR｜使い方ガイド</title>
+    <link rel="icon" type="image/png" href="./image/TitleLog.png" />
+    <style>
+        body {
+            margin: 0;
+            font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+            background: #f5f7fb;
+            color: #1f2937;
+        }
+        header {
+            background: linear-gradient(135deg, #050d26 0%, #15418f 100%);
+            color: #fff;
+            padding: 2rem 3rem;
+        }
+        main {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem 3rem;
+        }
+        section {
+            background: #fff;
+            border-radius: 16px;
+            padding: 1.8rem;
+            margin-bottom: 1.6rem;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.1);
+        }
+        h1 {
+            margin: 0;
+            font-size: 2rem;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.3rem;
+            color: #1f3b8c;
+        }
+        ul {
+            padding-left: 1.2rem;
+        }
+        a {
+            color: #2563eb;
+        }
+        .faq-item + .faq-item {
+            margin-top: 1rem;
+        }
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>SOROBOCR 使い方ガイド</h1>
+        <p>高精度な通帳OCRを利用するための手順とFAQをまとめました。Webアプリからいつでも参照できます。</p>
+    </header>
+    <main>
+        <section>
+            <h2>推奨環境と準備</h2>
+            <ul>
+                <li><strong>ブラウザ:</strong> Google Chrome / Microsoft Edge 最新版。</li>
+                <li><strong>ファイル形式:</strong> PDF。<b>1口座ごとに1ファイル</b>へまとめてください。合算記帳のままだと残高計算が崩れます。</li>
+                <li><strong>解像度:</strong> 600dpi程度を推奨。画質が悪い/文字が潰れている場合、Gemini/Azureともに精度が大きく低下します。</li>
+                <li><strong>ファイルサイズ:</strong> 1ページ6MB以上のPDFはAzureが分割できません。Gemini fallbackは20MBまでですが、ページが重い場合は事前に圧縮してください。</li>
+            </ul>
+        </section>
+        <section>
+            <h2>操作手順</h2>
+            <ol>
+                <li>Webアプリ（<code>webapp/index.html</code>）をブラウザで開きます。右上のAPI設定で接続先を指定できます。</li>
+                <li>解析エンジンを選択します。デフォルトは <strong>Gemini 2.5 Pro 単体（精度約99%）</strong>です。速度を優先したい場合はFlashやハイブリッドへ切り替え可能です。</li>
+                <li>日付形式（西暦/和暦）を選択し、PDFをアップロードするかドラッグ＆ドロップします。</li>
+                <li>読み取り完了後、結果タブで <strong>処理時間・名義人・取引件数</strong> を確認できます。CSVダウンロードカードから `bank_transactions.csv` などを保存してください。</li>
+                <li>必要に応じて `azure_raw_transactions.csv` や `azure_balance_diagnostics.csv` を確認し、OCRの生ログをレビューします。</li>
+            </ol>
+        </section>
+        <section>
+            <h2>FAQ</h2>
+            <div class="faq-item">
+                <strong>Q. 画質が悪いPDFは読み取れますか？</strong>
+                <p>A. 推奨は600dpiです。コントラストが低い・手書きが多い場合はGeminiでも精度が出ません。再スキャンをお願いします。</p>
+            </div>
+            <div class="faq-item">
+                <strong>Q. 通帳をまとめて1つのPDFにしても良いですか？</strong>
+                <p>A. 1口座1ファイルにしてください。合算記帳や途中で口座が切り替わるPDFは残高が連続しないため、補正ロジックが正常に働きません。</p>
+            </div>
+            <div class="faq-item">
+                <strong>Q. JA/ゆうちょのような大判PDFが読み取れません。</strong>
+                <p>A. 1ページが6MBを超えるとAzureがチャンク化できず、Gemini fallbackでもタイムアウトしやすくなります。PDFを分割・圧縮し、ページ単位で6MB未満にしてください。</p>
+            </div>
+            <div class="faq-item">
+                <strong>Q. 入出金が逆転することがあります。</strong>
+                <p>A. 最新版では摘要キーワードと残高推移から自動補正しますが、特殊な記載（例: 「カード」など品目のみ）の場合は逆転が残ることがあります。CSV内の補正メモを確認し、必要に応じて手修正してください。</p>
+            </div>
+            <div class="faq-item">
+                <strong>Q. 読み取り完了までの時間は？</strong>
+                <p>A. 結果タブに「処理時間 ◯◯秒」が表示されます。Gemini 2.5 Pro はページ数によって数分〜10分かかることがありますが、進捗バーで完了率を確認できます。</p>
+            </div>
+            <div class="faq-item">
+                <strong>Q. APIを直接呼び出すには？</strong>
+                <p>A. <code>/api/jobs</code> に PDF をPOSTし、<code>processing_mode</code> と <code>gemini_model</code> を指定します（例: <code>processing_mode=gemini</code>, <code>gemini_model=gemini-2.5-pro</code>）。レスポンスの <code>job_id</code> をポーリングして結果を取得してください。</p>
+            </div>
+        </section>
+        <a class="back-link" href="./index.html">&larr; Webアプリに戻る</a>
+    </main>
+</body>
+</html>

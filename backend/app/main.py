@@ -57,6 +57,16 @@ DEPOSIT_DESC_HINTS = (
     "給与",
     "お利息",
 )
+DEPOSIT_NOTE_KEYWORDS = (
+    "入金額を再算出",
+    "入金扱い",
+    "入金を前行",
+)
+WITHDRAWAL_NOTE_KEYWORDS = (
+    "出金額を再算出",
+    "出金扱い",
+    "出金を前行",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -256,6 +266,18 @@ def _append_note(existing: Optional[str], additions: List[str]) -> Optional[str]
     parts.extend(note for note in additions if note)
     combined = "; ".join(part for part in parts if part)
     return combined or None
+
+
+def _note_mentions_deposit(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    return any(keyword in text for keyword in DEPOSIT_NOTE_KEYWORDS)
+
+
+def _note_mentions_withdrawal(text: Optional[str]) -> bool:
+    if not text:
+        return False
+    return any(keyword in text for keyword in WITHDRAWAL_NOTE_KEYWORDS)
 
 
 def _collect_diagnostics(
@@ -503,6 +525,32 @@ def _enforce_continuity(
             update_fields["correction_note"] = _append_note(txn.correction_note, notes)
         if update_fields:
             txn = txn.model_copy(update=update_fields)
+
+        note_text = txn.correction_note or ""
+        if (
+            txn.withdrawal_amount
+            and (txn.deposit_amount is None or txn.deposit_amount == 0)
+            and _note_mentions_deposit(note_text)
+        ):
+            txn = txn.model_copy(
+                update={
+                    "deposit_amount": txn.withdrawal_amount,
+                    "withdrawal_amount": None,
+                    "correction_note": _append_note(note_text, ["入出金欄を残高整合の結果として入れ替えました"]),
+                }
+            )
+        elif (
+            txn.deposit_amount
+            and (txn.withdrawal_amount is None or txn.withdrawal_amount == 0)
+            and _note_mentions_withdrawal(note_text)
+        ):
+            txn = txn.model_copy(
+                update={
+                    "withdrawal_amount": txn.deposit_amount,
+                    "deposit_amount": None,
+                    "correction_note": _append_note(note_text, ["入出金欄を残高整合の結果として入れ替えました"]),
+                }
+            )
 
         updated.append(txn)
 
