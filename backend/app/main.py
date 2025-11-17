@@ -644,10 +644,23 @@ def _finalize_transaction_directions(transactions: List[TransactionLine]) -> Lis
                 _swap(to_deposit=True)
             elif deposit and not withdrawal and _note_mentions_withdrawal(note_text):
                 _swap(to_deposit=False)
+        if prev_balance is None:
+            if current.balance is not None:
+                prev_balance = current.balance
+            else:
+                prev_balance = (deposit or 0.0) - (withdrawal or 0.0)
+                current = current.model_copy(update={"balance": prev_balance})
+        else:
+            delta = (deposit or 0.0) - (withdrawal or 0.0)
+            expected_balance = prev_balance + delta
+            balance_update = {}
+            if current.balance is None or abs(current.balance - expected_balance) > BALANCE_TOLERANCE:
+                balance_update["balance"] = expected_balance
+            if balance_update:
+                current = current.model_copy(update=balance_update)
+            prev_balance = current.balance if current.balance is not None else expected_balance
 
         finalized.append(current)
-        if current.balance is not None:
-            prev_balance = current.balance
 
     return finalized
 

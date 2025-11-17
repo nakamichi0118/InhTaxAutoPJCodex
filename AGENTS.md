@@ -39,3 +39,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - 残高差と入出金額の整合を厳密に照合し、差分がある場合は入金/出金額を残高から再設定する処理を追加。期待値シートで指摘されたカード行の逆転を自動補正。
 - ゆうちょ/カード系摘要を確実に出金判定できるよう`WITHDRAWAL_DESC_HINTS`にカード/ATM/取扱店を追加。
 - post_process_transactions後にも`_finalize_transaction_directions`を再実行し、後段の調整で再び入出金が逆転しないよう再補正パスを追加。
+- `_finalize_transaction_directions`で最終残高も再計算するようにし、入出金を入れ替えた後に残高が元へ戻らないよう修正。ゆうちょ等の期待値ファイルで指摘されたズレを解消。
