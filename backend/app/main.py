@@ -67,14 +67,19 @@ def _with_pdf_chunks(
     payload: bytes,
     plan: PdfChunkingPlan,
     analyzer: Callable[[bytes], GeminiExtraction],
+    *,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> GeminiExtraction:
     current_plan = plan
     while True:
         chunks = chunk_pdf_by_limits(payload, current_plan)
         try:
             aggregated = GeminiExtraction(lines=[], transactions=[])
-            for chunk in chunks:
+            total_chunks = len(chunks)
+            for index, chunk in enumerate(chunks, start=1):
                 extraction = analyzer(chunk)
+                if progress_callback:
+                    progress_callback(index, total_chunks or 1)
                 aggregated.extend(extraction)
             return aggregated
         except GeminiError as exc:
@@ -95,18 +100,23 @@ def _analyze_with_gemini(
     settings,
     *,
     model_override: Optional[str] = None,
+    chunk_page_limit_override: Optional[int] = None,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> GeminiExtraction:
     model = model_override or settings.gemini_model
     client = GeminiClient(api_keys=settings.gemini_api_keys, model=model)
+    max_pages = chunk_page_limit_override or settings.gemini_chunk_page_limit
+    if max_pages <= 0:
+        max_pages = 1
     plan = PdfChunkingPlan(
         max_bytes=settings.gemini_max_document_bytes,
-        max_pages=settings.gemini_chunk_page_limit,
+        max_pages=max_pages,
     )
 
     def analyzer(blob: bytes) -> GeminiExtraction:
         return client.extract_lines_from_pdf(blob)
 
-    return _with_pdf_chunks(contents, plan, analyzer)
+    return _with_pdf_chunks(contents, plan, analyzer, progress_callback=progress_callback)
 
 
 def _build_gemini_transaction_result(
@@ -116,8 +126,16 @@ def _build_gemini_transaction_result(
     *,
     date_format: str,
     model_override: Optional[str] = None,
+    chunk_page_limit_override: Optional[int] = None,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> AzureAnalysisResult:
-    extraction = _analyze_with_gemini(contents, settings, model_override=model_override)
+    extraction = _analyze_with_gemini(
+        contents,
+        settings,
+        model_override=model_override,
+        chunk_page_limit_override=chunk_page_limit_override,
+        progress_callback=progress_callback,
+    )
     transactions = _convert_gemini_structured_transactions(extraction.transactions, date_format=date_format)
     if not transactions:
         transactions = build_transactions_from_lines(extraction.lines, date_format=date_format)
@@ -352,9 +370,15 @@ def _gemini_refine_chunk(
     *,
     date_format: str,
     model_override: Optional[str] = None,
+    chunk_page_limit_override: Optional[int] = None,
 ) -> Optional[List[TransactionLine]]:
     try:
-        extraction = _analyze_with_gemini(chunk_bytes, settings, model_override=model_override)
+        extraction = _analyze_with_gemini(
+            chunk_bytes,
+            settings,
+            model_override=model_override,
+            chunk_page_limit_override=chunk_page_limit_override,
+        )
     except (GeminiError, PdfChunkingError) as exc:
         logger.warning("Gemini補正に失敗しました: %s", exc)
         return None
@@ -583,6 +607,17 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             processed_chunks=0,
             total_chunks=1,
         )
+        progress_state = {"total": 0}
+
+        def _report_progress(current: int, total: int) -> None:
+            progress_state["total"] = total
+            handle.update(
+                stage="analyzing",
+                detail=f"Gemini ({model_label}) 解析中… {current}/{total}",
+                processed_chunks=current,
+                total_chunks=total,
+            )
+
         try:
             gemini_result = _build_gemini_transaction_result(
                 contents,
@@ -590,6 +625,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
                 source_name,
                 date_format=job.date_format,
                 model_override=job.gemini_model,
+                chunk_page_limit_override=1,
+                progress_callback=_report_progress,
             )
         except Exception as exc:  # noqa: BLE001
             raise ValueError(str(exc)) from exc
@@ -613,6 +650,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
             for name, content in csv_map.items()
         }
+        gemini_total_chunks = progress_state["total"] or 1
         handle.update(
             status="completed",
             stage="completed",
@@ -620,8 +658,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             document_type=document_type,
             result_files=encoded,
             partial_files=encoded,
-            processed_chunks=1,
-            total_chunks=1,
+            processed_chunks=gemini_total_chunks,
+            total_chunks=gemini_total_chunks,
             assets_payload=export_assets,
         )
         return
@@ -698,6 +736,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
                 settings,
                 date_format=job.date_format,
                 model_override=job.gemini_model,
+                chunk_page_limit_override=1 if job.gemini_model else None,
             )
             if refined:
                 chunk_transactions = refined
