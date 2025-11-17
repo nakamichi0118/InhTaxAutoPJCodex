@@ -561,7 +561,7 @@
         cancelRequested: false,
         isProcessing: false,
         currentAbortController: null,
-        analysisMode: 'hybrid',
+        analysisMode: 'gemini_pro',
     };
 
     const TAB_DEFINITIONS = [
@@ -646,9 +646,9 @@
     };
 
     const ANALYSIS_MODE_OPTIONS = [
-        { value: 'hybrid', label: 'ハイブリッド (Azure + Gemini)' },
-        { value: 'gemini_flash', label: 'Gemini 2.5 Flash【単独】' },
         { value: 'gemini_pro', label: 'Gemini 2.5 Pro【単独】' },
+        { value: 'gemini_flash', label: 'Gemini 2.5 Flash【単独】' },
+        { value: 'hybrid', label: 'ハイブリッド (Azure + Gemini)' },
     ];
 
     const ANALYSIS_MODE_LABELS = {
@@ -1631,7 +1631,7 @@
     }
 
     function getProcessingModeConfig() {
-        const mode = state.analysisMode || 'hybrid';
+        const mode = state.analysisMode || 'gemini_pro';
         if (mode === 'gemini_flash') {
             return { processing_mode: 'gemini', gemini_model: 'gemini-2.5-flash' };
         }

@@ -28,3 +28,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - Azure生データの確認を容易にするため、ジョブ完了時に`azure_raw_transactions.csv`を新たに返却するよう`backend/app/main.py`を拡張。ページ番号と行番号付きでAzureが抽出した取引そのままをCSV化し、Web UIのダウンロード一覧から取得できるようにした。
 - Gemini単体モードをジョブAPI・Web UIに追加し、`processing_mode=gemini`と`gemini-2.5-flash/pro`の切替をサポート。UIで解析エンジンを選ぶとFastAPI側がGeminiのみでCSVを生成し、Azureを経由せずモデル別の比較が可能になった。
 - Gemini単体実行時に1ページずつ解析+処理進捗を返すよう改善し、タイムアウト後の再解析による遅延を緩和。`backend/app/main.py`でGeminiチャンク進捗をジョブステータスに反映し、検証時の安定性を高めた。
+- Gemini 2.5 Proを標準解析フローに設定し、UIの解析エンジン選択もPro単体が初期値となるよう更新。残高と入出金の符号チェックを追加してGemini出力の逆転誤りを自動補正するよう`backend/app/main.py`を拡張。

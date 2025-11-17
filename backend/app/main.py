@@ -421,10 +421,24 @@ def _enforce_continuity(
     updated: List[TransactionLine] = []
     running_balance = prev_balance
     for txn in transactions:
-        withdrawal = txn.withdrawal_amount or 0.0
-        deposit = txn.deposit_amount or 0.0
+        original_withdrawal = txn.withdrawal_amount
+        original_deposit = txn.deposit_amount
+        withdrawal = original_withdrawal or 0.0
+        deposit = original_deposit or 0.0
         notes: List[str] = []
         actual_balance = txn.balance
+        if running_balance is not None and actual_balance is not None:
+            balance_change = actual_balance - running_balance
+            has_withdrawal = (original_withdrawal is not None and original_withdrawal != 0)
+            has_deposit = (original_deposit is not None and original_deposit != 0)
+            if balance_change < 0 and not has_withdrawal and has_deposit:
+                withdrawal = deposit
+                deposit = 0.0
+                notes.append("残高推移に合わせて入出金を入れ替えました")
+            elif balance_change > 0 and has_withdrawal and not has_deposit:
+                deposit = withdrawal
+                withdrawal = 0.0
+                notes.append("残高推移に合わせて入出金を入れ替えました")
         if running_balance is not None:
             if actual_balance is not None:
                 balance_delta = running_balance - actual_balance
@@ -917,8 +931,8 @@ async def enqueue_document_job(
     file: UploadFile = File(...),
     document_type: Optional[DocumentType] = Form(None),
     date_format: Optional[str] = Form("auto"),
-    processing_mode: Optional[str] = Form("hybrid"),
-    gemini_model: Optional[str] = Form(None),
+    processing_mode: Optional[str] = Form("gemini"),
+    gemini_model: Optional[str] = Form("gemini-2.5-pro"),
 ) -> JobCreateResponse:
     contents, content_type = await _load_file_bytes(file)
     source_name = file.filename or "uploaded.pdf"
@@ -931,9 +945,10 @@ async def enqueue_document_job(
     gemini_model_normalized: Optional[str] = None
     if gemini_model:
         candidate = gemini_model.strip()
-        if candidate not in SUPPORTED_GEMINI_MODELS:
+        if candidate and candidate not in SUPPORTED_GEMINI_MODELS:
             raise HTTPException(status_code=400, detail="Unsupported Gemini model specified")
-        gemini_model_normalized = candidate
+        if candidate:
+            gemini_model_normalized = candidate
     if processing_mode_normalized != "gemini":
         gemini_model_normalized = None
     job = job_manager.submit(

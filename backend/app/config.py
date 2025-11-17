@@ -48,7 +48,7 @@ def get_settings() -> Settings:
     else:
         gemini_api_key = gemini_api_keys[0]
 
-    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
     gemini_max_mb = int(os.getenv("GEMINI_DOCUMENT_MAX_MB", "20"))
     gemini_max_bytes = gemini_max_mb * 1024 * 1024
     gemini_chunk_page_limit = int(os.getenv("GEMINI_CHUNK_PAGE_LIMIT", "2"))
