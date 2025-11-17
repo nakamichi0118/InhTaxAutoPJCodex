@@ -656,6 +656,29 @@ def _finalize_transaction_directions(transactions: List[TransactionLine]) -> Lis
     return finalized
 
 
+def _recompute_balances(transactions: List[TransactionLine]) -> List[TransactionLine]:
+    recomputed: List[TransactionLine] = []
+    running: Optional[float] = None
+    initialized = False
+    for txn in transactions:
+        withdrawal = txn.withdrawal_amount or 0.0
+        deposit = txn.deposit_amount or 0.0
+        update_fields: Dict[str, Any] = {}
+        if not initialized and txn.balance is not None:
+            running = float(txn.balance)
+            initialized = True
+        else:
+            if running is None:
+                running = deposit - withdrawal
+            else:
+                running = running - withdrawal + deposit
+            update_fields["balance"] = running
+        if update_fields:
+            txn = txn.model_copy(update=update_fields)
+        recomputed.append(txn)
+    return recomputed
+
+
 def _convert_gemini_structured_transactions(
     items: List[Dict[str, Any]],
     *,
@@ -837,6 +860,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             transactions, _ = _enforce_continuity(None, transactions)
             transactions = post_process_transactions(transactions)
             transactions = _finalize_transaction_directions(transactions)
+            transactions = _recompute_balances(transactions)
             asset.transactions = transactions
             export_assets.append(asset.to_export_payload())
 
@@ -966,6 +990,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     reconciled_transactions, _ = _enforce_continuity(None, all_transactions)
     reconciled_transactions = post_process_transactions(reconciled_transactions)
     reconciled_transactions = _finalize_transaction_directions(reconciled_transactions)
+    reconciled_transactions = _recompute_balances(reconciled_transactions)
 
     asset = AssetRecord(
         category=document_type or "transaction_history",

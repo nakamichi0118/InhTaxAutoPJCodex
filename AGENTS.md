@@ -44,3 +44,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - Azure経由の解析を停止し、チャンク単位でGemini 2.5 Proのみを使用するフローへ統一。`_resolve_document_assets`/ジョブ処理ともにGemini完結になり、Azure設定に依存しなくなった。
 - Azure+Geminiハイブリッド構成に戻し、Azureで残高を取得した上でGemini補正を行う従来フローを復活。Gemini単体モードも選択肢として維持。
 - 最終行の残高と期待残高を比較するバリデーションを追加。ズレがある場合はCSVに警告を追記し、入出金補正ロジックでも残高差と一致させるようにした。
+- 入出金補正後に残高を再計算する`_recompute_balances`を追加し、最終行まで残高と入出金の整合性を保つようにした。
