@@ -21,6 +21,7 @@ End Sub
 Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim ws As Worksheet
     Dim buttonCol As Long
+    Dim buttonRow As Long
     Dim pdfPath As String
     Dim minAmount As Long
     Dim csvText As String
@@ -28,6 +29,7 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
 
     Set ws = ActiveSheet
     buttonCol = ws.Shapes(Application.Caller).TopLeftCell.Column
+    buttonRow = ws.Shapes(Application.Caller).TopLeftCell.Row
 
     pdfPath = SelectPdfFile()
     If pdfPath = "" Then Exit Sub
@@ -47,7 +49,7 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
         Exit Sub
     End If
 
-    Call ImportDataToExcel(csvData, buttonCol)
+    Call ImportDataToExcel(csvData, buttonCol, buttonRow)
     MsgBox "PDF の取り込みが完了しました。", vbInformation
 End Sub
 
@@ -534,16 +536,18 @@ Private Function ParseCsvText(csvContent As String, minAmount As Long) As Varian
     Dim transDate As String
     Dim withdrawAmount As Long
     Dim depositAmount As Long
+    Dim description As String
 
     lines = Split(csvContent, vbLf)
     dataCount = 0
-    ReDim resultData(1 To 10000, 1 To 3)
+    ReDim resultData(1 To 10000, 1 To 4)
 
     For i = 1 To UBound(lines) ' skip header at index 0
         If Trim$(lines(i)) <> "" Then
             lineData = SplitCsvLine(lines(i))
             If UBound(lineData) >= 4 Then
                 transDate = lineData(0)
+                description = CleanDescriptionText(lineData(1))
                 withdrawAmount = ToLong(lineData(2))
                 depositAmount = ToLong(lineData(3))
                 If withdrawAmount >= minAmount Or depositAmount >= minAmount Then
@@ -551,6 +555,7 @@ Private Function ParseCsvText(csvContent As String, minAmount As Long) As Varian
                     resultData(dataCount, 1) = ConvertDateFormat(transDate)
                     resultData(dataCount, 2) = withdrawAmount
                     resultData(dataCount, 3) = depositAmount
+                    resultData(dataCount, 4) = description
                 End If
             End If
         End If
@@ -560,11 +565,12 @@ Private Function ParseCsvText(csvContent As String, minAmount As Long) As Varian
         ParseCsvText = Empty
     Else
         Dim finalData() As Variant
-        ReDim finalData(1 To dataCount, 1 To 3)
+        ReDim finalData(1 To dataCount, 1 To 4)
         For i = 1 To dataCount
             finalData(i, 1) = resultData(i, 1)
             finalData(i, 2) = resultData(i, 2)
             finalData(i, 3) = resultData(i, 3)
+            finalData(i, 4) = resultData(i, 4)
         Next i
         ParseCsvText = finalData
     End If
