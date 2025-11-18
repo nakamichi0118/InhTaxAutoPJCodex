@@ -635,7 +635,7 @@ Private Function ParseCsvText(csvContent As String, minAmount As Long) As Varian
     ReDim resultData(1 To 10000, 1 To 4)
 
     For i = 1 To UBound(lines)
-        rawLine = RemoveUtf8Bom(lines(i))
+        rawLine = NormalizeCsvLine(RemoveUtf8Bom(lines(i)))
         If Len(Trim$(rawLine)) > 0 Then
             lineData = PdfSplitCsvLine(rawLine)
             If UBound(lineData) >= 3 Then
@@ -769,6 +769,25 @@ Private Function RemoveUtf8Bom(textVal As String) As String
         End If
     End If
     RemoveUtf8Bom = cleaned
+End Function
+
+Private Function NormalizeCsvLine(lineText As String) As String
+    Dim cleaned As String
+    cleaned = Trim$(lineText)
+    If Len(cleaned) >= 1 Then
+        If Left$(cleaned, 1) = """" Then
+            cleaned = Mid$(cleaned, 2)
+        End If
+    End If
+    If Len(cleaned) >= 1 Then
+        If Right$(cleaned, 1) = """" Then
+            cleaned = Left$(cleaned, Len(cleaned) - 1)
+        End If
+    End If
+    cleaned = Replace(cleaned, ChrW(&HFF0C), ",") ' full-width comma
+    cleaned = Replace(cleaned, ChrW(&HFF1A), ":") ' full-width colon
+    cleaned = Replace(cleaned, ChrW(&H3001), ",") ' ideographic comma
+    NormalizeCsvLine = cleaned
 End Function
 
 Private Function GetConfigValue(keyName As String) As String
