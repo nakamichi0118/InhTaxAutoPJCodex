@@ -636,7 +636,7 @@ Public Function ParseTransactionCsvContent(csvContent As String, minAmount As Lo
                 description = CleanDescriptionText(GetArrayValue(lineFields, idxDesc))
                 withdrawAmount = ToLongValue(GetArrayValue(lineFields, idxWithdraw))
                 depositAmount = ToLongValue(GetArrayValue(lineFields, idxDeposit))
-                If withdrawAmount >= minAmount Or depositAmount >= minAmount Then
+                If Abs(withdrawAmount) >= minAmount Or Abs(depositAmount) >= minAmount Then
                     dataCount = dataCount + 1
                     resultData(dataCount, 1) = ConvertDateFormat(transDate)
                     resultData(dataCount, 2) = withdrawAmount
