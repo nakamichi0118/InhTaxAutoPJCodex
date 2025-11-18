@@ -1,5 +1,9 @@
 Option Explicit
 
+Private gDebugWs As Worksheet
+Private gDebugRow As Long
+Private Const DEBUG_LOG_ENABLED As Boolean = True
+
 #If VBA7 Then
     Private Declare PtrSafe Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As LongPtr)
 #Else
@@ -28,6 +32,8 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim csvData As Variant
     Dim usageData As Variant
 
+    Call InitPdfDebugLog(targetDocType)
+
     Set ws = ActiveSheet
     buttonCol = ws.Shapes(Application.Caller).TopLeftCell.Column
     buttonRow = ws.Shapes(Application.Caller).TopLeftCell.Row
@@ -53,6 +59,85 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
 
     Call ImportDataToExcel(csvData, buttonCol, buttonRow, usageData)
     MsgBox "PDF の取り込みが完了しました。", vbInformation
+End Sub
+
+Public Sub InitPdfDebugLog(Optional ByVal scenarioName As String = "")
+    Dim wb As Workbook
+    Dim ws As Worksheet
+    Dim found As Boolean
+    Dim i As Long
+
+    If Not DEBUG_LOG_ENABLED Then Exit Sub
+
+    Set wb = ThisWorkbook
+    found = False
+
+    For i = 1 To wb.Worksheets.Count
+        If wb.Worksheets(i).Name = "PDF取込ログ" Then
+            Set ws = wb.Worksheets(i)
+            found = True
+            Exit For
+        End If
+    Next i
+
+    If Not found Then
+        Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+        ws.Name = "PDF取込ログ"
+    End If
+
+    ws.Cells.Clear
+    ws.Range("A1").Value = "Step"
+    ws.Range("B1").Value = "LineIndex"
+    ws.Range("C1").Value = "RawLine"
+    ws.Range("D1").Value = "RawWithdraw"
+    ws.Range("E1").Value = "RawDeposit"
+    ws.Range("F1").Value = "ParsedWithdraw"
+    ws.Range("G1").Value = "ParsedDeposit"
+    ws.Range("H1").Value = "MinAmount"
+    ws.Range("I1").Value = "PassedFilter"
+    ws.Range("J1").Value = "Note"
+
+    gDebugRow = 1
+    Set gDebugWs = ws
+    gDebugRow = gDebugRow + 1
+    gDebugWs.Cells(gDebugRow, "A").Value = "Start"
+    gDebugWs.Cells(gDebugRow, "C").Value = "Scenario"
+    gDebugWs.Cells(gDebugRow, "D").Value = scenarioName
+    gDebugWs.Cells(gDebugRow, "E").Value = Now
+    gDebugRow = gDebugRow + 1
+End Sub
+
+Private Sub LogPdfParseRow( _
+    ByVal stepName As String, _
+    ByVal lineIndex As Long, _
+    ByVal rawLine As String, _
+    ByVal rawWithdraw As String, _
+    ByVal rawDeposit As String, _
+    ByVal parsedWithdraw As Long, _
+    ByVal parsedDeposit As Long, _
+    ByVal minAmount As Long, _
+    ByVal passed As Boolean, _
+    Optional ByVal note As String = "")
+
+    If Not DEBUG_LOG_ENABLED Then Exit Sub
+    On Error Resume Next
+    If gDebugWs Is Nothing Then Exit Sub
+    On Error GoTo 0
+
+    gDebugRow = gDebugRow + 1
+
+    With gDebugWs
+        .Cells(gDebugRow, "A").Value = stepName
+        .Cells(gDebugRow, "B").Value = lineIndex
+        .Cells(gDebugRow, "C").Value = rawLine
+        .Cells(gDebugRow, "D").Value = rawWithdraw
+        .Cells(gDebugRow, "E").Value = rawDeposit
+        .Cells(gDebugRow, "F").Value = parsedWithdraw
+        .Cells(gDebugRow, "G").Value = parsedDeposit
+        .Cells(gDebugRow, "H").Value = minAmount
+        .Cells(gDebugRow, "I").Value = IIf(passed, "TRUE", "FALSE")
+        .Cells(gDebugRow, "J").Value = note
+    End With
 End Sub
 
 Private Function SelectPdfFile() As String
@@ -530,7 +615,133 @@ Private Function ExtractFirstFileBase64(json As String) As String
 End Function
 
 Private Function ParseCsvText(csvContent As String, minAmount As Long) As Variant
-    ParseCsvText = ParseTransactionCsvContent(csvContent, minAmount)
+    Dim lines() As String
+    Dim lineData() As String
+    Dim resultData() As Variant
+    Dim finalData() As Variant
+    Dim i As Long
+    Dim dataCount As Long
+    Dim transDate As String
+    Dim description As String
+    Dim withdrawAmount As Long
+    Dim depositAmount As Long
+    Dim rawLine As String
+    Dim rawWithdraw As String
+    Dim rawDeposit As String
+    Dim passed As Boolean
+
+    lines = Split(csvContent, vbLf)
+    dataCount = 0
+    ReDim resultData(1 To 10000, 1 To 4)
+
+    For i = 1 To UBound(lines)
+        rawLine = RemoveUtf8Bom(lines(i))
+        If Len(Trim$(rawLine)) > 0 Then
+            lineData = PdfSplitCsvLine(rawLine)
+            If UBound(lineData) >= 3 Then
+                transDate = lineData(0)
+                description = CleanDescriptionText(lineData(1))
+                rawWithdraw = lineData(2)
+                rawDeposit = lineData(3)
+                withdrawAmount = PdfToLong(rawWithdraw)
+                depositAmount = PdfToLong(rawDeposit)
+                passed = (Abs(withdrawAmount) >= minAmount Or Abs(depositAmount) >= minAmount)
+                Call LogPdfParseRow( _
+                    "ParseCsvText", _
+                    i, _
+                    rawLine, _
+                    rawWithdraw, _
+                    rawDeposit, _
+                    withdrawAmount, _
+                    depositAmount, _
+                    minAmount, _
+                    passed, _
+                    "" _
+                )
+                If passed Then
+                    dataCount = dataCount + 1
+                    resultData(dataCount, 1) = ConvertDateFormat(transDate)
+                    resultData(dataCount, 2) = withdrawAmount
+                    resultData(dataCount, 3) = depositAmount
+                    resultData(dataCount, 4) = description
+                End If
+            Else
+                Call LogPdfParseRow( _
+                    "ParseCsvText", _
+                    i, _
+                    rawLine, _
+                    "", _
+                    "", _
+                    0, _
+                    0, _
+                    minAmount, _
+                    False, _
+                    "Skipped: columns=" & (UBound(lineData) + 1))
+            End If
+        End If
+    Next i
+
+    Call LogPdfParseRow("Summary", -1, "", "", "", dataCount, 0, minAmount, (dataCount > 0), "dataCount")
+
+    If dataCount = 0 Then
+        ParseCsvText = Empty
+    Else
+        ReDim finalData(1 To dataCount, 1 To 4)
+        For i = 1 To dataCount
+            finalData(i, 1) = resultData(i, 1)
+            finalData(i, 2) = resultData(i, 2)
+            finalData(i, 3) = resultData(i, 3)
+            finalData(i, 4) = resultData(i, 4)
+        Next i
+        ParseCsvText = finalData
+    End If
+End Function
+
+Private Function PdfSplitCsvLine(lineText As String) As String()
+    Dim results As Object
+    Dim token As String
+    Dim i As Long
+    Dim ch As String
+    Dim inQuotes As Boolean
+
+    Set results = CreateObject("System.Collections.ArrayList")
+    token = ""
+    For i = 1 To Len(lineText)
+        ch = Mid$(lineText, i, 1)
+        If ch = """" Then
+            inQuotes = Not inQuotes
+        ElseIf ch = "," And Not inQuotes Then
+            results.Add token
+            token = ""
+        Else
+            token = token & ch
+        End If
+    Next i
+    results.Add token
+    PdfSplitCsvLine = results.ToArray
+End Function
+
+Private Function PdfToLong(valueText As String) As Long
+    Dim cleaned As String
+    cleaned = RemoveUtf8Bom(valueText)
+    cleaned = Replace(cleaned, "－", "-")
+    cleaned = Replace(cleaned, "−", "-")
+    cleaned = Replace(cleaned, ",", "")
+    cleaned = Replace(cleaned, """", "")
+    cleaned = Trim$(cleaned)
+    cleaned = Replace(cleaned, Chr$(160), "")
+    If Len(cleaned) = 0 Then
+        PdfToLong = 0
+    Else
+        If InStr(cleaned, ".") > 0 Then
+            cleaned = Left$(cleaned, InStr(cleaned, ".") - 1)
+        End If
+        If IsNumeric(cleaned) Then
+            PdfToLong = CLng(cleaned)
+        Else
+            PdfToLong = 0
+        End If
+    End If
 End Function
 
 Private Function GetConfigValue(keyName As String) As String

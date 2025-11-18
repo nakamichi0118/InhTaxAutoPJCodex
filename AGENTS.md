@@ -65,3 +65,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - CSV読み込みはUTF-8固定でADODB.Streamを経由し、ヘッダー名から列インデックスを解決する方式へ変更。これにより摘要文字化けや列ズレを防ぎ、用途サマリも安定して生成される。
 - CSV/ PDF 取り込みの両方で `ParseTransactionCsvContent` を共有化。全取引を0円閾値で再取得し、金額フィルタ後のデータとは別に摘要サマリ用データを維持。ヘッダー名ベースの列マッピングとBOM除去を実装し、入金列へ残高が混入する不具合・摘要の文字化けを解消した。
 - 金額フィルタは入出金の絶対値で判定する必要があるため、VBA側で `Abs(withdrawAmount/depositAmount)` を比較するよう修正。これにより出金欄が負数で返るケースでも正しく閾値判定できる。
+- PDF import フローに `PDF取込ログ` シートを使った詳細デバッグ機構を追加。ParseCsvText 各行の生データ・解析結果・フィルタ判定を記録し、問題調査を容易にした。
