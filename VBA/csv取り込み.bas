@@ -417,15 +417,24 @@ Failed:
 End Function
 
 Private Function RemoveUtf8Bom(textVal As String) As String
-    If Len(textVal) > 0 Then
-        If AscW(Left$(textVal, 1)) = &HFEFF Then
-            RemoveUtf8Bom = Mid$(textVal, 2)
-        Else
-            RemoveUtf8Bom = textVal
-        End If
-    Else
-        RemoveUtf8Bom = textVal
+    Dim cleaned As String
+    cleaned = textVal
+    If Len(cleaned) = 0 Then
+        RemoveUtf8Bom = cleaned
+        Exit Function
     End If
+    If AscW(Left$(cleaned, 1)) = &HFEFF Then
+        cleaned = Mid$(cleaned, 2)
+    ElseIf Len(cleaned) >= 3 Then
+        If Mid$(cleaned, 1, 3) = Chr$(239) & Chr$(187) & Chr$(191) Then
+            cleaned = Mid$(cleaned, 4)
+        End If
+    End If
+    RemoveUtf8Bom = cleaned
+End Function
+
+Private Function NormalizeHeaderName(rawText As String) As String
+    NormalizeHeaderName = LCase$(Trim$(RemoveUtf8Bom(rawText)))
 End Function
 
 Private Function SplitCsvFields(lineText As String) As Variant
@@ -463,8 +472,10 @@ End Function
 
 Private Function GetFieldIndex(fields As Variant, fieldName As String, defaultIndex As Long) As Long
     Dim i As Long
+    Dim normalizedTarget As String
+    normalizedTarget = LCase$(Trim$(fieldName))
     For i = LBound(fields) To UBound(fields)
-        If StrComp(Trim$(fields(i)), fieldName, vbTextCompare) = 0 Then
+        If NormalizeHeaderName(fields(i)) = normalizedTarget Then
             GetFieldIndex = i
             Exit Function
         End If
