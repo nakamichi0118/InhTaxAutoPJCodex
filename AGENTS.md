@@ -62,3 +62,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - 使い方ページとFAQの表現を平易化し、新FAQ（横向き画像可否、処理時間目安、遅延時の対処、アップロード上限、銀行別精度、データ保存方針）を追加。Docs/USAGE.mdも同内容へ更新。
 - 処理全体の仕様書`Docs/PROCESS_SPEC.md`を作成。フロント→API→Gemini並列処理→補正パイプライン→CSV出力までを段階的に説明し、保存ポリシーや計測手順まで網羅。
 - VBAインポーターを拡張し、Gemini API経由の読み取り結果を直接Excelへ流し込めるよう整理。`ImportDataToExcel`にボタン行の情報を渡し、1行上に入出金別の摘要サマリ（桁・アスタリスク除去、保険系は赤字）を自動表示できるようにした。
+- CSV読み込みはUTF-8固定でADODB.Streamを経由し、ヘッダー名から列インデックスを解決する方式へ変更。これにより摘要文字化けや列ズレを防ぎ、用途サマリも安定して生成される。

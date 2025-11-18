@@ -87,10 +87,10 @@ End Function
 
 'CSVファイルを読み込んで条件に合うデータを配列で返す
 Function ReadCSVFile(filePath As String, minAmount As Long) As Variant
-    Dim fso As Object
-    Dim ts As Object
-    Dim csvLine As String
-    Dim lineData() As String
+    Dim rawText As String
+    Dim lines() As String
+    Dim lineFields As Variant
+    Dim headerFields As Variant
     Dim resultData() As Variant
     Dim dataCount As Long
     Dim transDate As String
@@ -98,62 +98,53 @@ Function ReadCSVFile(filePath As String, minAmount As Long) As Variant
     Dim depositAmount As Long
     Dim description As String
     Dim i As Long
+    Dim idxDate As Long
+    Dim idxDesc As Long
+    Dim idxWithdraw As Long
+    Dim idxDeposit As Long
 
-    Set fso = CreateObject("Scripting.FileSystemObject")
-    Set ts = fso.OpenTextFile(filePath, 1, False, -2) 'UTF-8で開く
-
-    'ヘッダー行をスキップ
-    If Not ts.AtEndOfStream Then
-        ts.ReadLine
+    rawText = ReadUtf8File(filePath)
+    If Len(rawText) = 0 Then
+        ReadCSVFile = Empty
+        Exit Function
     End If
 
-    '初期化
+    rawText = Replace(rawText, vbCr, "")
+    lines = Split(rawText, vbLf)
+    If UBound(lines) < 1 Then
+        ReadCSVFile = Empty
+        Exit Function
+    End If
+
+    headerFields = SplitCsvFields(lines(0))
+    idxDate = GetFieldIndex(headerFields, "transaction_date", 0)
+    idxDesc = GetFieldIndex(headerFields, "description", 1)
+    idxWithdraw = GetFieldIndex(headerFields, "withdrawal_amount", 2)
+    idxDeposit = GetFieldIndex(headerFields, "deposit_amount", 3)
+
     dataCount = 0
-    ReDim resultData(1 To 10000, 1 To 4) '最大10000件
+    ReDim resultData(1 To 10000, 1 To 4)
 
-    'データを読み込む
-    Do While Not ts.AtEndOfStream
-        csvLine = ts.ReadLine
-        lineData = Split(csvLine, ",")
+    For i = 1 To UBound(lines)
+        If Len(Trim$(lines(i))) > 0 Then
+            lineFields = SplitCsvFields(lines(i))
+            If UBound(lineFields) >= idxDeposit Then
+                transDate = GetArrayValue(lineFields, idxDate)
+                description = CleanDescriptionText(GetArrayValue(lineFields, idxDesc))
+                withdrawAmount = ToLongValue(GetArrayValue(lineFields, idxWithdraw))
+                depositAmount = ToLongValue(GetArrayValue(lineFields, idxDeposit))
 
-        If UBound(lineData) >= 2 Then
-            '日付を取得
-            transDate = lineData(0)
-
-            '出金額と入金額を取得
-            withdrawAmount = 0
-            depositAmount = 0
-
-            If lineData(1) <> "" And lineData(1) <> "0" Then
-                withdrawAmount = CLng(lineData(1))
-            End If
-
-            If lineData(2) <> "" And lineData(2) <> "0" Then
-                depositAmount = CLng(lineData(2))
-            End If
-
-            '摘要を取得
-            description = ""
-            If UBound(lineData) >= 3 Then
-                description = CleanDescriptionText(lineData(3))
-            End If
-
-            '金額フィルタを適用
-            If withdrawAmount >= minAmount Or depositAmount >= minAmount Then
-                dataCount = dataCount + 1
-                resultData(dataCount, 1) = ConvertDateFormat(transDate)
-                resultData(dataCount, 2) = withdrawAmount
-                resultData(dataCount, 3) = depositAmount
-                resultData(dataCount, 4) = description
+                If withdrawAmount >= minAmount Or depositAmount >= minAmount Then
+                    dataCount = dataCount + 1
+                    resultData(dataCount, 1) = ConvertDateFormat(transDate)
+                    resultData(dataCount, 2) = withdrawAmount
+                    resultData(dataCount, 3) = depositAmount
+                    resultData(dataCount, 4) = description
+                End If
             End If
         End If
-    Loop
+    Next i
 
-    ts.Close
-    Set ts = Nothing
-    Set fso = Nothing
-
-    '実際のデータ数に合わせて配列をリサイズ
     If dataCount > 0 Then
         Dim finalData() As Variant
         ReDim finalData(1 To dataCount, 1 To 4)
@@ -467,6 +458,86 @@ Private Function BuildUsageSummary(csvData As Variant, isWithdrawal As Boolean) 
 
 ExitFunc:
     Exit Function
+End Function
+
+Private Function ReadUtf8File(filePath As String) As String
+    On Error GoTo Failed
+    Dim stream As Object
+    Set stream = CreateObject("ADODB.Stream")
+    With stream
+        .Charset = "utf-8"
+        .Open
+        .LoadFromFile filePath
+        ReadUtf8File = .ReadText
+        .Close
+    End With
+    Exit Function
+Failed:
+    ReadUtf8File = ""
+End Function
+
+Private Function SplitCsvFields(lineText As String) As Variant
+    Dim results As Object
+    Dim current As String
+    Dim i As Long
+    Dim ch As String
+    Dim inQuotes As Boolean
+    Set results = CreateObject("System.Collections.ArrayList")
+    current = ""
+    For i = 1 To Len(lineText)
+        ch = Mid$(lineText, i, 1)
+        Select Case ch
+            Case """"
+                inQuotes = Not inQuotes
+            Case ","
+                If inQuotes Then
+                    current = current & ch
+                Else
+                    results.Add current
+                    current = ""
+                End If
+            Case Else
+                current = current & ch
+        End Select
+    Next i
+    results.Add current
+    SplitCsvFields = results.ToArray
+End Function
+
+Private Function GetFieldIndex(fields As Variant, fieldName As String, defaultIndex As Long) As Long
+    Dim i As Long
+    For i = LBound(fields) To UBound(fields)
+        If StrComp(Trim$(fields(i)), fieldName, vbTextCompare) = 0 Then
+            GetFieldIndex = i
+            Exit Function
+        End If
+    Next i
+    GetFieldIndex = defaultIndex
+End Function
+
+Private Function GetArrayValue(fields As Variant, index As Long) As String
+    If index >= LBound(fields) And index <= UBound(fields) Then
+        GetArrayValue = Trim$(fields(index))
+    Else
+        GetArrayValue = ""
+    End If
+End Function
+
+Private Function ToLongValue(valueText As String) As Long
+    Dim cleaned As String
+    cleaned = Replace(valueText, ",", "")
+    cleaned = Replace(cleaned, """", "")
+    cleaned = Trim$(cleaned)
+    If Len(cleaned) = 0 Then
+        ToLongValue = 0
+    ElseIf InStr(cleaned, ".") > 0 Then
+        cleaned = Left$(cleaned, InStr(cleaned, ".") - 1)
+    End If
+    If IsNumeric(cleaned) Then
+        ToLongValue = CLng(cleaned)
+    Else
+        ToLongValue = 0
+    End If
 End Function
 
 Private Function NormalizeSummaryKey(rawText As String) As String
