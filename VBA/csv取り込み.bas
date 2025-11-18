@@ -609,8 +609,6 @@ Public Function ParseTransactionCsvContent(csvContent As String, minAmount As Lo
         ParseTransactionCsvContent = Empty
         Exit Function
     End If
-    headerFields(LBound(headerFields)) = RemoveUtf8Bom(headerFields(LBound(headerFields)))
-
     idxDate = GetFieldIndex(headerFields, "transaction_date", 0)
     idxDesc = GetFieldIndex(headerFields, "description", 1)
     idxWithdraw = GetFieldIndex(headerFields, "withdrawal_amount", 2)
