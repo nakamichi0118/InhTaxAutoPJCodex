@@ -63,3 +63,4 @@ Store secrets in environment variables or secret managers compatible with your d
 - 処理全体の仕様書`Docs/PROCESS_SPEC.md`を作成。フロント→API→Gemini並列処理→補正パイプライン→CSV出力までを段階的に説明し、保存ポリシーや計測手順まで網羅。
 - VBAインポーターを拡張し、Gemini API経由の読み取り結果を直接Excelへ流し込めるよう整理。`ImportDataToExcel`にボタン行の情報を渡し、1行上に入出金別の摘要サマリ（桁・アスタリスク除去、保険系は赤字）を自動表示できるようにした。
 - CSV読み込みはUTF-8固定でADODB.Streamを経由し、ヘッダー名から列インデックスを解決する方式へ変更。これにより摘要文字化けや列ズレを防ぎ、用途サマリも安定して生成される。
+- CSV/ PDF 取り込みの両方で `ParseTransactionCsvContent` を共有化。全取引を0円閾値で再取得し、金額フィルタ後のデータとは別に摘要サマリ用データを維持。ヘッダー名ベースの列マッピングとBOM除去を実装し、入金列へ残高が混入する不具合・摘要の文字化けを解消した。

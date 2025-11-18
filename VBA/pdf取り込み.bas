@@ -26,6 +26,7 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim minAmount As Long
     Dim csvText As String
     Dim csvData As Variant
+    Dim usageData As Variant
 
     Set ws = ActiveSheet
     buttonCol = ws.Shapes(Application.Caller).TopLeftCell.Column
@@ -43,13 +44,14 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
         Exit Sub
     End If
 
+    usageData = ParseTransactionCsvContent(csvText, 0)
     csvData = ParseCsvText(csvText, minAmount)
     If IsEmpty(csvData) Then
         MsgBox "指定金額以上の取引は見つかりませんでした。", vbInformation
         Exit Sub
     End If
 
-    Call ImportDataToExcel(csvData, buttonCol, buttonRow)
+    Call ImportDataToExcel(csvData, buttonCol, buttonRow, usageData)
     MsgBox "PDF の取り込みが完了しました。", vbInformation
 End Sub
 
@@ -528,76 +530,7 @@ Private Function ExtractFirstFileBase64(json As String) As String
 End Function
 
 Private Function ParseCsvText(csvContent As String, minAmount As Long) As Variant
-    Dim lines() As String
-    Dim resultData() As Variant
-    Dim lineData() As String
-    Dim i As Long
-    Dim dataCount As Long
-    Dim transDate As String
-    Dim withdrawAmount As Long
-    Dim depositAmount As Long
-    Dim description As String
-
-    lines = Split(csvContent, vbLf)
-    dataCount = 0
-    ReDim resultData(1 To 10000, 1 To 4)
-
-    For i = 1 To UBound(lines) ' skip header at index 0
-        If Trim$(lines(i)) <> "" Then
-            lineData = SplitCsvLine(lines(i))
-            If UBound(lineData) >= 4 Then
-                transDate = lineData(0)
-                description = CleanDescriptionText(lineData(1))
-                withdrawAmount = ToLong(lineData(2))
-                depositAmount = ToLong(lineData(3))
-                If withdrawAmount >= minAmount Or depositAmount >= minAmount Then
-                    dataCount = dataCount + 1
-                    resultData(dataCount, 1) = ConvertDateFormat(transDate)
-                    resultData(dataCount, 2) = withdrawAmount
-                    resultData(dataCount, 3) = depositAmount
-                    resultData(dataCount, 4) = description
-                End If
-            End If
-        End If
-    Next i
-
-    If dataCount = 0 Then
-        ParseCsvText = Empty
-    Else
-        Dim finalData() As Variant
-        ReDim finalData(1 To dataCount, 1 To 4)
-        For i = 1 To dataCount
-            finalData(i, 1) = resultData(i, 1)
-            finalData(i, 2) = resultData(i, 2)
-            finalData(i, 3) = resultData(i, 3)
-            finalData(i, 4) = resultData(i, 4)
-        Next i
-        ParseCsvText = finalData
-    End If
-End Function
-
-Private Function SplitCsvLine(lineText As String) As String()
-    Dim cleaned As String
-    cleaned = Replace(lineText, vbCr, "")
-    cleaned = Replace(cleaned, """", "")
-    SplitCsvLine = Split(cleaned, ",")
-End Function
-
-Private Function ToLong(valueText As String) As Long
-    Dim trimmed As String
-    trimmed = Replace(Replace(Trim$(valueText), ",", ""), """", "")
-    If trimmed = "" Then
-        ToLong = 0
-    Else
-        If InStr(trimmed, ".") > 0 Then
-            trimmed = Left$(trimmed, InStr(trimmed, ".") - 1)
-        End If
-        If IsNumeric(trimmed) Then
-            ToLong = CLng(trimmed)
-        Else
-            ToLong = 0
-        End If
-    End If
+    ParseCsvText = ParseTransactionCsvContent(csvContent, minAmount)
 End Function
 
 Private Function GetConfigValue(keyName As String) As String

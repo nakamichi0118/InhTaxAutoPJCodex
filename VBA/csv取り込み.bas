@@ -7,6 +7,8 @@ Sub CSV取込ボタン_Click()
     Dim buttonRow As Long
     Dim minAmount As Long
     Dim csvData As Variant
+    Dim usageData As Variant
+    Dim rawText As String
     Dim ws As Worksheet
 
     Set ws = ActiveSheet
@@ -27,15 +29,21 @@ Sub CSV取込ボタン_Click()
         Exit Sub
     End If
 
-    '4. CSVファイルを読み込む
-    csvData = ReadCSVFile(filePath, minAmount)
-    If IsEmpty(csvData) Then
+    '4. CSVファイル全体を読み込む
+    rawText = ReadUtf8File(filePath)
+    If Len(rawText) = 0 Then
         MsgBox "CSVファイルの読み込みに失敗しました。", vbExclamation
+        Exit Sub
+    End If
+    usageData = ParseTransactionCsvContent(rawText, 0)
+    csvData = ParseTransactionCsvContent(rawText, minAmount)
+    If IsEmpty(csvData) Then
+        MsgBox "指定金額以上の取引は見つかりませんでした。", vbInformation
         Exit Sub
     End If
 
     '5. データをExcelに反映
-    Call ImportDataToExcel(csvData, buttonCol, buttonRow)
+    Call ImportDataToExcel(csvData, buttonCol, buttonRow, usageData)
 
     MsgBox "CSV取込が完了しました。", vbInformation
 
@@ -85,81 +93,6 @@ Function GetMinimumAmount() As Long
     GetMinimumAmount = CLng(inputValue)
 End Function
 
-'CSVファイルを読み込んで条件に合うデータを配列で返す
-Function ReadCSVFile(filePath As String, minAmount As Long) As Variant
-    Dim rawText As String
-    Dim lines() As String
-    Dim lineFields As Variant
-    Dim headerFields As Variant
-    Dim resultData() As Variant
-    Dim dataCount As Long
-    Dim transDate As String
-    Dim withdrawAmount As Long
-    Dim depositAmount As Long
-    Dim description As String
-    Dim i As Long
-    Dim idxDate As Long
-    Dim idxDesc As Long
-    Dim idxWithdraw As Long
-    Dim idxDeposit As Long
-
-    rawText = ReadUtf8File(filePath)
-    If Len(rawText) = 0 Then
-        ReadCSVFile = Empty
-        Exit Function
-    End If
-
-    rawText = Replace(rawText, vbCr, "")
-    lines = Split(rawText, vbLf)
-    If UBound(lines) < 1 Then
-        ReadCSVFile = Empty
-        Exit Function
-    End If
-
-    headerFields = SplitCsvFields(lines(0))
-    idxDate = GetFieldIndex(headerFields, "transaction_date", 0)
-    idxDesc = GetFieldIndex(headerFields, "description", 1)
-    idxWithdraw = GetFieldIndex(headerFields, "withdrawal_amount", 2)
-    idxDeposit = GetFieldIndex(headerFields, "deposit_amount", 3)
-
-    dataCount = 0
-    ReDim resultData(1 To 10000, 1 To 4)
-
-    For i = 1 To UBound(lines)
-        If Len(Trim$(lines(i))) > 0 Then
-            lineFields = SplitCsvFields(lines(i))
-            If UBound(lineFields) >= idxDeposit Then
-                transDate = GetArrayValue(lineFields, idxDate)
-                description = CleanDescriptionText(GetArrayValue(lineFields, idxDesc))
-                withdrawAmount = ToLongValue(GetArrayValue(lineFields, idxWithdraw))
-                depositAmount = ToLongValue(GetArrayValue(lineFields, idxDeposit))
-
-                If withdrawAmount >= minAmount Or depositAmount >= minAmount Then
-                    dataCount = dataCount + 1
-                    resultData(dataCount, 1) = ConvertDateFormat(transDate)
-                    resultData(dataCount, 2) = withdrawAmount
-                    resultData(dataCount, 3) = depositAmount
-                    resultData(dataCount, 4) = description
-                End If
-            End If
-        End If
-    Next i
-
-    If dataCount > 0 Then
-        Dim finalData() As Variant
-        ReDim finalData(1 To dataCount, 1 To 4)
-        For i = 1 To dataCount
-            finalData(i, 1) = resultData(i, 1)
-            finalData(i, 2) = resultData(i, 2)
-            finalData(i, 3) = resultData(i, 3)
-            finalData(i, 4) = resultData(i, 4)
-        Next i
-        ReadCSVFile = finalData
-    Else
-        ReadCSVFile = Empty
-    End If
-End Function
-
 '日付形式を変換（YYYY-MM-DD → 和暦形式）
 Function ConvertDateFormat(dateStr As String) As String
     Dim dateParts() As String
@@ -195,7 +128,7 @@ Function ConvertDateFormat(dateStr As String) As String
 End Function
 
 'データをExcelに反映
-Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long)
+Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, usageData As Variant)
     Dim ws As Worksheet
     Dim i As Long
     Dim targetRow As Long
@@ -323,7 +256,13 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long)
     Call UpdateBorders
 
     '用途サマリをボタン行の1つ上へ表示
-    Call WriteUsageSummary(csvData, buttonCol, buttonRow)
+    Dim summarySource As Variant
+    If IsEmpty(usageData) Then
+        summarySource = csvData
+    Else
+        summarySource = usageData
+    End If
+    Call WriteUsageSummary(summarySource, buttonCol, buttonRow)
 
     '画面更新再開
     Application.EnableEvents = True
@@ -465,6 +404,7 @@ Private Function ReadUtf8File(filePath As String) As String
     Dim stream As Object
     Set stream = CreateObject("ADODB.Stream")
     With stream
+        .Type = 2 'adTypeText
         .Charset = "utf-8"
         .Open
         .LoadFromFile filePath
@@ -476,29 +416,46 @@ Failed:
     ReadUtf8File = ""
 End Function
 
+Private Function RemoveUtf8Bom(textVal As String) As String
+    If Len(textVal) > 0 Then
+        If AscW(Left$(textVal, 1)) = &HFEFF Then
+            RemoveUtf8Bom = Mid$(textVal, 2)
+        Else
+            RemoveUtf8Bom = textVal
+        End If
+    Else
+        RemoveUtf8Bom = textVal
+    End If
+End Function
+
 Private Function SplitCsvFields(lineText As String) As Variant
     Dim results As Object
     Dim current As String
     Dim i As Long
     Dim ch As String
+    Dim nextChar As String
     Dim inQuotes As Boolean
     Set results = CreateObject("System.Collections.ArrayList")
     current = ""
     For i = 1 To Len(lineText)
         ch = Mid$(lineText, i, 1)
-        Select Case ch
-            Case """"
+        If ch = """" Then
+            nextChar = ""
+            If i < Len(lineText) Then
+                nextChar = Mid$(lineText, i + 1, 1)
+            End If
+            If inQuotes And nextChar = """" Then
+                current = current & """"
+                i = i + 1
+            Else
                 inQuotes = Not inQuotes
-            Case ","
-                If inQuotes Then
-                    current = current & ch
-                Else
-                    results.Add current
-                    current = ""
-                End If
-            Case Else
-                current = current & ch
-        End Select
+            End If
+        ElseIf ch = "," And Not inQuotes Then
+            results.Add current
+            current = ""
+        Else
+            current = current & ch
+        End If
     Next i
     results.Add current
     SplitCsvFields = results.ToArray
@@ -545,6 +502,10 @@ Private Function NormalizeSummaryKey(rawText As String) As String
     cleaned = CleanDescriptionText(rawText)
     Do While Len(cleaned) > 0 And IsNumericCharacter(Right$(cleaned, 1))
         cleaned = Left$(cleaned, Len(cleaned) - 1)
+        cleaned = Trim$(cleaned)
+    Loop
+    Do While Len(cleaned) > 0 And IsNumericCharacter(Left$(cleaned, 1))
+        cleaned = Mid$(cleaned, 2)
         cleaned = Trim$(cleaned)
     Loop
     If Len(cleaned) = 0 Then
@@ -618,3 +579,75 @@ Function ExtractYear(inputText As String) As String
     End If
 End Function
 
+Public Function ParseTransactionCsvContent(csvContent As String, minAmount As Long) As Variant
+    Dim normalized As String
+    Dim lines() As String
+    Dim headerFields As Variant
+    Dim lineFields As Variant
+    Dim idxDate As Long
+    Dim idxDesc As Long
+    Dim idxWithdraw As Long
+    Dim idxDeposit As Long
+    Dim resultData() As Variant
+    Dim finalData() As Variant
+    Dim dataCount As Long
+    Dim i As Long
+    Dim transDate As String
+    Dim description As String
+    Dim withdrawAmount As Long
+    Dim depositAmount As Long
+
+    normalized = Replace(csvContent, vbCr, "")
+    normalized = RemoveUtf8Bom(normalized)
+    lines = Split(normalized, vbLf)
+    If UBound(lines) < 0 Then
+        ParseTransactionCsvContent = Empty
+        Exit Function
+    End If
+    headerFields = SplitCsvFields(lines(0))
+    If UBound(headerFields) < 3 Then
+        ParseTransactionCsvContent = Empty
+        Exit Function
+    End If
+    headerFields(LBound(headerFields)) = RemoveUtf8Bom(headerFields(LBound(headerFields)))
+
+    idxDate = GetFieldIndex(headerFields, "transaction_date", 0)
+    idxDesc = GetFieldIndex(headerFields, "description", 1)
+    idxWithdraw = GetFieldIndex(headerFields, "withdrawal_amount", 2)
+    idxDeposit = GetFieldIndex(headerFields, "deposit_amount", 3)
+
+    dataCount = 0
+    ReDim resultData(1 To 10000, 1 To 4)
+
+    For i = 1 To UBound(lines)
+        If Len(Trim$(lines(i))) > 0 Then
+            lineFields = SplitCsvFields(lines(i))
+            If UBound(lineFields) >= idxDeposit Then
+                transDate = GetArrayValue(lineFields, idxDate)
+                description = CleanDescriptionText(GetArrayValue(lineFields, idxDesc))
+                withdrawAmount = ToLongValue(GetArrayValue(lineFields, idxWithdraw))
+                depositAmount = ToLongValue(GetArrayValue(lineFields, idxDeposit))
+                If withdrawAmount >= minAmount Or depositAmount >= minAmount Then
+                    dataCount = dataCount + 1
+                    resultData(dataCount, 1) = ConvertDateFormat(transDate)
+                    resultData(dataCount, 2) = withdrawAmount
+                    resultData(dataCount, 3) = depositAmount
+                    resultData(dataCount, 4) = description
+                End If
+            End If
+        End If
+    Next i
+
+    If dataCount = 0 Then
+        ParseTransactionCsvContent = Empty
+    Else
+        ReDim finalData(1 To dataCount, 1 To 4)
+        For i = 1 To dataCount
+            finalData(i, 1) = resultData(i, 1)
+            finalData(i, 2) = resultData(i, 2)
+            finalData(i, 3) = resultData(i, 3)
+            finalData(i, 4) = resultData(i, 4)
+        Next i
+        ParseTransactionCsvContent = finalData
+    End If
+End Function
