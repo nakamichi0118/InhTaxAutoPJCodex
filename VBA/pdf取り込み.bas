@@ -703,6 +703,7 @@ Private Function PdfSplitCsvLine(lineText As String) As String()
     Dim i As Long
     Dim ch As String
     Dim inQuotes As Boolean
+    Dim arr() As String
 
     Set results = CreateObject("System.Collections.ArrayList")
     token = ""
@@ -718,7 +719,16 @@ Private Function PdfSplitCsvLine(lineText As String) As String()
         End If
     Next i
     results.Add token
-    PdfSplitCsvLine = results.ToArray
+    If results.Count = 0 Then
+        ReDim arr(0 To 0)
+        arr(0) = ""
+    Else
+        ReDim arr(0 To results.Count - 1)
+        For i = 0 To results.Count - 1
+            arr(i) = CStr(results(i))
+        Next i
+    End If
+    PdfSplitCsvLine = arr
 End Function
 
 Private Function PdfToLong(valueText As String) As Long
@@ -742,6 +752,23 @@ Private Function PdfToLong(valueText As String) As Long
             PdfToLong = 0
         End If
     End If
+End Function
+
+Private Function RemoveUtf8Bom(textVal As String) As String
+    Dim cleaned As String
+    cleaned = textVal
+    If Len(cleaned) = 0 Then
+        RemoveUtf8Bom = cleaned
+        Exit Function
+    End If
+    If AscW(Left$(cleaned, 1)) = &HFEFF Then
+        cleaned = Mid$(cleaned, 2)
+    ElseIf Len(cleaned) >= 3 Then
+        If Mid$(cleaned, 1, 3) = Chr$(239) & Chr$(187) & Chr$(191) Then
+            cleaned = Mid$(cleaned, 4)
+        End If
+    End If
+    RemoveUtf8Bom = cleaned
 End Function
 
 Private Function GetConfigValue(keyName As String) As String
