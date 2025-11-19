@@ -30,6 +30,7 @@ class JobRecord:
     processed_chunks: int = 0
     total_chunks: int = 0
     assets_payload: Optional[List[dict]] = None
+    transactions_payload: Optional[List[dict]] = None
     processing_mode: str = "gemini"
     gemini_model: Optional[str] = None
     created_at: float = field(default_factory=time.time)

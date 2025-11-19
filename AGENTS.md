@@ -66,3 +66,5 @@ Store secrets in environment variables or secret managers compatible with your d
 - CSV/ PDF 取り込みの両方で `ParseTransactionCsvContent` を共有化。全取引を0円閾値で再取得し、金額フィルタ後のデータとは別に摘要サマリ用データを維持。ヘッダー名ベースの列マッピングとBOM除去を実装し、入金列へ残高が混入する不具合・摘要の文字化けを解消した。
 - 金額フィルタは入出金の絶対値で判定する必要があるため、VBA側で `Abs(withdrawAmount/depositAmount)` を比較するよう修正。これにより出金欄が負数で返るケースでも正しく閾値判定できる。
 - PDF import フローに `PDF取込ログ` シートを使った詳細デバッグ機構を追加。ParseCsvText 各行の生データ・解析結果・フィルタ判定を記録し、問題調査を容易にした。
+- FastAPIの `/api/jobs/{id}/result` は取引リストを内部表現として保持し、`bank_transactions.json`（Base64）を常に生成。`?format=csv` 指定時のみ従来のCSVを返し、それ以外はJSONを既定にした。
+- VBA/pdf取り込みはBase64→UTF-8変換をADODB.Streamで行い、`ParseTransactionJsonContent` でJSONを直接パースする構成に刷新。既存のCSVパーサはレガシー用途として残しつつ、ログにもJSON解析結果を記録する。

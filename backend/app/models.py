@@ -101,5 +101,15 @@ class JobResultResponse(BaseModel):
     status: Literal["ok"]
     job_id: str
     document_type: DocumentType
-    files: Dict[str, str]
+    files: Optional[Dict[str, str]] = None
     assets: List[AssetRecord]
+    transactions: List["TransactionExport"] = Field(default_factory=list)
+
+
+class TransactionExport(BaseModel):
+    transaction_date: Optional[str] = None
+    description: Optional[str] = None
+    withdrawal_amount: int = 0
+    deposit_amount: int = 0
+    balance: Optional[int] = None
+    memo: Optional[str] = None

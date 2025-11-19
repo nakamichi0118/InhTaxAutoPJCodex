@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,7 +11,7 @@ from datetime import datetime
 from io import StringIO
 from typing import Any, Callable, Dict, List, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .azure_analyzer import (
@@ -34,6 +35,7 @@ from .models import (
     JobCreateResponse,
     JobResultResponse,
     JobStatusResponse,
+    TransactionExport,
     TransactionLine,
 )
 from .parser import build_assets, detect_document_type
@@ -78,6 +80,46 @@ class GeminiPageResult:
     page_index: int
     transactions: List[TransactionLine]
     raw_lines: List[str]
+
+
+def _normalize_amount(value: Optional[float]) -> int:
+    if value is None:
+        return 0
+    return int(round(value))
+
+
+def _transactions_from_assets(assets: List[AssetRecord]) -> List[Dict[str, Any]]:
+    flattened: List[Dict[str, Any]] = []
+    for asset in assets:
+        for txn in asset.transactions or []:
+            flattened.append(
+                {
+                    "transaction_date": txn.transaction_date,
+                    "description": txn.description,
+                    "withdrawal_amount": _normalize_amount(txn.withdrawal_amount),
+                    "deposit_amount": _normalize_amount(txn.deposit_amount),
+                    "balance": _normalize_amount(txn.balance) if txn.balance is not None else None,
+                    "memo": txn.correction_note or "",
+                }
+            )
+    return flattened
+
+
+def _build_result_files(export_assets: List[dict], transactions_payload: List[Dict[str, Any]]) -> Dict[str, str]:
+    payload = {"assets": export_assets}
+    files: Dict[str, str] = {}
+    json_text = json.dumps(transactions_payload, ensure_ascii=False)
+    files["bank_transactions.json"] = base64.b64encode(json_text.encode("utf-8")).decode("ascii")
+    csv_map = export_to_csv_strings(payload)
+    for name, content in csv_map.items():
+        files[name] = base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
+    return files
+
+
+def _filter_files_by_suffix(file_map: Optional[Dict[str, str]], suffix: str) -> Dict[str, str]:
+    if not file_map:
+        return {}
+    return {name: data for name, data in file_map.items() if name.endswith(suffix)}
 
 app.add_middleware(
     CORSMiddleware,
@@ -947,24 +989,22 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             asset.transactions = transactions
             export_assets.append(asset.to_export_payload())
 
+        transactions_payload = _transactions_from_assets(assets)
         payload = {"assets": export_assets}
-        handle.update(stage="exporting", detail="CSV を書き出しています…")
-        csv_map = export_to_csv_strings(payload)
-        encoded = {
-            name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
-            for name, content in csv_map.items()
-        }
+        handle.update(stage="exporting", detail="結果を整形しています…")
+        files_map = _build_result_files(export_assets, transactions_payload)
         gemini_total_chunks = total_chunks or 1
         handle.update(
             status="completed",
             stage="completed",
             detail="完了",
             document_type=document_type,
-            result_files=encoded,
-            partial_files=encoded,
+            result_files=files_map,
+            partial_files=files_map,
             processed_chunks=gemini_total_chunks,
             total_chunks=gemini_total_chunks,
             assets_payload=export_assets,
+            transactions_payload=transactions_payload,
         )
         _log_timing(job.job_id, "JOB_TOTAL", 0, job_timer)
         return
@@ -1104,24 +1144,19 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
 
     asset_payload = asset.to_export_payload()
     payload = {"assets": [asset_payload]}
-    handle.update(stage="exporting", detail="CSV を書き出しています…")
+    transactions_payload = _transactions_from_assets([asset])
+    handle.update(stage="exporting", detail="結果を整形しています…")
     csv_timer = time.perf_counter()
-    csv_map = export_to_csv_strings(payload)
-    if not csv_map:
-        raise ValueError("CSV出力が空です")
-    encoded = {
-        name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
-        for name, content in csv_map.items()
-    }
+    files_map = _build_result_files([asset_payload], transactions_payload)
     _log_timing(job.job_id, "CSV_EXPORT", 0, csv_timer)
     if diagnostics:
         debug_csv = _build_diagnostics_csv(diagnostics)
-        encoded["azure_balance_diagnostics.csv"] = base64.b64encode(
+        files_map["azure_balance_diagnostics.csv"] = base64.b64encode(
             debug_csv.encode("utf-8-sig")
         ).decode("ascii")
     if azure_raw_rows:
         raw_csv = _build_azure_raw_transactions_csv(azure_raw_rows)
-        encoded["azure_raw_transactions.csv"] = base64.b64encode(
+        files_map["azure_raw_transactions.csv"] = base64.b64encode(
             raw_csv.encode("utf-8-sig")
         ).decode("ascii")
     assets_payload = [asset_payload]
@@ -1131,11 +1166,12 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         stage="completed",
         detail="完了",
         document_type=asset.category,
-        result_files=encoded,
-        partial_files=encoded,
+        result_files=files_map,
+        partial_files=files_map,
         processed_chunks=total_chunks,
         total_chunks=total_chunks,
         assets_payload=assets_payload,
+        transactions_payload=transactions_payload,
     )
     _log_timing(job.job_id, "JOB_TOTAL", 0, job_timer)
 
@@ -1313,7 +1349,7 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
 
 
 @app.get("/api/jobs/{job_id}/result", response_model=JobResultResponse)
-async def get_job_result(job_id: str) -> JobResultResponse:
+async def get_job_result(job_id: str, format: str = Query("json", pattern="^(json|csv)$")) -> JobResultResponse:
     job = job_manager.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1322,12 +1358,26 @@ async def get_job_result(job_id: str) -> JobResultResponse:
     document_type = job.document_type or "unknown"
     assets_payload = job.assets_payload or []
     assets: List[AssetRecord] = [AssetRecord.model_validate(item) for item in assets_payload]
+    transactions_payload = job.transactions_payload or _transactions_from_assets(assets)
+    format_normalized = (format or "json").lower()
+    if format_normalized == "csv":
+        selected_files = _filter_files_by_suffix(job.result_files, ".csv")
+    else:
+        selected_files = _filter_files_by_suffix(job.result_files, ".json")
+        if not selected_files:
+            json_text = json.dumps(transactions_payload, ensure_ascii=False)
+            selected_files = {
+                "bank_transactions.json": base64.b64encode(json_text.encode("utf-8")).decode("ascii")
+            }
+    transactions_models = [TransactionExport(**item) for item in transactions_payload]
+    files_value = selected_files or None
     return JobResultResponse(
         status="ok",
         job_id=job.job_id,
         document_type=document_type,
-        files=job.result_files,
+        files=files_value,
         assets=assets,
+        transactions=transactions_models,
     )
 
 

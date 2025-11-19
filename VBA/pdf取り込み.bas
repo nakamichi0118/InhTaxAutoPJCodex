@@ -28,8 +28,8 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim buttonRow As Long
     Dim pdfPath As String
     Dim minAmount As Long
-    Dim csvText As String
-    Dim csvData As Variant
+    Dim jsonText As String
+    Dim filteredData As Variant
     Dim usageData As Variant
 
     Call InitPdfDebugLog(targetDocType)
@@ -44,20 +44,24 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     minAmount = GetMinimumAmount()
     If minAmount = -1 Then Exit Sub
 
-    csvText = FetchCsvTextFromApi(pdfPath, targetDocType)
-    If Len(csvText) = 0 Then
+    jsonText = FetchTransactionsJsonText(pdfPath, targetDocType)
+    If Len(jsonText) = 0 Then
         MsgBox "PDF の読み取りに失敗しました。設定値とネットワークを確認してください。", vbExclamation
         Exit Sub
     End If
 
-    usageData = ParseTransactionCsvContent(csvText, 0)
-    csvData = ParseCsvText(csvText, minAmount)
-    If IsEmpty(csvData) Then
+    LogPdfRawJsonSample jsonText
+    usageData = ParseTransactionJsonContent(jsonText, 0)
+    filteredData = ParseTransactionJsonContent(jsonText, minAmount)
+    If IsEmpty(filteredData) Then
         MsgBox "指定金額以上の取引は見つかりませんでした。", vbInformation
         Exit Sub
     End If
+    If IsEmpty(usageData) Then
+        usageData = filteredData
+    End If
 
-    Call ImportDataToExcel(csvData, buttonCol, buttonRow, usageData)
+    Call ImportDataToExcel(filteredData, buttonCol, buttonRow, usageData)
     MsgBox "PDF の取り込みが完了しました。", vbInformation
 End Sub
 
@@ -140,6 +144,11 @@ Private Sub LogPdfParseRow( _
     End With
 End Sub
 
+Private Sub LogPdfRawJsonSample(jsonText As String)
+    If Not DEBUG_LOG_ENABLED Then Exit Sub
+    Call LogPdfParseRow("RawJson", -1, Left$(jsonText, 200), "", "", 0, 0, 0, True, "preview")
+End Sub
+
 Private Function SelectPdfFile() As String
     Dim fd As FileDialog
     Set fd = Application.FileDialog(msoFileDialogFilePicker)
@@ -157,7 +166,7 @@ Private Function SelectPdfFile() As String
     Set fd = Nothing
 End Function
 
-Private Function FetchCsvTextFromApi(pdfPath As String, overrideDocType As String) As String
+Private Function FetchTransactionsJsonText(pdfPath As String, overrideDocType As String) As String
     On Error GoTo ErrHandler
     Dim baseUrl As String
     Dim apiKey As String
@@ -176,7 +185,7 @@ Private Function FetchCsvTextFromApi(pdfPath As String, overrideDocType As Strin
     Dim pollIntervalMs As Long
     Dim maxWaitSeconds As Long
     Dim resultJson As String
-    Dim csvBase64 As String
+    Dim jsonBase64 As String
     Dim displayName As String
 
     baseUrl = GetConfigValue("BASE_URL")
@@ -195,7 +204,7 @@ Private Function FetchCsvTextFromApi(pdfPath As String, overrideDocType As Strin
 
     Application.StatusBar = "ファイル: " & displayName & " ｜ 解析を開始しました"
     statusUrl = normalizedBase & "/jobs/" & jobId
-    resultUrl = statusUrl & "/result"
+    resultUrl = statusUrl & "/result?format=json"
     startTime = Now
 
     Do
@@ -226,11 +235,11 @@ Private Function FetchCsvTextFromApi(pdfPath As String, overrideDocType As Strin
     resultJson = GetJobResult(resultUrl, apiKey)
     If Len(resultJson) = 0 Then GoTo Cleanup
 
-    csvBase64 = ExtractCsvBase64(resultJson, "bank_transactions.csv")
-    If Len(csvBase64) = 0 Then
-        csvBase64 = ExtractFirstFileBase64(resultJson)
+    jsonBase64 = ExtractJobFileBase64(resultJson, "bank_transactions.json")
+    If Len(jsonBase64) = 0 Then
+        jsonBase64 = ExtractFirstFileBase64(resultJson)
     End If
-    FetchCsvTextFromApi = Base64ToUtf8(csvBase64)
+    FetchTransactionsJsonText = Utf8BytesToString(Base64ToBytes(jsonBase64))
 
 Cleanup:
     Application.StatusBar = False
@@ -238,7 +247,7 @@ Cleanup:
 
 ErrHandler:
     MsgBox "API 呼び出しでエラー: " & Err.Description, vbCritical
-    FetchCsvTextFromApi = ""
+    FetchTransactionsJsonText = ""
     Resume Cleanup
 End Function
 
@@ -569,23 +578,32 @@ Private Function StringToBytes(textValue As String) As Byte()
     End If
 End Function
 
-Private Function Base64ToUtf8(base64Value As String) As String
-    If Len(base64Value) = 0 Then Exit Function
+Private Function Base64ToBytes(base64Value As String) As Byte()
     Dim xml As Object
     Dim node As Object
     Set xml = CreateObject("MSXML2.DOMDocument")
     Set node = xml.createElement("b64")
     node.DataType = "bin.base64"
     node.Text = base64Value
-    Dim bytes() As Byte
-    bytes = node.nodeTypedValue
-    Base64ToUtf8 = StrConv(bytes, vbUnicode)
-    If Left$(Base64ToUtf8, 1) = ChrW(&HFEFF) Then
-        Base64ToUtf8 = Mid$(Base64ToUtf8, 2)
-    End If
+    Base64ToBytes = node.nodeTypedValue
 End Function
 
-Private Function ExtractCsvBase64(json As String, fileName As String) As String
+Private Function Utf8BytesToString(data() As Byte) As String
+    Dim stm As Object
+    Set stm = CreateObject("ADODB.Stream")
+    With stm
+        .Type = 1
+        .Open
+        .Write data
+        .Position = 0
+        .Type = 2
+        .Charset = "UTF-8"
+        Utf8BytesToString = .ReadText
+        .Close
+    End With
+End Function
+
+Private Function ExtractJobFileBase64(json As String, fileName As String) As String
     Dim token As String
     Dim startPos As Long
 
@@ -594,7 +612,7 @@ Private Function ExtractCsvBase64(json As String, fileName As String) As String
     If startPos = 0 Then Exit Function
     startPos = startPos + Len(token)
 
-    ExtractCsvBase64 = ExtractJsonStringAt(json, startPos)
+    ExtractJobFileBase64 = ExtractJsonStringAt(json, startPos)
 End Function
 
 Private Function ExtractFirstFileBase64(json As String) As String
@@ -771,6 +789,302 @@ Private Function RemoveUtf8Bom(textVal As String) As String
     RemoveUtf8Bom = cleaned
 End Function
 
+Private Function NormalizeCsvLine(lineText As String) As String
+    Dim cleaned As String
+    cleaned = Trim$(lineText)
+    If Len(cleaned) >= 1 Then
+        If Left$(cleaned, 1) = """" Then
+            cleaned = Mid$(cleaned, 2)
+        End If
+    End If
+    If Len(cleaned) >= 1 Then
+        If Right$(cleaned, 1) = """" Then
+            cleaned = Left$(cleaned, Len(cleaned) - 1)
+        End If
+    End If
+    cleaned = Replace(cleaned, ChrW(&HFF0C), ",")
+    cleaned = Replace(cleaned, ChrW(&HFF1A), ":")
+    cleaned = Replace(cleaned, ChrW(&H3001), ",")
+    NormalizeCsvLine = cleaned
+End Function
+
+Private Function ParseTransactionJsonContent(jsonText As String, minAmount As Long) As Variant
+    Dim pos As Long
+    Dim ch As String
+    Dim capacity As Long
+    Dim count As Long
+    Dim temp() As Variant
+    Dim objectIndex As Long
+    Dim txnDate As String
+    Dim description As String
+    Dim withdrawAmount As Long
+    Dim depositAmount As Long
+    Dim rawLine As String
+    Dim passed As Boolean
+    Dim value As Variant
+    Dim key As String
+    Dim balanceValue As Variant
+
+    pos = 1
+    capacity = 64
+    count = 0
+    ReDim temp(1 To capacity, 1 To 4)
+
+    JsonSkipWhitespace jsonText, pos
+    If JsonPeek(jsonText, pos) <> "[" Then
+        ParseTransactionJsonContent = Empty
+        Exit Function
+    End If
+    pos = pos + 1
+
+    Do
+ContinueArrayLoop:
+        JsonSkipWhitespace jsonText, pos
+        ch = JsonPeek(jsonText, pos)
+        If ch = "" Then Exit Do
+        If ch = "]" Then
+            pos = pos + 1
+            Exit Do
+        End If
+        If ch = "," Then
+            pos = pos + 1
+            GoTo ContinueArrayLoop
+        End If
+        If ch <> "{" Then Exit Do
+        objectIndex = objectIndex + 1
+        pos = pos + 1
+
+        txnDate = ""
+        description = ""
+        withdrawAmount = 0
+        depositAmount = 0
+        balanceValue = Null
+
+        Do
+ContinueObjectLoop:
+            JsonSkipWhitespace jsonText, pos
+            ch = JsonPeek(jsonText, pos)
+            If ch = "}" Then
+                pos = pos + 1
+                Exit Do
+            End If
+            key = JsonParseString(jsonText, pos)
+            JsonSkipWhitespace jsonText, pos
+            If JsonPeek(jsonText, pos) <> ":" Then Exit Do
+            pos = pos + 1
+            JsonSkipWhitespace jsonText, pos
+            value = JsonParseValue(jsonText, pos)
+            Select Case key
+                Case "transaction_date"
+                    If Not IsNull(value) Then txnDate = CStr(value)
+                Case "description"
+                    If Not IsNull(value) Then description = CStr(value)
+                Case "withdrawal_amount"
+                    If Not IsNull(value) Then withdrawAmount = CLng(value)
+                Case "deposit_amount"
+                    If Not IsNull(value) Then depositAmount = CLng(value)
+                Case "balance"
+                    If Not IsNull(value) Then balanceValue = CLng(value)
+                Case "memo"
+                    ' currently unused
+            End Select
+            JsonSkipWhitespace jsonText, pos
+            ch = JsonPeek(jsonText, pos)
+            If ch = "," Then
+                pos = pos + 1
+                GoTo ContinueObjectLoop
+            ElseIf ch = "}" Then
+                pos = pos + 1
+                Exit Do
+            End If
+        Loop
+
+        passed = (Abs(withdrawAmount) >= minAmount Or Abs(depositAmount) >= minAmount)
+        rawLine = txnDate & "," & description
+        LogPdfParseRow "ParseJson", objectIndex, rawLine, CStr(withdrawAmount), CStr(depositAmount), _
+            withdrawAmount, depositAmount, minAmount, passed, ""
+
+        If passed Then
+            count = count + 1
+            If count > capacity Then
+                capacity = capacity * 2
+                ReDim Preserve temp(1 To capacity, 1 To 4)
+            End If
+            temp(count, 1) = ConvertDateFormat(txnDate)
+            temp(count, 2) = withdrawAmount
+            temp(count, 3) = depositAmount
+            temp(count, 4) = description
+        End If
+    Loop
+
+    LogPdfParseRow "Summary(JSON)", -1, "", "", "", count, 0, minAmount, (count > 0), "dataCount"
+
+    If count = 0 Then
+        ParseTransactionJsonContent = Empty
+    Else
+        Dim finalData() As Variant
+        Dim i As Long
+        ReDim finalData(1 To count, 1 To 4)
+        For i = 1 To count
+            finalData(i, 1) = temp(i, 1)
+            finalData(i, 2) = temp(i, 2)
+            finalData(i, 3) = temp(i, 3)
+            finalData(i, 4) = temp(i, 4)
+        Next i
+        ParseTransactionJsonContent = finalData
+    End If
+End Function
+
+Private Sub JsonSkipWhitespace(ByVal text As String, ByRef pos As Long)
+    Dim length As Long
+    length = Len(text)
+    Do While pos <= length
+        Select Case Mid$(text, pos, 1)
+            Case " ", vbTab, vbCr, vbLf
+                pos = pos + 1
+            Case Else
+                Exit Do
+        End Select
+    Loop
+End Sub
+
+Private Function JsonPeek(ByVal text As String, ByVal pos As Long) As String
+    If pos > Len(text) Or pos <= 0 Then
+        JsonPeek = ""
+    Else
+        JsonPeek = Mid$(text, pos, 1)
+    End If
+End Function
+
+Private Function JsonParseString(ByVal text As String, ByRef pos As Long) As String
+    Dim result As String
+    Dim ch As String
+    Dim code As String
+    result = ""
+    If JsonPeek(text, pos) <> """" Then
+        JsonParseString = ""
+        Exit Function
+    End If
+    pos = pos + 1
+    Do While pos <= Len(text)
+        ch = Mid$(text, pos, 1)
+        If ch = "\" Then
+            pos = pos + 1
+            ch = Mid$(text, pos, 1)
+            Select Case ch
+                Case """", "\", "/"
+                    result = result & ch
+                Case "b": result = result & vbBack
+                Case "f": result = result & vbFormFeed
+                Case "n": result = result & vbLf
+                Case "r": result = result & vbCr
+                Case "t": result = result & vbTab
+                Case "u"
+                    code = Mid$(text, pos + 1, 4)
+                    result = result & ChrW(CLng("&H" & code))
+                    pos = pos + 4
+                Case Else
+                    result = result & ch
+            End Select
+            pos = pos + 1
+        ElseIf ch = """" Then
+            pos = pos + 1
+            Exit Do
+        Else
+            result = result & ch
+            pos = pos + 1
+        End If
+    Loop
+    JsonParseString = result
+End Function
+
+Private Function JsonParseValue(ByVal text As String, ByRef pos As Long) As Variant
+    Dim ch As String
+    ch = JsonPeek(text, pos)
+    Select Case ch
+        Case """"
+            JsonParseValue = JsonParseString(text, pos)
+        Case "-", "0" To "9"
+            JsonParseValue = JsonParseNumber(text, pos)
+        Case "n"
+            If Mid$(text, pos, 4) = "null" Then
+                pos = pos + 4
+                JsonParseValue = Null
+            End If
+        Case "t"
+            If Mid$(text, pos, 4) = "true" Then
+                pos = pos + 4
+                JsonParseValue = True
+            End If
+        Case "f"
+            If Mid$(text, pos, 5) = "false" Then
+                pos = pos + 5
+                JsonParseValue = False
+            End If
+        Case "{"
+            JsonSkipObject text, pos
+            JsonParseValue = Null
+        Case "["
+            JsonSkipArray text, pos
+            JsonParseValue = Null
+        Case Else
+            JsonParseValue = Null
+    End Select
+End Function
+
+Private Function JsonParseNumber(ByVal text As String, ByRef pos As Long) As Double
+    Dim startPos As Long
+    Dim ch As String
+    startPos = pos
+    Do While pos <= Len(text)
+        ch = Mid$(text, pos, 1)
+        If InStr("0123456789+-eE.", ch) = 0 Then Exit Do
+        pos = pos + 1
+    Loop
+    JsonParseNumber = Val(Mid$(text, startPos, pos - startPos))
+End Function
+
+Private Sub JsonSkipObject(ByVal text As String, ByRef pos As Long)
+    Dim depth As Long
+    Dim ch As String
+    depth = 0
+    Do While pos <= Len(text)
+        ch = Mid$(text, pos, 1)
+        If ch = "{" Then
+            depth = depth + 1
+            pos = pos + 1
+        ElseIf ch = "}" Then
+            depth = depth - 1
+            pos = pos + 1
+            If depth = 0 Then Exit Do
+        ElseIf ch = """" Then
+            JsonParseString text, pos
+        Else
+            pos = pos + 1
+        End If
+    Loop
+End Sub
+
+Private Sub JsonSkipArray(ByVal text As String, ByRef pos As Long)
+    Dim depth As Long
+    Dim ch As String
+    depth = 0
+    Do While pos <= Len(text)
+        ch = Mid$(text, pos, 1)
+        If ch = "[" Then
+            depth = depth + 1
+            pos = pos + 1
+        ElseIf ch = "]" Then
+            depth = depth - 1
+            pos = pos + 1
+            If depth = 0 Then Exit Do
+        ElseIf ch = """" Then
+            JsonParseString text, pos
+        Else
+            pos = pos + 1
+        End If
+    Loop
+End Sub
 Private Function NormalizeCsvLine(lineText As String) As String
     Dim cleaned As String
     cleaned = Trim$(lineText)
