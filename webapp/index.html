@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SOROBOCR｜相続書類OCR</title>
     <link rel="icon" type="image/png" href="./image/TitleLog.png">
+    <script>
+        window.__ledger_app_url = window.__ledger_app_url || './ledger/';
+    </script>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
         :root { color-scheme: light; }
@@ -332,6 +335,26 @@
             font-size: 1rem;
             color: #1d4ed8;
         }
+        .ledger-cta {
+            margin-top: 1.4rem;
+            padding: 1.2rem 1.4rem;
+            border-radius: 16px;
+            border: 1px dashed #93c5fd;
+            background: #eff6ff;
+            display: none;
+            flex-direction: column;
+            gap: 0.65rem;
+        }
+        .ledger-cta h3 {
+            margin: 0;
+            font-size: 1.05rem;
+            color: #0f172a;
+        }
+        .ledger-cta p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: #1e293b;
+        }
         .asset-tabs {
             display: flex;
             flex-direction: column;
@@ -543,6 +566,16 @@
         <h2>CSVダウンロード</h2>
         <p class="description" style="margin-top:-0.6rem;">プレビューを確認したうえで、必要な書類の読み取り結果を CSV として保存してください。</p>
         <div id="downloadList" class="summary-list" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));"></div>
+        <div id="ledgerShortcut" class="ledger-cta">
+            <div>
+                <h3>入出金検討表ツールに送る</h3>
+                <p>CSV を保存した後、ブラウザ上で入出金を並べ替え・色付けできるツールを開けます。</p>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:0.8rem;align-items:center;">
+                <button type="button" class="primary small" id="openLedgerButton">入出金検討表を新しいタブで開く</button>
+                <span style="font-size:0.8rem;color:#475569;">※FastAPI (Railway) にCSVを保存し、ブラウザだけで編集できます。</span>
+            </div>
+        </div>
         <details style="margin-top:1.2rem;">
             <summary>読み取った内容を JSON で確認する（必要な場合のみ）</summary>
             <pre id="rawJson"></pre>
@@ -566,11 +599,17 @@
     const tabEmptyMessage = document.getElementById('tabEmptyMessage');
     const downloadSection = document.getElementById('downloadSection');
     const downloadList = document.getElementById('downloadList');
+    const ledgerShortcut = document.getElementById('ledgerShortcut');
+    const openLedgerButton = document.getElementById('openLedgerButton');
     const rawJson = document.getElementById('rawJson');
     const uploadGuidance = document.getElementById('uploadGuidance');
     const notificationButton = document.getElementById('enableNotifications');
     const cancelButton = document.getElementById('cancelProcessing');
     const cancelRow = document.getElementById('cancelRow');
+    const LEDGER_APP_URL =
+        typeof window.__ledger_app_url === 'string' && window.__ledger_app_url.trim()
+            ? window.__ledger_app_url
+            : './ledger/';
 
     const state = {
         documents: [],
@@ -691,6 +730,11 @@
         loadLimits();
         setupNotificationButton();
         setupCancelButton();
+        if (openLedgerButton) {
+            openLedgerButton.addEventListener('click', () => {
+                window.open(LEDGER_APP_URL, '_blank', 'noopener');
+            });
+        }
         statusBox.style.display = 'none';
         statusBox.classList.remove('visible');
     }
@@ -1476,7 +1520,11 @@
                 downloadList.appendChild(card);
             });
         });
-        downloadSection.style.display = downloadList.childElementCount ? 'block' : 'none';
+        const hasDownloads = downloadList.childElementCount > 0;
+        downloadSection.style.display = hasDownloads ? 'block' : 'none';
+        if (ledgerShortcut) {
+            ledgerShortcut.style.display = hasDownloads ? 'flex' : 'none';
+        }
     }
 
     function renderRawJson() {
