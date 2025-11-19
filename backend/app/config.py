@@ -23,6 +23,7 @@ class Settings:
     azure_chunk_max_bytes: int
     azure_form_recognizer_endpoint: Optional[str]
     azure_form_recognizer_key: Optional[str]
+    ledger_db_path: Path
 
 
 @lru_cache()
@@ -55,6 +56,12 @@ def get_settings() -> Settings:
     azure_chunk_max_mb = int(os.getenv("AZURE_CHUNK_MAX_MB", "6"))
     azure_chunk_max_bytes = azure_chunk_max_mb * 1024 * 1024
 
+    ledger_db_path_env = os.getenv("LEDGER_DB_PATH")
+    if ledger_db_path_env:
+        ledger_db_path = Path(ledger_db_path_env).expanduser().resolve()
+    else:
+        ledger_db_path = Path(__file__).resolve().parents[2] / "data" / "ledger.db"
+
     return Settings(
         gemini_api_key=gemini_api_key,
         gemini_api_keys=gemini_api_keys,
@@ -64,4 +71,5 @@ def get_settings() -> Settings:
         azure_chunk_max_bytes=azure_chunk_max_bytes,
         azure_form_recognizer_endpoint=os.getenv("AZURE_FORM_RECOGNIZER_ENDPOINT"),
         azure_form_recognizer_key=os.getenv("AZURE_FORM_RECOGNIZER_KEY"),
+        ledger_db_path=ledger_db_path,
     )

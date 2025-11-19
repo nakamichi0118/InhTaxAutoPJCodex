@@ -1,16 +1,36 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, updateDoc, collection, query, onSnapshot, serverTimestamp, deleteDoc, addDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { List, Plus, Minus, CreditCard, Save, Trash2, X, Clipboard, ArrowDownUp, Edit, ChevronUp, ChevronDown, FileDown, Loader2, FileUp } from 'lucide-react';
 
-// --- Firebase & Utility Setup ---
-// グローバル変数からFirebase設定と認証トークンを取得
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-// const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; // 認証不要のため無視
+// --- Ledger API & Utility Setup ---
+const DEFAULT_APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'ledger-app';
+const DEFAULT_LEDGER_API_BASE = typeof __ledger_api_base !== 'undefined' ? __ledger_api_base : '/api/ledger';
+const LEDGER_TOKEN_STORAGE_KEY = 'ledger_session_token';
 
-let app, db, auth;
+const appId = DEFAULT_APP_ID;
+const ledgerApiBase = DEFAULT_LEDGER_API_BASE;
+
+const getStoredLedgerToken = () => {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return null;
+    }
+    try {
+        return window.localStorage.getItem(LEDGER_TOKEN_STORAGE_KEY);
+    } catch (error) {
+        console.warn('Failed to read ledger token from storage:', error);
+        return null;
+    }
+};
+
+const persistLedgerToken = (token) => {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return;
+    }
+    try {
+        window.localStorage.setItem(LEDGER_TOKEN_STORAGE_KEY, token);
+    } catch (error) {
+        console.warn('Failed to store ledger token:', error);
+    }
+};
 
 // データ構造の定義
 // Account: { id: string, name: string, number: string, order: number, userId: string }
@@ -20,21 +40,6 @@ let app, db, auth;
 const formatCurrency = (value) => {
   if (value === undefined || value === null || isNaN(value)) return '';
   return new Intl.NumberFormat('ja-JP', { style: 'decimal' }).format(value);
-};
-
-// --- New Helper Functions for Import ---
-
-// Firestoreのバッチ処理をチャンクに分割して実行するヘルパー関数
-const processInChunks = async (items, processItem) => {
-    // Firestoreのバッチ上限は500だが、安全マージンをとって490に設定
-    const BATCH_SIZE = 490; 
-    // db変数がグローバルスコープで定義されていることを前提とする
-    for (let i = 0; i < items.length; i += BATCH_SIZE) {
-        const batch = writeBatch(db);
-        const chunk = items.slice(i, i + BATCH_SIZE);
-        chunk.forEach(item => processItem(batch, item));
-        await batch.commit();
-    }
 };
 
 // JSONから読み込んだデータ内のFirestoreタイムスタンプ形式をJSのDateオブジェクトに再帰的に変換するヘルパー関数
@@ -398,7 +403,7 @@ const ExportPDFButton = ({ elementId, fileName, title = 'PDFに出力' }) => {
 
 // --- Edit Transaction Modal Component ---
 
-const EditTransactionModal = ({ isOpen, onClose, transaction, userId, db }) => {
+const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransaction }) => {
     const [date, setDate] = useState('');
     const [withdrawal, setWithdrawal] = useState('');
     const [deposit, setDeposit] = useState('');
@@ -442,22 +447,17 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, userId, db }) => {
         }
 
         try {
-            const transactionDocRef = doc(db, `artifacts/${appId}/users/${userId}/transactions/${transaction.id}`);
-
-            await updateDoc(transactionDocRef, {
-                date: date,
+            await onUpdateTransaction(transaction.id, {
+                date,
                 withdrawal: withdrawalValue,
                 deposit: depositValue,
-                memo: memo,
-                type: type, // 種別を更新
-                updatedAt: serverTimestamp(),
+                memo,
+                type,
             });
-
             setMessage('取引情報が更新されました！');
             setTimeout(onClose, 1500);
-
         } catch (e) {
-            console.error("Error updating transaction: ", e);
+            console.error("Error updating transaction:", e);
             setMessage(`更新エラー: ${e.message}`);
         }
     };
@@ -521,40 +521,28 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, userId, db }) => {
 
 // --- Add Account Modal Component (New) ---
 
-const AddAccountModal = ({ isOpen, onClose, userId, db, accounts, setAccounts }) => {
+const AddAccountModal = ({ isOpen, onClose, onCreateAccount }) => {
   const [name, setName] = useState('');
   const [number, setNumber] = useState('');
   const [message, setMessage] = useState('');
 
-  const handleSaveAccount = async () => {
-    if (!name || !number || !userId) {
-      setMessage('名義人と口座番号を入力してください。');
-      return;
-    }
+    const handleSaveAccount = async () => {
+        if (!name || !number) {
+            setMessage('名義人と口座番号を入力してください。');
+            return;
+        }
 
-    try {
-      // accountsコレクションのパス
-      const accountsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/accounts`);
-      
-      // 新しいドキュメントを追加 (orderフィールドを追加)
-      await addDoc(accountsCollectionRef, {
-        name: name,
-        number: number,
-        userId: userId,
-        order: accounts.length + 1, // 現在の口座数 + 1を初期順序とする
-        createdAt: serverTimestamp(),
-      });
-
-      setMessage('口座情報が正常に登録されました！');
-      setName('');
-      setNumber('');
-      setTimeout(onClose, 1500); // 1.5秒後にモーダルを閉じる
-
-    } catch (e) {
-      console.error("Error adding document: ", e);
-      setMessage(`登録エラー: ${e.message}`);
-    }
-  };
+        try {
+            await onCreateAccount({ name, number });
+            setMessage('口座情報が正常に登録されました！');
+            setName('');
+            setNumber('');
+            setTimeout(onClose, 1500);
+        } catch (e) {
+            console.error("Error adding account:", e);
+            setMessage(`登録エラー: ${e.message}`);
+        }
+    };
 
   return (
     <Modal isOpen={isOpen} title="新規取引口座の登録" onClose={onClose}>
@@ -625,7 +613,7 @@ const ExportModal = ({ isOpen, onClose, accounts, transactions }) => {
     );
 };
 
-const ImportModal = ({ isOpen, onClose, userId, db }) => {
+const ImportModal = ({ isOpen, onClose, onImport }) => {
     const [file, setFile] = useState(null);
     const [isConfirmed, setIsConfirmed] = useState(false);
     const [status, setStatus] = useState('idle'); // 'idle', 'processing', 'success', 'error'
@@ -657,47 +645,10 @@ const ImportModal = ({ isOpen, onClose, userId, db }) => {
                 if (!data.accounts || !data.transactions) {
                     throw new Error('ファイルの形式が正しくありません。(accounts or transactions not found)');
                 }
-                
-                // 1. 既存データをすべて削除 (チャンクに分割したバッチ処理)
-                setMessage('既存のデータを削除しています...');
-                const accsRef = collection(db, `artifacts/${appId}/users/${userId}/accounts`);
-                const transRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
-                const [accsSnapshot, transSnapshot] = await Promise.all([getDocs(accsRef), getDocs(transRef)]);
-                
-                const docsToDelete = [
-                    ...accsSnapshot.docs.map(d => d.ref),
-                    ...transSnapshot.docs.map(d => d.ref)
-                ];
-
-                if (docsToDelete.length > 0) {
-                    await processInChunks(docsToDelete, (batch, docRef) => {
-                        batch.delete(docRef);
-                    });
-                }
-
-                // 2. 新規データをインポート (チャンクに分割したバッチ処理)
-                setMessage('新しいデータをインポートしています...');
-
-                // インポート前に、すべてのタイムスタンプ形式をDateオブジェクトに変換
+                setMessage('Railway APIへデータを送信しています...');
                 const accountsToImport = data.accounts.map(convertFirestoreTimestamps);
                 const transactionsToImport = data.transactions.map(convertFirestoreTimestamps);
-
-                if (accountsToImport.length > 0) {
-                    await processInChunks(accountsToImport, (batch, account) => {
-                        if (!account.id) return; // 不正なデータはスキップ
-                        const docRef = doc(db, `artifacts/${appId}/users/${userId}/accounts`, account.id);
-                        batch.set(docRef, account);
-                    });
-                }
-
-                if (transactionsToImport.length > 0) {
-                     await processInChunks(transactionsToImport, (batch, transaction) => {
-                        if (!transaction.id) return; // 不正なデータはスキップ
-                        const docRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, transaction.id);
-                        batch.set(docRef, transaction);
-                    });
-                }
-                
+                await onImport({ accounts: accountsToImport, transactions: transactionsToImport });
                 setStatus('success');
                 setMessage('データのインポートが完了しました。');
                 setTimeout(() => {
@@ -783,27 +734,27 @@ const ImportModal = ({ isOpen, onClose, userId, db }) => {
 
 // --- Account Management Content (For the 'register' tab) ---
 
-const AccountManagementContent = ({ userId, db, accounts, setAccounts, setShowAddAccountModal, setShowExportModal, setShowImportModal }) => {
+const AccountManagementContent = ({
+    accounts,
+    setShowAddAccountModal,
+    setShowExportModal,
+    setShowImportModal,
+    onReorderAccountOrder,
+    onDeleteAccount,
+}) => {
     const [message, setMessage] = useState('');
 
     // 口座の順序を変更する関数
     const handleReorderAccount = async (currentAccount, targetAccount) => {
         if (currentAccount.id === targetAccount.id) return;
-        
         try {
-            // 現在の口座と対象の口座のorderを交換する
-            const currentOrder = currentAccount.order;
-            const targetOrder = targetAccount.order;
-
-            await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/accounts`, currentAccount.id), 
-                         { order: targetOrder });
-            
-            await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/accounts`, targetAccount.id), 
-                         { order: currentOrder });
-            
+            await onReorderAccountOrder([
+                { id: currentAccount.id, order: targetAccount.order },
+                { id: targetAccount.id, order: currentAccount.order },
+            ]);
             setMessage('口座の順序を変更しました。');
         } catch (e) {
-            console.error("Error reordering document: ", e);
+            console.error('Error reordering account:', e);
             setMessage(`順序変更エラー: ${e.message}`);
         }
         setTimeout(() => setMessage(''), 1500);
@@ -814,16 +765,10 @@ const AccountManagementContent = ({ userId, db, accounts, setAccounts, setShowAd
         if (!window.confirm('この口座と、関連するすべての取引を削除してもよろしいですか？')) return;
 
         try {
-            const accountDocRef = doc(db, `artifacts/${appId}/users/${userId}/accounts/${accountId}`);
-            await deleteDoc(accountDocRef);
-
-            // 実際には関連する取引の削除処理も必要ですが、ここではUIの即時更新とエラー表示に集中します。
-
-            setMessage(`口座を削除しました。`);
-            // onSnapshotで自動的にUIが更新されるため、setAccountsは不要
-
+            await onDeleteAccount(accountId);
+            setMessage('口座を削除しました。');
         } catch (e) {
-            console.error("Error deleting document: ", e);
+            console.error('Error deleting account:', e);
             setMessage(`削除エラー: ${e.message}`);
         }
         setTimeout(() => setMessage(''), 3000);
@@ -906,7 +851,7 @@ const AccountManagementContent = ({ userId, db, accounts, setAccounts, setShowAd
 
 // --- Transaction Input & List Component (Single Account Tab Content) ---
 
-const TransactionTabContent = ({ account, transactions, userId, db, setEditingTransaction }) => {
+const TransactionTabContent = ({ account, transactions, onCreateTransaction, onDeleteTransaction, setEditingTransaction }) => {
     const [date, setDate] = useState(new Date().toISOString().substring(0, 10));
     const [withdrawal, setWithdrawal] = useState('');
     const [deposit, setDeposit] = useState('');
@@ -944,27 +889,21 @@ const TransactionTabContent = ({ account, transactions, userId, db, setEditingTr
         }
 
         try {
-            const transactionCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
-
-            await addDoc(transactionCollectionRef, {
+            await onCreateTransaction({
                 accountId: account.id,
-                date: date,
+                date,
                 withdrawal: withdrawalValue,
                 deposit: depositValue,
-                memo: memo,
-                type: type,
-                timestamp: serverTimestamp(),
+                memo,
+                type,
             });
-
             setMessage('取引を登録しました！');
-            // フォームをリセット
             setWithdrawal('');
             setDeposit('');
             setMemo('');
             setType('振込');
-
         } catch (e) {
-            console.error("Error adding transaction: ", e);
+            console.error('Error adding transaction:', e);
             setMessage(`取引登録エラー: ${e.message}`);
         }
         setTimeout(() => setMessage(''), 3000);
@@ -974,11 +913,10 @@ const TransactionTabContent = ({ account, transactions, userId, db, setEditingTr
         if (!window.confirm('この取引を削除してもよろしいですか？')) return;
 
         try {
-            const transactionDocRef = doc(db, `artifacts/${appId}/users/${userId}/transactions/${transactionId}`);
-            await deleteDoc(transactionDocRef);
+            await onDeleteTransaction(transactionId);
             setMessage('取引を削除しました。');
         } catch (e) {
-            console.error("Error deleting transaction: ", e);
+            console.error('Error deleting transaction:', e);
             setMessage(`取引削除エラー: ${e.message}`);
         }
         setTimeout(() => setMessage(''), 3000);
@@ -1252,7 +1190,14 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
 
 // --- Integrated Tab Content Component ---
 
-const IntegratedTabContent = ({ allTransactions, allAccounts, userId, db, setEditingTransaction }) => {
+const IntegratedTabContent = ({
+    allTransactions,
+    allAccounts,
+    setEditingTransaction,
+    onReorderTransactions,
+    onDeleteTransaction,
+    onUpdateTransactionColor,
+}) => {
     const [message, setMessage] = useState(''); // メッセージ表示用ステートを追加
 
     // 統合ロジック: userOrderがあればそれを優先し、なければ日付（昇順）でソート
@@ -1273,8 +1218,6 @@ const IntegratedTabContent = ({ allTransactions, allAccounts, userId, db, setEdi
     }, [allTransactions]);
 
     const handleReorderTransaction = async (movedItem, adjacentItem) => {
-        if (!userId || !db) return;
-
         try {
             const movedIndex = integratedTransactions.findIndex(t => t.id === movedItem.id);
             const adjacentIndex = integratedTransactions.findIndex(t => t.id === adjacentItem.id);
@@ -1311,44 +1254,27 @@ const IntegratedTabContent = ({ allTransactions, allAccounts, userId, db, setEdi
 
             if (isCollision) {
                 setMessage('順序を再整理しています...');
-                
                 const reorderedTransactions = [...integratedTransactions];
-                
-                // 1. 移動対象のアイテムをリストから一旦削除
                 const itemToMove = reorderedTransactions.splice(movedIndex, 1)[0];
-                
-                // 2. 隣接アイテムの新しいインデックスを探す（削除されたためインデックスがずれる可能性がある）
                 const newAdjacentIndex = reorderedTransactions.findIndex(t => t.id === adjacentItem.id);
-
-                // 3. 新しい位置にアイテムを再挿入
                 if (isMovingDown) {
                     reorderedTransactions.splice(newAdjacentIndex + 1, 0, itemToMove);
                 } else {
                     reorderedTransactions.splice(newAdjacentIndex, 0, itemToMove);
                 }
-
-                // 4. 全アイテムに新しい連番の順序を割り当て、バッチ処理で更新
-                const batch = writeBatch(db);
-                reorderedTransactions.forEach((transaction, index) => {
-                    const newIntegerOrder = (index + 1) * 1000;
-                    // 順序が実際に変更されたアイテムのみを更新対象とする
-                    if (transaction.userOrder !== newIntegerOrder) {
-                        const docRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, transaction.id);
-                        batch.update(docRef, { userOrder: newIntegerOrder });
-                    }
-                });
-
-                await batch.commit();
-                setMessage('');
-
+                const payload = reorderedTransactions.map((transaction, index) => ({
+                    id: transaction.id,
+                    userOrder: (index + 1) * 1000,
+                }));
+                await onReorderTransactions(payload);
+                setMessage('順序を更新しました。');
             } else {
-                // 衝突がない場合：通常のシンプルな更新
-                const movedItemDocRef = doc(db, `artifacts/${appId}/users/${userId}/transactions/${movedItem.id}`);
-                await updateDoc(movedItemDocRef, { userOrder: newOrder });
+                await onReorderTransactions([{ id: movedItem.id, userOrder: newOrder }]);
+                setMessage('順序を更新しました。');
             }
-
+            setTimeout(() => setMessage(''), 1500);
         } catch (e) {
-            console.error("Error reordering transaction:", e);
+            console.error('Error reordering transaction:', e);
             setMessage(`順序の変更中にエラーが発生しました: ${e.message}`);
             setTimeout(() => setMessage(''), 3000);
         }
@@ -1356,14 +1282,10 @@ const IntegratedTabContent = ({ allTransactions, allAccounts, userId, db, setEdi
 
 
     const handleColorChange = async (transactionId, color) => {
-        if (!userId || !db) return;
         try {
-            const transactionDocRef = doc(db, `artifacts/${appId}/users/${userId}/transactions/${transactionId}`);
-            await updateDoc(transactionDocRef, {
-                rowColor: color
-            });
+            await onUpdateTransactionColor(transactionId, color);
         } catch (e) {
-            console.error("Error updating transaction color: ", e);
+            console.error('Error updating transaction color:', e);
             setMessage(`色の更新エラー: ${e.message}`);
             setTimeout(() => setMessage(''), 3000);
         }
@@ -1374,12 +1296,10 @@ const IntegratedTabContent = ({ allTransactions, allAccounts, userId, db, setEdi
         if (!window.confirm('統合タブから削除すると、元の口座のデータも完全に削除されます。よろしいですか？')) return;
 
         try {
-            const transactionDocRef = doc(db, `artifacts/${appId}/users/${userId}/transactions/${transactionId}`);
-            await deleteDoc(transactionDocRef);
+            await onDeleteTransaction(transactionId);
             setMessage('取引を削除しました。');
-            // onSnapshotで自動的にUIが更新されます
         } catch (e) {
-            console.error("Error deleting transaction: ", e);
+            console.error('Error deleting transaction:', e);
             setMessage(`取引削除エラー: ${e.message}`);
         }
         setTimeout(() => setMessage(''), 3000);
@@ -1422,138 +1342,214 @@ const IntegratedTabContent = ({ allTransactions, allAccounts, userId, db, setEdi
 // --- Main App Component ---
 
 const LedgerApp = () => {
-    const [isAuthReady, setIsAuthReady] = useState(false);
+    const [sessionToken, setSessionToken] = useState(null);
     const [userId, setUserId] = useState(null);
     const [accounts, setAccounts] = useState([]);
     const [transactions, setTransactions] = useState([]);
-    const [activeTab, setActiveTab] = useState('register'); // 'register' | 'integrated' | accountId
-    const [showAddAccountModal, setShowAddAccountModal] = useState(false); // 新しい口座追加モーダル
+    const [activeTab, setActiveTab] = useState('register');
+    const [showAddAccountModal, setShowAddAccountModal] = useState(false);
     const [showExportModal, setShowExportModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    
-    // --- Gemini API Call Function ---
-    // --- End Gemini API Call Function ---
 
-
-    // 1. Firebase初期化と認証 (安定化版)
-    useEffect(() => {
-        if (!firebaseConfig) {
-            setError(new Error("Firebase設定がありません。"));
-            setLoading(false);
-            return;
+    const callLedgerApi = useCallback(async (path, options = {}) => {
+        if (!sessionToken) {
+            throw new Error('セッションが初期化されていません。');
         }
-
-        try {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-            
-            const unsubscribe = onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    // User is signed in (either cached anonymous or newly created)
-                    setUserId(user.uid);
-                    setIsAuthReady(true);
-                } else {
-                    // No user found, attempt to sign in anonymously
-                    try {
-                        // This will trigger onAuthStateChanged again once signed in
-                        await signInAnonymously(auth);
-                    } catch (e) {
-                        console.error("Anonymous Sign-in failed:", e);
-                        setError(new Error("匿名認証に失敗しました。データを保存できません。"));
-                        setIsAuthReady(false);
-                    }
-                }
-                setLoading(false);
-            });
-
-            return () => unsubscribe();
-
-        } catch (e) {
-            console.error("Firebase Initialization Error:", e);
-            setError(e);
-            setLoading(false);
-        }
-    }, []); // Empty dependency array ensures this runs only once
-
-
-    // 2. Firestoreデータ取得 (accounts & transactions)
-    useEffect(() => {
-        if (!isAuthReady || !userId || !db) return;
-
-        setLoading(true);
-        // accountsコレクションの監視
-        const accountsColRef = collection(db, `artifacts/${appId}/users/${userId}/accounts`);
-        const qAccounts = query(accountsColRef);
-        const unsubscribeAccounts = onSnapshot(qAccounts, (snapshot) => {
-            const fetchedAccounts = snapshot.docs.map(doc => ({
-                id: doc.id,
-                // orderがない場合は、安全なデフォルト値(9999)を設定
-                order: doc.data().order === undefined ? 9999 : doc.data().order,
-                ...doc.data()
-            }));
-            
-            // orderに基づいてソート
-            const sortedAccounts = fetchedAccounts.sort((a, b) => (a.order || 9999) - (b.order || 9999));
-            setAccounts(sortedAccounts);
-
-            // 初回ロード時、口座があれば最初の口座をアクティブにする
-            if (activeTab === 'register' && sortedAccounts.length > 0) {
-                // 口座が登録されたら、登録タブはそのまま（ユーザーが操作できるように）
-            }
-            setLoading(false);
-        }, (err) => {
-            console.error("Error fetching accounts:", err);
-            setError(err); 
-            setLoading(false);
-        });
-
-        // transactionsコレクションの監視
-        const transactionsColRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
-        const qTransactions = query(transactionsColRef);
-        const unsubscribeTransactions = onSnapshot(qTransactions, (snapshot) => {
-            const fetchedTransactions = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            setTransactions(fetchedTransactions);
-        }, (err) => {
-            console.error("Error fetching transactions:", err);
-            setError(err);
-        });
-
-        // クリーンアップ
-        return () => {
-            unsubscribeAccounts();
-            unsubscribeTransactions();
+        const headers = {
+            'Content-Type': 'application/json',
+            'X-Ledger-Token': sessionToken,
+            'X-Ledger-App': appId,
+            ...(options.headers || {}),
         };
-    }, [isAuthReady, userId]);
+        const init = {
+            method: options.method || 'GET',
+            ...options,
+            headers,
+        };
+        if (options.body !== undefined) {
+            init.body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
+        }
+        const url = path.startsWith('http') ? path : `${ledgerApiBase}${path}`;
+        const response = await fetch(url, init);
+        if (!response.ok) {
+            let message = 'Ledger API error';
+            try {
+                const data = await response.json();
+                message = data.detail || data.message || message;
+            } catch {
+                const text = await response.text();
+                if (text) message = text;
+            }
+            throw new Error(message);
+        }
+        if (response.status === 204) {
+            return null;
+        }
+        return response.json();
+    }, [sessionToken]);
+
+    const refreshState = useCallback(async (showSpinner = true) => {
+        if (!sessionToken) return;
+        if (showSpinner) setLoading(true);
+        try {
+            const data = await callLedgerApi('/state');
+            setAccounts(data.accounts || []);
+            setTransactions(data.transactions || []);
+            setError(null);
+        } catch (err) {
+            console.error('Failed to fetch ledger state:', err);
+            setError(err);
+        } finally {
+            if (showSpinner) setLoading(false);
+        }
+    }, [sessionToken, callLedgerApi]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const bootstrap = async () => {
+            setLoading(true);
+            try {
+                const storedToken = getStoredLedgerToken();
+                const payload = { app_id: appId };
+                if (storedToken) {
+                    payload.session_token = storedToken;
+                }
+                const response = await fetch(`${ledgerApiBase}/session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!response.ok) {
+                    throw new Error('Ledger API セッションの初期化に失敗しました。');
+                }
+                const data = await response.json();
+                if (!cancelled) {
+                    persistLedgerToken(data.session_token);
+                    setSessionToken(data.session_token);
+                    setUserId(data.user_id);
+                    setError(null);
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    console.error('Ledger session initialization failed:', err);
+                    setError(err);
+                    setLoading(false);
+                }
+            }
+        };
+        bootstrap();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (sessionToken) {
+            refreshState();
+        }
+    }, [sessionToken, refreshState]);
+
+    const handleCreateAccount = useCallback(async ({ name, number }) => {
+        await callLedgerApi('/accounts', {
+            method: 'POST',
+            body: { name, number },
+        });
+        await refreshState(false);
+    }, [callLedgerApi, refreshState]);
+
+    const handleReorderAccounts = useCallback(async (items) => {
+        if (!items || items.length === 0) return;
+        await callLedgerApi('/accounts/reorder', {
+            method: 'POST',
+            body: { items },
+        });
+        await refreshState(false);
+    }, [callLedgerApi, refreshState]);
+
+    const handleDeleteAccount = useCallback(async (accountId) => {
+        await callLedgerApi(`/accounts/${accountId}`, { method: 'DELETE' });
+        await refreshState(false);
+    }, [callLedgerApi, refreshState]);
+
+    const handleCreateTransaction = useCallback(async (payload) => {
+        await callLedgerApi('/transactions', {
+            method: 'POST',
+            body: payload,
+        });
+        await refreshState(false);
+    }, [callLedgerApi, refreshState]);
+
+    const handleUpdateTransaction = useCallback(async (transactionId, payload) => {
+        await callLedgerApi(`/transactions/${transactionId}`, {
+            method: 'PATCH',
+            body: payload,
+        });
+        await refreshState(false);
+    }, [callLedgerApi, refreshState]);
+
+    const handleDeleteTransaction = useCallback(async (transactionId) => {
+        await callLedgerApi(`/transactions/${transactionId}`, { method: 'DELETE' });
+        await refreshState(false);
+    }, [callLedgerApi, refreshState]);
+
+    const handleReorderTransactions = useCallback(async (items) => {
+        if (!items || items.length === 0) return;
+        await callLedgerApi('/transactions/reorder', {
+            method: 'POST',
+            body: { items },
+        });
+        await refreshState(false);
+    }, [callLedgerApi, refreshState]);
+
+    const handleUpdateTransactionColor = useCallback(async (transactionId, rowColor) => {
+        await callLedgerApi(`/transactions/${transactionId}`, {
+            method: 'PATCH',
+            body: { rowColor },
+        });
+        await refreshState(false);
+    }, [callLedgerApi, refreshState]);
+
+    const handleImportData = useCallback(async (payload) => {
+        await callLedgerApi('/import', {
+            method: 'POST',
+            body: payload,
+        });
+        await refreshState(false);
+    }, [callLedgerApi, refreshState]);
 
     // 3. アクティブなタブの内容をレンダリング
     const renderContent = () => {
-        if (loading || !isAuthReady) {
+        if (loading || !sessionToken) {
             return <div className="p-8"><StatusMessage loading={loading} error={error} userId={userId} /></div>;
         }
         
         if (activeTab === 'register') {
             return (
                 <AccountManagementContent 
-                    userId={userId} 
-                    db={db} 
                     accounts={accounts} 
-                    setAccounts={setAccounts} 
                     setShowAddAccountModal={setShowAddAccountModal}
                     setShowExportModal={setShowExportModal}
                     setShowImportModal={setShowImportModal}
+                    onReorderAccountOrder={handleReorderAccounts}
+                    onDeleteAccount={handleDeleteAccount}
                 />
             );
         }
 
         if (activeTab === 'integrated') {
-            return <IntegratedTabContent allTransactions={transactions} allAccounts={accounts} userId={userId} db={db} setEditingTransaction={setEditingTransaction} />;
+            return (
+                <IntegratedTabContent
+                    allTransactions={transactions}
+                    allAccounts={accounts}
+                    setEditingTransaction={setEditingTransaction}
+                    onReorderTransactions={handleReorderTransactions}
+                    onDeleteTransaction={handleDeleteTransaction}
+                    onUpdateTransactionColor={handleUpdateTransactionColor}
+                />
+            );
         }
 
         const activeAccount = accounts.find(acc => acc.id === activeTab);
@@ -1561,8 +1557,8 @@ const LedgerApp = () => {
             return <TransactionTabContent 
                         account={activeAccount} 
                         transactions={transactions} 
-                        userId={userId} 
-                        db={db} 
+                        onCreateTransaction={handleCreateTransaction}
+                        onDeleteTransaction={handleDeleteTransaction}
                         setEditingTransaction={setEditingTransaction}
                     />;
         }
@@ -1630,7 +1626,7 @@ const LedgerApp = () => {
 
             <div className="max-w-7xl mx-auto mt-4 px-4 sm:px-6 lg:px-8">
                 <div className="mb-4 text-xs text-gray-600 bg-yellow-50 border border-yellow-200 rounded-md p-3 leading-relaxed">
-                    この画面では入出金検討データを匿名ID単位で Firebase Firestore に保存します。ブラウザや端末を変えると別ID扱いになります。
+                    この画面では Railway 上の FastAPI + Ledger API にデータを保存します。ブラウザごとに匿名IDが割り当てられるため、端末を変えた場合は別ID扱いになります。
                     共有したい場合は JSON でエクスポートし、必要に応じてインポートしてください。
                 </div>
                 {/* タブナビゲーション */}
@@ -1674,10 +1670,7 @@ const LedgerApp = () => {
             <AddAccountModal 
                 isOpen={showAddAccountModal}
                 onClose={() => setShowAddAccountModal(false)}
-                userId={userId}
-                db={db}
-                accounts={accounts}
-                setAccounts={setAccounts}
+                onCreateAccount={handleCreateAccount}
             />
             
             {/* 取引編集モーダル */}
@@ -1685,8 +1678,7 @@ const LedgerApp = () => {
                 isOpen={!!editingTransaction}
                 onClose={() => setEditingTransaction(null)}
                 transaction={editingTransaction}
-                userId={userId}
-                db={db}
+                onUpdateTransaction={handleUpdateTransaction}
             />
 
             {/* データ管理モーダル */}
@@ -1699,8 +1691,7 @@ const LedgerApp = () => {
             <ImportModal
                 isOpen={showImportModal}
                 onClose={() => setShowImportModal(false)}
-                userId={userId}
-                db={db}
+                onImport={handleImportData}
             />
 
             {/* 認証状態の表示 */}

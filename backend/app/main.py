@@ -7,12 +7,14 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from io import StringIO
 from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
+
+from description_utils import normalize_description
 
 from .azure_analyzer import (
     AzureAnalysisError,
@@ -28,6 +30,7 @@ from .config import get_settings
 from .exporter import export_to_csv_strings
 from .gemini import GeminiClient, GeminiError, GeminiExtraction
 from .job_manager import JobHandle, JobManager, JobRecord
+from .ledger_router import router as ledger_router
 from .models import (
     AssetRecord,
     DocumentAnalyzeResponse,
@@ -44,6 +47,7 @@ from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(title="InhTaxAutoPJ Backend", version="0.8.0")
+app.include_router(ledger_router)
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
 SUPPORTED_GEMINI_MODELS = {"gemini-2.5-flash", "gemini-2.5-pro"}
@@ -92,10 +96,13 @@ def _transactions_from_assets(assets: List[AssetRecord]) -> List[Dict[str, Any]]
     flattened: List[Dict[str, Any]] = []
     for asset in assets:
         for txn in asset.transactions or []:
+            raw_description = txn.description or ""
+            normalized_description = normalize_description(raw_description)
             flattened.append(
                 {
                     "transaction_date": txn.transaction_date,
-                    "description": txn.description,
+                    # JSON経路の description は常に正規化済みの摘要（パターンA）
+                    "description": normalized_description,
                     "withdrawal_amount": _normalize_amount(txn.withdrawal_amount),
                     "deposit_amount": _normalize_amount(txn.deposit_amount),
                     "balance": _normalize_amount(txn.balance) if txn.balance is not None else None,
@@ -105,10 +112,79 @@ def _transactions_from_assets(assets: List[AssetRecord]) -> List[Dict[str, Any]]
     return flattened
 
 
+def _build_transactions_bundle(export_assets: List[dict]) -> Dict[str, Any]:
+    accounts_bundle: List[Dict[str, Any]] = []
+    transactions_bundle: List[Dict[str, Any]] = []
+    exported_at = datetime.now(timezone.utc).isoformat()
+
+    for asset_index, asset in enumerate(export_assets, start=1):
+        identifiers = asset.get("identifiers") or {}
+        primary_id = (identifiers.get("primary") or "").strip()
+        account_id = primary_id or f"acct_{asset_index:04d}"
+        account_name = (
+            asset.get("asset_name")
+            or (asset.get("owner_name") or ["預金口座"])[0]
+            or "預金口座"
+        )
+        account_number = primary_id or identifiers.get("secondary") or ""
+        account_entry = {
+            "id": account_id,
+            "name": account_name,
+            "number": account_number,
+            "order": asset_index * 1000,
+            "source_document": asset.get("source_document"),
+            "category": asset.get("category"),
+            "type": asset.get("type"),
+        }
+        accounts_bundle.append(account_entry)
+
+        account_transactions = asset.get("transactions") or []
+        for txn_index, txn in enumerate(account_transactions, start=1):
+            transaction_date = txn.get("transaction_date")
+            raw_description = txn.get("description") or ""
+            description = normalize_description(raw_description)
+            withdrawal = _normalize_amount(txn.get("withdrawal_amount"))
+            deposit = _normalize_amount(txn.get("deposit_amount"))
+            balance_value = _normalize_amount(txn.get("balance"))
+            correction_note = txn.get("correction_note")
+            transaction_id = f"{account_id}-txn-{txn_index:05d}"
+            txn_entry = {
+                "id": transaction_id,
+                "account_id": account_id,
+                "accountId": account_id,
+                "account_name": account_name,
+                "transaction_date": transaction_date,
+                "date": transaction_date,
+                "description": description,
+                "memo": txn.get("memo") or description,
+                "withdrawal_amount": withdrawal,
+                "withdrawal": withdrawal,
+                "deposit_amount": deposit,
+                "deposit": deposit,
+                "balance": balance_value,
+                "type": "出金" if withdrawal > 0 else ("入金" if deposit > 0 else ""),
+                "row_color": None,
+                "rowColor": None,
+                "user_order": txn_index * 1000,
+                "userOrder": txn_index * 1000,
+                "correction_note": correction_note,
+                "correctionNote": correction_note,
+            }
+            transactions_bundle.append(txn_entry)
+
+    return {
+        "version": "2.0",
+        "exported_at": exported_at,
+        "accounts": accounts_bundle,
+        "transactions": transactions_bundle,
+    }
+
+
 def _build_result_files(export_assets: List[dict], transactions_payload: List[Dict[str, Any]]) -> Dict[str, str]:
     payload = {"assets": export_assets}
     files: Dict[str, str] = {}
-    json_text = json.dumps(transactions_payload, ensure_ascii=False)
+    bundle = _build_transactions_bundle(export_assets)
+    json_text = json.dumps(bundle, ensure_ascii=False)
     files["bank_transactions.json"] = base64.b64encode(json_text.encode("utf-8")).decode("ascii")
     csv_map = export_to_csv_strings(payload)
     for name, content in csv_map.items():

@@ -8,6 +8,8 @@
 - `backend/scripts/analyze_pdf.py` - CLI helper to run the Gemini layout flow against local PDFs.
 - `webapp/index.html`
  - Static Web UI that talks to the deployed API and downloads CSVs.
+- `ledger_frontend/`
+ - React + Vite 入出金検討表ツール。`npm run build` で成果物を `webapp/ledger/` に書き出し、Railway 上の FastAPI (`/api/ledger` 系) と連携して勘定科目のCRUDやインポート/エクスポートを行います。
 - `docs/USAGE.md`
  - How-to guide (usage + FAQ).
 
@@ -45,3 +47,7 @@ l:
 Large PDF uploads are automatically split before they hit Gemini. Control chunking with `GEMINI_DOCUMENT_MAX_MB` and per-chunk page count via `GEMINI_CHUNK_PAGE_LIMIT`.
 Gemini-based analysis requires `GEMINI_API_KEY`. Override the model with `GEMINI_MODEL` (default `gemini-1.5-flash-latest`).
 Gemini handles oversized PDFs by uploading them through the Files API automatically; no manual preprocessing is needed.
+
+## Ledger API
+
+The `/api/ledger/*` endpoints power the React 入出金検討表ツール. Data is persisted to a lightweight SQLite database whose location defaults to `data/ledger.db`. Override it with the `LEDGER_DB_PATH` environment variable when deploying (e.g. mounted volume or managed database path).

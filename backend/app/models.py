@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 DocumentType = Literal["bank_deposit", "land", "building", "transaction_history", "unknown"]
 
@@ -113,3 +113,121 @@ class TransactionExport(BaseModel):
     deposit_amount: int = 0
     balance: Optional[int] = None
     memo: Optional[str] = None
+
+
+class LedgerSessionRequest(BaseModel):
+    app_id: Optional[str] = Field(default="ledger-app")
+    session_token: Optional[str] = None
+
+
+class LedgerSessionResponse(BaseModel):
+    status: Literal["ok"]
+    app_id: str
+    user_id: str
+    session_token: str
+
+
+class LedgerAccountPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    name: str
+    number: Optional[str] = None
+    order: int = 0
+    user_id: str = Field(alias="userId")
+    created_at: Optional[str] = Field(default=None, alias="createdAt")
+    updated_at: Optional[str] = Field(default=None, alias="updatedAt")
+
+
+class LedgerAccountCreateRequest(BaseModel):
+    name: str
+    number: Optional[str] = None
+    order: Optional[int] = None
+
+
+class LedgerAccountUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    number: Optional[str] = None
+    order: Optional[int] = None
+
+
+class LedgerAccountOrderItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    account_id: str = Field(alias="id")
+    order: int
+
+
+class LedgerAccountReorderRequest(BaseModel):
+    items: List[LedgerAccountOrderItem]
+
+
+class LedgerTransactionPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    account_id: str = Field(alias="accountId")
+    date: str
+    withdrawal: int = 0
+    deposit: int = 0
+    memo: Optional[str] = None
+    type: Optional[str] = None
+    row_color: Optional[str] = Field(default=None, alias="rowColor")
+    user_order: Optional[float] = Field(default=None, alias="userOrder")
+    user_id: str = Field(alias="userId")
+    created_at: Optional[str] = Field(default=None, alias="createdAt")
+    updated_at: Optional[str] = Field(default=None, alias="updatedAt")
+
+
+class LedgerTransactionCreateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    account_id: str = Field(alias="accountId")
+    date: str
+    withdrawal: Optional[int] = 0
+    deposit: Optional[int] = 0
+    memo: Optional[str] = None
+    type: Optional[str] = None
+    user_order: Optional[float] = Field(default=None, alias="userOrder")
+    row_color: Optional[str] = Field(default=None, alias="rowColor")
+
+
+class LedgerTransactionUpdateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    account_id: Optional[str] = Field(default=None, alias="accountId")
+    date: Optional[str] = None
+    withdrawal: Optional[int] = None
+    deposit: Optional[int] = None
+    memo: Optional[str] = None
+    type: Optional[str] = None
+    row_color: Optional[str] = Field(default=None, alias="rowColor")
+    user_order: Optional[float] = Field(default=None, alias="userOrder")
+
+
+class LedgerTransactionOrderItem(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    transaction_id: str = Field(alias="id")
+    user_order: float = Field(alias="userOrder")
+
+
+class LedgerTransactionsReorderRequest(BaseModel):
+    items: List[LedgerTransactionOrderItem]
+
+
+class LedgerStateResponse(BaseModel):
+    status: Literal["ok"]
+    accounts: List[LedgerAccountPayload]
+    transactions: List[LedgerTransactionPayload]
+
+
+class LedgerImportRequest(BaseModel):
+    accounts: List[LedgerAccountPayload]
+    transactions: List[LedgerTransactionPayload]
+
+
+class LedgerExportResponse(LedgerStateResponse):
+    model_config = ConfigDict(populate_by_name=True)
+
+    exported_at: Optional[str] = Field(default=None, alias="exportedAt")

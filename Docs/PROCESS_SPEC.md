@@ -77,12 +77,13 @@
 3. **補正・整合パイプライン**
    1. `_enforce_continuity`: 残高差と摘要キーワードから入出金欄を補正し、必要に応じて残高を補完。
    2. `_finalize_transaction_directions`: 残高推移を基準に入出金方向を再判定。
-   3. `post_process_transactions`: 日付/摘要の整形など軽微な正規化。
+3. `post_process_transactions`: 日付/摘要の整形（AI出力のカタカナ→常用表現変換、数字のみの括弧除去、`手数料(1)`→`手数料`統合 など）を行う。
    4. `_finalize_transactions_from_balance`: 最終残高を絶対値とし、入出金金額の矛盾を再度解消（残高は変更しない）。
 
-4. **CSV生成・レスポンス作成**
+4. **CSV/JSON生成・レスポンス作成**
    - `export_to_csv_strings`が`assets.csv`と`bank_transactions.csv`を生成。
-   - 各CSVをUTF-8 BOM付き文字列→Base64エンコードし、`result_files`として保存。
+   - `bank_transactions.json`は `{"version": "2.0", "exported_at": "...", "accounts": [...], "transactions": [...]}` 形式で、各取引には `transaction_date/date`・`description/memo`・`withdrawal(_amount)`・`deposit(_amount)`・`accountId` などを同居させ、Excel/入出金検討表ツールの双方が同じファイルを参照できる。
+   - すべてのCSV/JSONをUTF-8(BOM付き)文字列→Base64エンコードし、`result_files`として保存。
    - `handle.update`で`status="completed"`、`processed_chunks=total_chunks`、`assets_payload`などをセット。
    - `JOB_TOTAL`などのタイミングログを`logger.info("TIMING|...")`で出力。
 
@@ -98,7 +99,7 @@
 | --- | --- | --- |
 | `_enforce_continuity(prev_balance, transactions)` | 摘要キーワード/残高差/前行残高を利用し、入出金欄の入れ替え・再算出・残高補完を実施。 | 摘要由来の誤判定や空欄を早期に補正 |
 | `_finalize_transaction_directions(transactions)` | 各行の残高差から入出金方向を再判定。必要に応じて再設定メモを追記。 | 残高を真値として入出金の符号を確定 |
-| `post_process_transactions(transactions)` | 日付整形・テキスト正規化など軽めの処理。 | CSV整形前に項目をクリーンに保つ |
+| `post_process_transactions(transactions)` | 日付整形・テキスト正規化（半角→全角、カタカナ略語→常用語、手数料（1/2）→手数料 など） | CSV整形前に項目をクリーンに保つ |
 | `_finalize_transactions_from_balance(transactions)` | 前行との差額と入出金欄だけを照合し、矛盾時には金額を入れ替える／再設定する。残高は一切変更しない。 | 最終的に残高が常に連続する状態を保証 |
 
 補正メモ (`correction_note`) には「残高差から入金額を再算出」「入出金欄を残高整合の結果として入れ替えました」などの履歴を残し、CSVで可視化できるようにしています。
@@ -146,3 +147,13 @@
    - `correction_note`は後工程の監査に利用されるため、補正内容を必ず追記する。
 
 この仕様書は v0.8 時点の内容に基づきます。機能追加・構成変更が行われた場合は、同ファイルを更新し、`AGENTS.md`にも履歴を残してください。
+
+---
+
+## 8. 入出金検討表ツール (ledger_frontend)
+
+- `ledger_frontend/` は React + Vite で構築された帳票ツールで、`npm run build` すると `webapp/ledger/` に静的成果物が生成されます。
+- Firebase 依存を撤廃し、Railway 上の FastAPI に追加された `/api/ledger/*` REST エンドポイントへ `fetch` で直接アクセスします。
+- ブラウザごとに `POST /api/ledger/session` で匿名トークンを取得し、以降のリクエストで `X-Ledger-Token` として送信することでユーザー領域を判別します。
+- 口座/取引の取得は `GET /api/ledger/state`、追加・削除は `/api/ledger/accounts*` / `/api/ledger/transactions*`、順序更新は `/reorder` エンドポイントで完結します。
+- `LEDGER_DB_PATH`（既定: `data/ledger.db`）で指定されたSQLiteに永続化され、Cloudflare Pages + Railway だけで入出金検討表の保存・復元が可能になりました。

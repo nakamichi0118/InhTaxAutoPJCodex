@@ -6,20 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>入出金検討表ツール</title>
     <script>
-      // TODO: 実際の Firebase プロジェクト設定を環境に合わせて上書きしてください。
+      // Cloudflare Pages などで配信する場合は、必要に応じて APP ID / Ledger API ベースURLを上書きしてください。
       window.__app_id = window.__app_id || "ledger-app";
-      if (!window.__firebase_config) {
-        window.__firebase_config = JSON.stringify({
-          apiKey: "YOUR_API_KEY",
-          authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-          projectId: "YOUR_PROJECT_ID",
-          storageBucket: "YOUR_PROJECT_ID.appspot.com",
-          messagingSenderId: "SENDER_ID",
-          appId: "APP_ID",
-        });
-      }
+      window.__ledger_api_base = window.__ledger_api_base || "/api/ledger";
     </script>
-    <script type="module" crossorigin src="./assets/index-CwrUkngJ.js"></script>
+    <script type="module" crossorigin src="./assets/index-DmpQqST0.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-DQ3P1g1z.css">
   </head>
   <body>
