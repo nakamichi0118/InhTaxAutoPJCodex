@@ -570,7 +570,7 @@
         <div id="ledgerShortcut" class="ledger-cta">
             <div>
                 <h3>入出金検討表ツールに送る</h3>
-                <p>CSV を保存した後、ブラウザ上で入出金を並べ替え・色付けできるツールを開けます。</p>
+                <p id="ledgerPendingMessage">CSV を保存した後、ブラウザ上で入出金を並べ替え・色付けできるツールを開けます。</p>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:0.8rem;align-items:center;">
                 <button type="button" class="primary small" id="openLedgerButton">入出金検討表を新しいタブで開く</button>
@@ -602,6 +602,7 @@
     const downloadList = document.getElementById('downloadList');
     const ledgerShortcut = document.getElementById('ledgerShortcut');
     const openLedgerButton = document.getElementById('openLedgerButton');
+    const ledgerPendingMessage = document.getElementById('ledgerPendingMessage');
     const rawJson = document.getElementById('rawJson');
     const uploadGuidance = document.getElementById('uploadGuidance');
     const notificationButton = document.getElementById('enableNotifications');
@@ -626,10 +627,18 @@
         if (jobId) {
             url.searchParams.set('job_id', jobId);
         }
-        if (state.latestLedgerCaseId) {
-            url.searchParams.set('case_id', state.latestLedgerCaseId);
-        }
         return url.href || url.toString();
+    }
+
+    function updateLedgerPendingMessage() {
+        if (!ledgerPendingMessage) {
+            return;
+        }
+        if (state.pendingImportCount > 0) {
+            ledgerPendingMessage.textContent = `未登録の口座候補が ${state.pendingImportCount} 件あります。入出金検討表で取り込みましょう。`;
+        } else {
+            ledgerPendingMessage.textContent = 'CSV を保存した後、ブラウザ上で入出金を並べ替え・色付けできるツールを開けます。';
+        }
     }
 
     const state = {
@@ -645,10 +654,12 @@
         analysisMode: 'gemini_pro',
         latestJobId: null,
         ledgerToken: null,
-        ledgerImportStatus: 'idle',
-        latestLedgerCaseId: null,
+        pendingImportCount: 0,
     };
+    state.pendingImportCount = loadPendingImportEntries().length;
     state.ledgerToken = getStoredLedgerToken();
+
+    const PENDING_IMPORT_STORAGE_KEY = 'pending_ledger_imports';
 
     function getStoredLedgerToken() {
         if (!window?.localStorage) {
@@ -700,70 +711,50 @@
         return token;
     }
 
+    function loadPendingImportEntries() {
+        if (!window?.localStorage) {
+            return [];
+        }
+        try {
+            const raw = window.localStorage.getItem(PENDING_IMPORT_STORAGE_KEY);
+            if (!raw) {
+                return [];
+            }
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) {
+                return [];
+            }
+            return parsed;
+        } catch (error) {
+            console.warn('Failed to load pending ledger imports:', error);
+            return [];
+        }
+    }
+
+    function savePendingImportEntries(entries) {
+        if (!window?.localStorage) {
+            return;
+        }
+        try {
+            window.localStorage.setItem(PENDING_IMPORT_STORAGE_KEY, JSON.stringify(entries.slice(0, 8)));
+        } catch (error) {
+            console.warn('Failed to persist pending ledger imports:', error);
+        }
+    }
+
+    function addPendingImportEntry(entry) {
+        const entries = loadPendingImportEntries().filter((item) => item.id !== entry.id && item.jobId !== entry.jobId);
+        entries.unshift(entry);
+        savePendingImportEntries(entries);
+        return entries;
+    }
+
     function deriveCaseName(doc) {
         if (!doc?.name) {
             return '新規案件';
         }
         const stripped = doc.name.replace(/\.[^.]+$/, '');
         return stripped || doc.name;
-    }
-
-    async function autoImportDocToLedger(doc) {
-        if (!LEDGER_API_BASE || !doc?.jobId || state.ledgerImportStatus === 'running') {
-            return;
-        }
-        try {
-            state.ledgerImportStatus = 'running';
-            const token = await ensureLedgerSessionToken();
-            if (!token) {
-                throw new Error('Ledgerトークンを取得できませんでした');
-            }
-            const previewRes = await fetch(`${LEDGER_API_BASE}/jobs/${doc.jobId}/preview`, {
-                headers: {
-                    'X-Ledger-Token': token,
-                    'X-Ledger-App': LEDGER_APP_ID,
-                },
-            });
-            if (!previewRes.ok) {
-                const text = await previewRes.text();
-                throw new Error(`Ledgerプレビュー取得に失敗しました (HTTP ${previewRes.status}): ${text}`);
-            }
-            const preview = await previewRes.json();
-            const accounts = preview.accounts || [];
-            if (!accounts.length) {
-                throw new Error('Ledgerプレビューに口座が含まれていません');
-            }
-            const mappings = accounts.map((account) => ({
-                assetId: account.assetId || account.asset_id,
-                mode: 'new',
-                accountName: account.accountName || deriveCaseName(doc),
-                accountNumber: account.accountNumber || '',
-            }));
-            const response = await fetch(`${LEDGER_API_BASE}/jobs/${doc.jobId}/import`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Ledger-Token': token,
-                    'X-Ledger-App': LEDGER_APP_ID,
-                },
-                body: JSON.stringify({
-                    newCaseName: deriveCaseName(doc),
-                    mappings,
-                }),
-            });
-            if (!response.ok) {
-                const text = await response.text();
-                throw new Error(`Ledgerインポート失敗 (HTTP ${response.status}): ${text}`);
-            }
-            const payload = await response.json();
-            state.latestLedgerCaseId = payload.caseId || state.latestLedgerCaseId;
-            state.ledgerImportStatus = 'success';
-            setStatus('入出金検討表への取り込みが完了しました。', 'success');
-        } catch (error) {
-            state.ledgerImportStatus = 'error';
-            console.warn('Ledger auto import failed', error);
-            setStatus('入出金検討表への取り込みに失敗しました。', 'warning');
-        }
     }
 
     const TAB_DEFINITIONS = [
@@ -872,6 +863,7 @@
         loadLimits();
         setupNotificationButton();
         setupCancelButton();
+        updateLedgerPendingMessage();
         statusBox.style.display = 'none';
         statusBox.classList.remove('visible');
     }
@@ -1311,7 +1303,16 @@
                 state.documents.push(doc);
                 state.activeDocId = doc.id;
                 notifyCompletion(doc);
-                await autoImportDocToLedger(doc);
+                if (Array.isArray(doc.assets) && doc.assets.length) {
+                    state.pendingImportCount = addPendingImportEntry({
+                        id: doc.id,
+                        jobId: doc.jobId,
+                        name: doc.name,
+                        createdAt: new Date().toISOString(),
+                        assets: doc.assets,
+                    }).length;
+                    updateLedgerPendingMessage();
+                }
                 setStatus(`(${index + 1}/${files.length}) 「${file.name}」の読み取りが完了しました。`, 'info');
             } catch (error) {
                 if (state.cancelRequested || error?.name === 'AbortError') {
@@ -1668,6 +1669,7 @@
                 openLedgerButton.onclick = () => window.open(ledgerUrl, '_blank', 'noopener');
             }
         }
+        updateLedgerPendingMessage();
     }
 
     function renderRawJson() {

@@ -5,6 +5,7 @@ import { List, Plus, Minus, CreditCard, Save, Trash2, X, Clipboard, ArrowDownUp,
 const DEFAULT_APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'ledger-app';
 const DEFAULT_LEDGER_API_BASE = typeof __ledger_api_base !== 'undefined' ? __ledger_api_base : '/api/ledger';
 const LEDGER_TOKEN_STORAGE_KEY = 'ledger_session_token';
+const PENDING_IMPORT_STORAGE_KEY = 'pending_ledger_imports';
 
 const appId = DEFAULT_APP_ID;
 const ledgerApiBase = DEFAULT_LEDGER_API_BASE;
@@ -29,6 +30,34 @@ const persistLedgerToken = (token) => {
         window.localStorage.setItem(LEDGER_TOKEN_STORAGE_KEY, token);
     } catch (error) {
         console.warn('Failed to store ledger token:', error);
+    }
+};
+
+const loadPendingImportsFromStorage = () => {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return [];
+    }
+    try {
+        const raw = window.localStorage.getItem(PENDING_IMPORT_STORAGE_KEY);
+        if (!raw) {
+            return [];
+        }
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        console.warn('Failed to read pending ledger imports:', error);
+        return [];
+    }
+};
+
+const savePendingImportsToStorage = (entries) => {
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return;
+    }
+    try {
+        window.localStorage.setItem(PENDING_IMPORT_STORAGE_KEY, JSON.stringify(entries));
+    } catch (error) {
+        console.warn('Failed to store pending ledger imports:', error);
     }
 };
 
@@ -485,6 +514,14 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
                         required
                     />
                 </div>
+                {pendingImports.length > 0 && (
+                    <div className="mb-4 text-sm bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+                        <span className="text-amber-900">未登録の通帳データが {pendingImports.length} 件あります。案件に取り込みましょう。</span>
+                        <MainButton onClick={() => setShowPendingImportModal(true)} className="bg-amber-600 hover:bg-amber-700">
+                            取り込みを開始
+                        </MainButton>
+                    </div>
+                )}
                 
                 <CurrencyInput 
                     label="出金額"
@@ -733,16 +770,77 @@ const ImportModal = ({ isOpen, onClose, onImport, caseName }) => {
     );
 };
 
+const PendingImportModal = ({
+    isOpen,
+    onClose,
+    pendingImports,
+    caseName,
+    onApply,
+    onManual,
+    onDismiss,
+    status,
+    error,
+}) => {
+    if (!isOpen) return null;
+    return (
+        <Modal isOpen={isOpen} title="未登録の口座候補" onClose={onClose} className="max-w-3xl">
+            <p className="text-sm text-gray-600 mb-4">
+                {caseName ? `${caseName} に` : '選択中の案件に'} 取り込める通帳データがブラウザに保存されています。自動取り込みを実行すると、口座と取引が案件へ追加されます。
+            </p>
+            <div className="space-y-4 max-h-[50vh] overflow-y-auto">
+                {pendingImports.length === 0 && <p className="text-sm text-gray-500">未登録のデータはありません。</p>}
+                {pendingImports.map((entry) => (
+                    <div key={entry.id} className="border border-blue-200 rounded-xl p-4 bg-blue-50">
+                        <div className="flex justify-between items-center mb-2">
+                            <div>
+                                <h4 className="text-lg font-semibold text-blue-900">{entry.name || '未命名の通帳'}</h4>
+                                <p className="text-xs text-blue-800">保存日時: {new Date(entry.createdAt).toLocaleString()}</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    className="px-3 py-1 text-xs rounded-full bg-white border border-red-200 text-red-600"
+                                    onClick={() => onDismiss(entry.id)}
+                                >
+                                    破棄
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex justify-between items-center flex-wrap gap-3">
+                            <p className="text-sm text-blue-900">口座候補: {(entry.assets || []).length} 件</p>
+                            <div className="flex gap-2">
+                                <MainButton
+                                    onClick={() => onApply(entry)}
+                                    Icon={status === 'applying' ? Loader2 : Save}
+                                    className="bg-blue-600 hover:bg-blue-700"
+                                    disabled={status === 'applying'}
+                                >
+                                    {status === 'applying' ? '取り込み中…' : 'この案件に取り込む'}
+                                </MainButton>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            {error && <p className="text-sm text-red-600 bg-red-100 rounded-lg p-2 mt-3">{error}</p>}
+            <div className="flex justify-end gap-3 mt-4">
+                <button className="text-sm text-gray-600 underline" onClick={onManual}>手動で口座を登録する</button>
+                <MainButton onClick={onClose} className="bg-gray-600 hover:bg-gray-700">閉じる</MainButton>
+            </div>
+        </Modal>
+    );
+};
+
 // --- Account Management Content (For the 'register' tab) ---
 
 const AccountManagementContent = ({
     accounts,
     caseName,
-    setShowAddAccountModal,
     setShowExportModal,
     setShowImportModal,
     onReorderAccountOrder,
     onDeleteAccount,
+    onAddAccountClick,
 }) => {
     const [message, setMessage] = useState('');
 
@@ -786,7 +884,7 @@ const AccountManagementContent = ({
         <div className="p-6 space-y-6">
             <h2 className="text-2xl font-bold text-gray-800 border-b pb-2 flex justify-between items-center">
                 <span>{caseName ? `${caseName} の口座管理` : '取引口座の登録・管理と並べ替え'}</span>
-                <MainButton Icon={Plus} onClick={() => setShowAddAccountModal(true)} className="bg-green-600 hover:bg-green-700 px-4 py-2 text-base">
+                <MainButton Icon={Plus} onClick={onAddAccountClick} className="bg-green-600 hover:bg-green-700 px-4 py-2 text-base">
                     新規口座を登録
                 </MainButton>
             </h2>
@@ -1362,6 +1460,10 @@ const LedgerApp = () => {
     const [jobImportStatus, setJobImportStatus] = useState('idle');
     const [jobImportError, setJobImportError] = useState('');
     const [newCaseName, setNewCaseName] = useState('');
+    const [pendingImports, setPendingImports] = useState([]);
+    const [showPendingImportModal, setShowPendingImportModal] = useState(false);
+    const [pendingImportStatus, setPendingImportStatus] = useState('idle');
+    const [pendingImportError, setPendingImportError] = useState('');
     const initialJobId = useMemo(() => {
         const params = new URLSearchParams(window.location.search);
         return params.get('job_id');
@@ -1494,6 +1596,17 @@ const LedgerApp = () => {
         })();
     }, [sessionToken, fetchCases, refreshState]);
 
+    useEffect(() => {
+        setPendingImports(loadPendingImportsFromStorage());
+        const handler = (event) => {
+            if (event.key === PENDING_IMPORT_STORAGE_KEY) {
+                setPendingImports(loadPendingImportsFromStorage());
+            }
+        };
+        window.addEventListener('storage', handler);
+        return () => window.removeEventListener('storage', handler);
+    }, []);
+
     const fetchJobPreview = useCallback(
         async (jobId) => {
             if (!jobId) return;
@@ -1529,6 +1642,24 @@ const LedgerApp = () => {
         if (!sessionToken || !initialJobId) return;
         fetchJobPreview(initialJobId);
     }, [sessionToken, initialJobId, fetchJobPreview]);
+
+    const handleAddAccountClick = useCallback(() => {
+        if (pendingImports.length > 0) {
+            setShowPendingImportModal(true);
+        } else {
+            setShowAddAccountModal(true);
+        }
+    }, [pendingImports]);
+
+    const handleManualAddAccount = useCallback(() => {
+        setShowPendingImportModal(false);
+        setShowAddAccountModal(true);
+    }, []);
+
+    const handleDismissPendingEntry = useCallback((entryId) => {
+        removePendingImportEntry(entryId);
+        setPendingImportError('');
+    }, [removePendingImportEntry]);
 
     const handleCreateAccount = useCallback(
         async ({ name, number }) => {
@@ -1617,6 +1748,49 @@ const LedgerApp = () => {
         }));
     }, []);
 
+    const handleImportPendingEntry = useCallback(
+        async (entry, { targetCaseId, newCase } = {}) => {
+            if (!entry) return;
+            const payload = convertAssetsToLedgerPayload(entry);
+            if (!payload.accounts.length) {
+                throw new Error('取り込む口座がありません。');
+            }
+            const caseIdToUse = newCase ? null : targetCaseId || selectedCaseId;
+            if (!caseIdToUse && !newCase) {
+                throw new Error('案件が選択されていません。');
+            }
+            setPendingImportStatus('applying');
+            setPendingImportError('');
+            try {
+                await callLedgerApi('/import', {
+                    method: 'POST',
+                    body: {
+                        caseId: caseIdToUse,
+                        newCaseName: newCase || null,
+                        accounts: payload.accounts,
+                        transactions: payload.transactions,
+                    },
+                });
+                const remaining = removePendingImportEntry(entry.id);
+                if (!remaining.length) {
+                    setShowPendingImportModal(false);
+                }
+                await fetchCases();
+                const nextCaseId = caseIdToUse || selectedCaseId;
+                if (nextCaseId) {
+                    await refreshState(nextCaseId, true);
+                }
+                setPendingImportStatus('idle');
+                setPendingImportError('');
+            } catch (err) {
+                console.error('Pending import failed:', err);
+                setPendingImportStatus('error');
+                setPendingImportError(err.message);
+            }
+        },
+        [callLedgerApi, convertAssetsToLedgerPayload, removePendingImportEntry, fetchCases, refreshState, selectedCaseId],
+    );
+
     const changeCase = useCallback(async (caseId) => {
         if (!caseId) return;
         setSelectedCaseId(caseId);
@@ -1648,6 +1822,47 @@ const LedgerApp = () => {
             setError(err);
         }
     }, [callLedgerApi, fetchCases, changeCase, setError]);
+
+    const refreshPendingImports = useCallback(() => {
+        const entries = loadPendingImportsFromStorage();
+        setPendingImports(entries);
+        return entries;
+    }, []);
+
+    const removePendingImportEntry = useCallback((entryId) => {
+        const entries = loadPendingImportsFromStorage().filter((entry) => entry.id !== entryId);
+        savePendingImportsToStorage(entries);
+        setPendingImports(entries);
+        return entries;
+    }, []);
+
+    const convertAssetsToLedgerPayload = useCallback((entry) => {
+        const accounts = [];
+        const transactions = [];
+        (entry?.assets || []).forEach((asset, index) => {
+            const identifiers = asset?.identifiers || {};
+            const accountId = String(asset?.record_id || identifiers.primary || `${entry.id || 'pending'}_${index + 1}`);
+            const name = asset?.asset_name || (Array.isArray(asset?.owner_name) && asset.owner_name[0]) || `口座${index + 1}`;
+            accounts.push({
+                id: accountId,
+                name,
+                number: identifiers.primary || identifiers.secondary || '',
+                order: (index + 1) * 1000,
+            });
+            (asset?.transactions || []).forEach((txn, txnIndex) => {
+                transactions.push({
+                    id: `${accountId}-${txnIndex + 1}`,
+                    accountId,
+                    date: txn?.transaction_date,
+                    withdrawal: parseInt(txn?.withdrawal_amount || 0, 10),
+                    deposit: parseInt(txn?.deposit_amount || 0, 10),
+                    memo: txn?.correction_note || txn?.memo || txn?.description || '',
+                    type: txn?.description || '',
+                });
+            });
+        });
+        return { accounts, transactions };
+    }, []);
 
     const handleApplyJobImport = useCallback(async () => {
         if (!jobPreview || !jobPreview.accounts?.length) return;
@@ -1712,11 +1927,11 @@ const LedgerApp = () => {
                 <AccountManagementContent 
                     accounts={accounts} 
                     caseName={cases.find((item) => item.id === selectedCaseId)?.name}
-                    setShowAddAccountModal={setShowAddAccountModal}
                     setShowExportModal={setShowExportModal}
                     setShowImportModal={setShowImportModal}
                     onReorderAccountOrder={handleReorderAccounts}
                     onDeleteAccount={handleDeleteAccount}
+                    onAddAccountClick={handleAddAccountClick}
                 />
             );
         }
@@ -2011,6 +2226,18 @@ const LedgerApp = () => {
                 onClose={() => setShowImportModal(false)}
                 onImport={handleImportData}
                 caseName={cases.find((item) => item.id === selectedCaseId)?.name}
+            />
+
+            <PendingImportModal
+                isOpen={showPendingImportModal}
+                onClose={() => setShowPendingImportModal(false)}
+                pendingImports={pendingImports}
+                caseName={cases.find((item) => item.id === selectedCaseId)?.name}
+                onApply={(entry) => handleImportPendingEntry(entry, { targetCaseId: selectedCaseId })}
+                onManual={handleManualAddAccount}
+                onDismiss={handleDismissPendingEntry}
+                status={pendingImportStatus}
+                error={pendingImportError}
             />
 
             {/* 認証状態の表示 */}
