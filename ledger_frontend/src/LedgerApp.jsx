@@ -781,6 +781,7 @@ const PendingImportModal = ({
     status,
     error,
 }) => {
+    const [newCaseNames, setNewCaseNames] = useState({});
     if (!isOpen) return null;
     return (
         <Modal isOpen={isOpen} title="未登録の口座候補" onClose={onClose} className="max-w-3xl">
@@ -806,16 +807,32 @@ const PendingImportModal = ({
                                 </button>
                             </div>
                         </div>
-                        <div className="flex justify-between items-center flex-wrap gap-3">
+                        <div className="space-y-3">
                             <p className="text-sm text-blue-900">口座候補: {(entry.assets || []).length} 件</p>
-                            <div className="flex gap-2">
+                            <MainButton
+                                onClick={() => onApply(entry)}
+                                Icon={status === 'applying' ? Loader2 : Save}
+                                className="bg-blue-600 hover:bg-blue-700"
+                                disabled={status === 'applying'}
+                            >
+                                {status === 'applying' ? '取り込み中…' : '選択中の案件に取り込む'}
+                            </MainButton>
+                            <div className="bg-white border border-blue-200 rounded-lg p-3 space-y-2">
+                                <p className="text-xs text-blue-900">新しい案件として取り込む</p>
+                                <input
+                                    type="text"
+                                    value={newCaseNames[entry.id] || ''}
+                                    onChange={(e) => setNewCaseNames((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                                    placeholder={`${entry.name || '通帳'}の案件名`}
+                                    className="w-full p-2 border rounded-md text-sm"
+                                />
                                 <MainButton
-                                    onClick={() => onApply(entry)}
+                                    onClick={() => onApply(entry, { newCaseName: newCaseNames[entry.id] || entry.name || '新規案件' })}
                                     Icon={status === 'applying' ? Loader2 : Save}
-                                    className="bg-blue-600 hover:bg-blue-700"
+                                    className="bg-amber-600 hover:bg-amber-700"
                                     disabled={status === 'applying'}
                                 >
-                                    {status === 'applying' ? '取り込み中…' : 'この案件に取り込む'}
+                                    {status === 'applying' ? '取り込み中…' : '新しい案件に登録'}
                                 </MainButton>
                             </div>
                         </div>
@@ -1749,14 +1766,14 @@ const LedgerApp = () => {
     }, []);
 
     const handleImportPendingEntry = useCallback(
-        async (entry, { targetCaseId, newCase } = {}) => {
+        async (entry, { targetCaseId, newCaseName } = {}) => {
             if (!entry) return;
             const payload = convertAssetsToLedgerPayload(entry);
             if (!payload.accounts.length) {
                 throw new Error('取り込む口座がありません。');
             }
-            const caseIdToUse = newCase ? null : targetCaseId || selectedCaseId;
-            if (!caseIdToUse && !newCase) {
+            const caseIdToUse = newCaseName ? null : targetCaseId || selectedCaseId;
+            if (!caseIdToUse && !newCaseName) {
                 throw new Error('案件が選択されていません。');
             }
             setPendingImportStatus('applying');
@@ -1766,7 +1783,7 @@ const LedgerApp = () => {
                     method: 'POST',
                     body: {
                         caseId: caseIdToUse,
-                        newCaseName: newCase || null,
+                        newCaseName: newCaseName || null,
                         accounts: payload.accounts,
                         transactions: payload.transactions,
                     },
@@ -2233,7 +2250,7 @@ const LedgerApp = () => {
                 onClose={() => setShowPendingImportModal(false)}
                 pendingImports={pendingImports}
                 caseName={cases.find((item) => item.id === selectedCaseId)?.name}
-                onApply={(entry) => handleImportPendingEntry(entry, { targetCaseId: selectedCaseId })}
+                onApply={(entry, overrides = {}) => handleImportPendingEntry(entry, { targetCaseId: selectedCaseId, ...overrides })}
                 onManual={handleManualAddAccount}
                 onDismiss={handleDismissPendingEntry}
                 status={pendingImportStatus}
