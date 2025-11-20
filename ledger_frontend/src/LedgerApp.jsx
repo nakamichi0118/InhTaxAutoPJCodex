@@ -521,7 +521,7 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
 
 // --- Add Account Modal Component (New) ---
 
-const AddAccountModal = ({ isOpen, onClose, onCreateAccount }) => {
+const AddAccountModal = ({ isOpen, onClose, onCreateAccount, caseName }) => {
   const [name, setName] = useState('');
   const [number, setNumber] = useState('');
   const [message, setMessage] = useState('');
@@ -546,6 +546,7 @@ const AddAccountModal = ({ isOpen, onClose, onCreateAccount }) => {
 
   return (
     <Modal isOpen={isOpen} title="新規取引口座の登録" onClose={onClose}>
+      {caseName && <p className="text-sm text-gray-500 mb-3">案件: {caseName}</p>}
       <form onSubmit={(e) => { e.preventDefault(); handleSaveAccount(); }}>
         <InputField label="名義人 (口座名)" id="accountName" value={name} onChange={(e) => setName(e.target.value)} required icon={Clipboard} placeholder="山田 太郎" />
         <InputField label="口座番号" id="accountNumber" value={number} onChange={(e) => setNumber(e.target.value.replace(/[^0-9]/g, ''))} required icon={CreditCard} placeholder="1234567" type="tel" inputMode="numeric" pattern="[0-9]*" />
@@ -613,7 +614,7 @@ const ExportModal = ({ isOpen, onClose, accounts, transactions }) => {
     );
 };
 
-const ImportModal = ({ isOpen, onClose, onImport }) => {
+const ImportModal = ({ isOpen, onClose, onImport, caseName }) => {
     const [file, setFile] = useState(null);
     const [isConfirmed, setIsConfirmed] = useState(false);
     const [status, setStatus] = useState('idle'); // 'idle', 'processing', 'success', 'error'
@@ -679,7 +680,7 @@ const ImportModal = ({ isOpen, onClose, onImport }) => {
             <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded" role="alert">
                 <p className="font-bold">【重要】データの復元に関する警告</p>
                 <p className="text-sm">
-                    この操作を行うと、現在登録されている<span className="font-semibold">すべての口座と取引履歴が完全に削除</span>され、
+                    この操作を行うと、{caseName ? `${caseName} に` : ''}現在登録されている<span className="font-semibold">すべての口座と取引履歴が完全に削除</span>され、
                     ファイルの内容に置き換わります。この操作は元に戻せません。
                 </p>
             </div>
@@ -736,6 +737,7 @@ const ImportModal = ({ isOpen, onClose, onImport }) => {
 
 const AccountManagementContent = ({
     accounts,
+    caseName,
     setShowAddAccountModal,
     setShowExportModal,
     setShowImportModal,
@@ -783,7 +785,7 @@ const AccountManagementContent = ({
     return (
         <div className="p-6 space-y-6">
             <h2 className="text-2xl font-bold text-gray-800 border-b pb-2 flex justify-between items-center">
-                <span>取引口座の登録・管理と並べ替え</span>
+                <span>{caseName ? `${caseName} の口座管理` : '取引口座の登録・管理と並べ替え'}</span>
                 <MainButton Icon={Plus} onClick={() => setShowAddAccountModal(true)} className="bg-green-600 hover:bg-green-700 px-4 py-2 text-base">
                     新規口座を登録
                 </MainButton>
@@ -1344,6 +1346,8 @@ const IntegratedTabContent = ({
 const LedgerApp = () => {
     const [sessionToken, setSessionToken] = useState(null);
     const [userId, setUserId] = useState(null);
+    const [cases, setCases] = useState([]);
+    const [selectedCaseId, setSelectedCaseId] = useState(null);
     const [accounts, setAccounts] = useState([]);
     const [transactions, setTransactions] = useState([]);
     const [activeTab, setActiveTab] = useState('register');
@@ -1353,6 +1357,15 @@ const LedgerApp = () => {
     const [editingTransaction, setEditingTransaction] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [jobPreview, setJobPreview] = useState(null);
+    const [jobImportMappings, setJobImportMappings] = useState({});
+    const [jobImportStatus, setJobImportStatus] = useState('idle');
+    const [jobImportError, setJobImportError] = useState('');
+    const [newCaseName, setNewCaseName] = useState('');
+    const initialJobId = useMemo(() => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('job_id');
+    }, []);
 
     const callLedgerApi = useCallback(async (path, options = {}) => {
         if (!sessionToken) {
@@ -1389,22 +1402,42 @@ const LedgerApp = () => {
             return null;
         }
         return response.json();
-    }, [sessionToken]);
+    }, [sessionToken, ledgerApiBase]);
 
-    const refreshState = useCallback(async (showSpinner = true) => {
-        if (!sessionToken) return;
-        if (showSpinner) setLoading(true);
-        try {
-            const data = await callLedgerApi('/state');
-            setAccounts(data.accounts || []);
-            setTransactions(data.transactions || []);
-            setError(null);
-        } catch (err) {
-            console.error('Failed to fetch ledger state:', err);
-            setError(err);
-        } finally {
-            if (showSpinner) setLoading(false);
-        }
+    const refreshState = useCallback(
+        async (caseIdOverride = null, showSpinner = true) => {
+            if (!sessionToken) return;
+            const targetCaseId = caseIdOverride || selectedCaseId;
+            if (!targetCaseId) return;
+            if (showSpinner) setLoading(true);
+            try {
+                const data = await callLedgerApi(`/state?case_id=${encodeURIComponent(targetCaseId)}`);
+                setAccounts(data.accounts || []);
+                setTransactions(data.transactions || []);
+                if (Array.isArray(data.cases)) {
+                    setCases(data.cases);
+                }
+                if (data.case?.id) {
+                    setSelectedCaseId(data.case.id);
+                }
+                setError(null);
+            } catch (err) {
+                console.error('Failed to fetch ledger state:', err);
+                setError(err);
+            } finally {
+                if (showSpinner) setLoading(false);
+            }
+        },
+        [sessionToken, selectedCaseId, callLedgerApi],
+    );
+
+    const fetchCases = useCallback(async () => {
+        if (!sessionToken) return [];
+        const data = await callLedgerApi('/cases');
+        const fetchedCases = data.cases || [];
+        setCases(fetchedCases);
+        setSelectedCaseId((current) => current || fetchedCases[0]?.id || null);
+        return fetchedCases;
     }, [sessionToken, callLedgerApi]);
 
     useEffect(() => {
@@ -1447,53 +1480,102 @@ const LedgerApp = () => {
     }, []);
 
     useEffect(() => {
-        if (sessionToken) {
-            refreshState();
-        }
-    }, [sessionToken, refreshState]);
+        if (!sessionToken) return;
+        (async () => {
+            const list = await fetchCases();
+            const targetCaseId = list[0]?.id;
+            if (targetCaseId) {
+                await refreshState(targetCaseId, true);
+            } else {
+                setLoading(false);
+            }
+        })();
+    }, [sessionToken, fetchCases, refreshState]);
 
-    const handleCreateAccount = useCallback(async ({ name, number }) => {
-        await callLedgerApi('/accounts', {
-            method: 'POST',
-            body: { name, number },
-        });
-        await refreshState(false);
-    }, [callLedgerApi, refreshState]);
+    const fetchJobPreview = useCallback(
+        async (jobId) => {
+            if (!jobId) return;
+            try {
+                setJobImportStatus('loading');
+                const data = await callLedgerApi(`/jobs/${jobId}/preview`);
+                const normalizedAccounts = (data.accounts || []).map((account) => ({
+                    ...account,
+                    assetId: account.assetId || account.asset_id,
+                }));
+                const defaultMappings = {};
+                normalizedAccounts.forEach((account) => {
+                    defaultMappings[account.assetId] = {
+                        mode: 'new',
+                        accountName: account.accountName,
+                        accountNumber: account.accountNumber,
+                    };
+                });
+                setJobPreview({ jobId: data.job_id || data.jobId, accounts: normalizedAccounts });
+                setJobImportMappings(defaultMappings);
+                setJobImportStatus('idle');
+            } catch (err) {
+                console.error('Failed to fetch job preview:', err);
+                setJobPreview(null);
+                setJobImportStatus('error');
+                setJobImportError(err.message);
+            }
+        },
+        [callLedgerApi],
+    );
+
+    useEffect(() => {
+        if (!sessionToken || !initialJobId) return;
+        fetchJobPreview(initialJobId);
+    }, [sessionToken, initialJobId, fetchJobPreview]);
+
+    const handleCreateAccount = useCallback(
+        async ({ name, number }) => {
+            if (!selectedCaseId) {
+                throw new Error('案件が選択されていません。');
+            }
+            await callLedgerApi('/accounts', {
+                method: 'POST',
+                body: { name, number, caseId: selectedCaseId },
+            });
+            await refreshState(selectedCaseId, false);
+        },
+        [callLedgerApi, refreshState, selectedCaseId],
+    );
 
     const handleReorderAccounts = useCallback(async (items) => {
-        if (!items || items.length === 0) return;
-        await callLedgerApi('/accounts/reorder', {
+        if (!items || items.length === 0 || !selectedCaseId) return;
+        await callLedgerApi(`/accounts/reorder?case_id=${encodeURIComponent(selectedCaseId)}`, {
             method: 'POST',
             body: { items },
         });
-        await refreshState(false);
-    }, [callLedgerApi, refreshState]);
+        await refreshState(selectedCaseId, false);
+    }, [callLedgerApi, refreshState, selectedCaseId]);
 
     const handleDeleteAccount = useCallback(async (accountId) => {
         await callLedgerApi(`/accounts/${accountId}`, { method: 'DELETE' });
-        await refreshState(false);
-    }, [callLedgerApi, refreshState]);
+        await refreshState(selectedCaseId, false);
+    }, [callLedgerApi, refreshState, selectedCaseId]);
 
     const handleCreateTransaction = useCallback(async (payload) => {
         await callLedgerApi('/transactions', {
             method: 'POST',
             body: payload,
         });
-        await refreshState(false);
-    }, [callLedgerApi, refreshState]);
+        await refreshState(selectedCaseId, false);
+    }, [callLedgerApi, refreshState, selectedCaseId]);
 
     const handleUpdateTransaction = useCallback(async (transactionId, payload) => {
         await callLedgerApi(`/transactions/${transactionId}`, {
             method: 'PATCH',
             body: payload,
         });
-        await refreshState(false);
-    }, [callLedgerApi, refreshState]);
+        await refreshState(selectedCaseId, false);
+    }, [callLedgerApi, refreshState, selectedCaseId]);
 
     const handleDeleteTransaction = useCallback(async (transactionId) => {
         await callLedgerApi(`/transactions/${transactionId}`, { method: 'DELETE' });
-        await refreshState(false);
-    }, [callLedgerApi, refreshState]);
+        await refreshState(selectedCaseId, false);
+    }, [callLedgerApi, refreshState, selectedCaseId]);
 
     const handleReorderTransactions = useCallback(async (items) => {
         if (!items || items.length === 0) return;
@@ -1501,24 +1583,122 @@ const LedgerApp = () => {
             method: 'POST',
             body: { items },
         });
-        await refreshState(false);
-    }, [callLedgerApi, refreshState]);
+        await refreshState(selectedCaseId, false);
+    }, [callLedgerApi, refreshState, selectedCaseId]);
 
     const handleUpdateTransactionColor = useCallback(async (transactionId, rowColor) => {
         await callLedgerApi(`/transactions/${transactionId}`, {
             method: 'PATCH',
             body: { rowColor },
         });
-        await refreshState(false);
-    }, [callLedgerApi, refreshState]);
+        await refreshState(selectedCaseId, false);
+    }, [callLedgerApi, refreshState, selectedCaseId]);
 
     const handleImportData = useCallback(async (payload) => {
+        if (!selectedCaseId) {
+            throw new Error('案件が選択されていません。');
+        }
         await callLedgerApi('/import', {
             method: 'POST',
-            body: payload,
+            body: { ...payload, caseId: selectedCaseId },
         });
-        await refreshState(false);
-    }, [callLedgerApi, refreshState]);
+        await refreshState(selectedCaseId, false);
+    }, [callLedgerApi, refreshState, selectedCaseId]);
+
+    const handleJobMappingChange = useCallback((assetId, updates) => {
+        setJobImportMappings((prev) => ({
+            ...prev,
+            [assetId]: {
+                ...prev[assetId],
+                ...updates,
+            },
+        }));
+    }, []);
+
+    const changeCase = useCallback(async (caseId) => {
+        if (!caseId) return;
+        setSelectedCaseId(caseId);
+        await refreshState(caseId, true);
+    }, [refreshState]);
+
+    const handleCaseSelectChange = useCallback(
+        async (eventOrValue) => {
+            const nextCaseId = typeof eventOrValue === 'string' ? eventOrValue : eventOrValue.target.value;
+            await changeCase(nextCaseId);
+        },
+        [changeCase],
+    );
+
+    const handleCreateCaseClick = useCallback(async () => {
+        const name = window.prompt('新しい案件名を入力してください', '案件');
+        if (!name) {
+            return;
+        }
+        try {
+            const created = await callLedgerApi('/cases', {
+                method: 'POST',
+                body: { name },
+            });
+            await fetchCases();
+            setSelectedCaseId(created.id);
+            await refreshState(created.id, true);
+        } catch (err) {
+            console.error('Failed to create case:', err);
+            setError(err);
+        }
+    }, [callLedgerApi, fetchCases, refreshState]);
+
+    const handleApplyJobImport = useCallback(async () => {
+        if (!jobPreview || !jobPreview.accounts?.length) return;
+        if (!selectedCaseId && !newCaseName) {
+            setJobImportError('案件を選択するか、新しい案件名を入力してください。');
+            return;
+        }
+        try {
+            setJobImportStatus('applying');
+            setJobImportError('');
+            const payload = {
+                caseId: newCaseName ? null : selectedCaseId,
+                newCaseName: newCaseName || null,
+                mappings: jobPreview.accounts.map((account) => {
+                    const config = jobImportMappings[account.assetId] || { mode: 'new' };
+                    if (config.mode === 'merge' && !config.targetAccountId) {
+                        throw new Error(`${account.accountName || '口座'} のマージ先を選択してください。`);
+                    }
+                    return {
+                        assetId: account.assetId,
+                        mode: config.mode || 'new',
+                        targetAccountId: config.targetAccountId || null,
+                        accountName: config.accountName || account.accountName,
+                        accountNumber: config.accountNumber || account.accountNumber,
+                    };
+                }),
+            };
+            const response = await callLedgerApi(`/jobs/${jobPreview.jobId}/import`, {
+                method: 'POST',
+                body: payload,
+            });
+            const nextCaseId = response.caseId || selectedCaseId;
+            await fetchCases();
+            if (nextCaseId) {
+                setSelectedCaseId(nextCaseId);
+                await refreshState(nextCaseId, true);
+            }
+            setJobPreview(null);
+            setJobImportMappings({});
+            setNewCaseName('');
+            if (initialJobId) {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('job_id');
+                window.history.replaceState({}, '', url.toString());
+            }
+            setJobImportStatus('success');
+        } catch (err) {
+            console.error('Job import failed:', err);
+            setJobImportStatus('error');
+            setJobImportError(err.message);
+        }
+    }, [jobPreview, jobImportMappings, selectedCaseId, newCaseName, initialJobId, callLedgerApi, fetchCases, refreshState]);
 
     // 3. アクティブなタブの内容をレンダリング
     const renderContent = () => {
@@ -1530,6 +1710,7 @@ const LedgerApp = () => {
             return (
                 <AccountManagementContent 
                     accounts={accounts} 
+                    caseName={cases.find((item) => item.id === selectedCaseId)?.name}
                     setShowAddAccountModal={setShowAddAccountModal}
                     setShowExportModal={setShowExportModal}
                     setShowImportModal={setShowImportModal}
@@ -1629,6 +1810,141 @@ const LedgerApp = () => {
                     この画面では Railway 上の FastAPI + Ledger API にデータを保存します。ブラウザごとに匿名IDが割り当てられるため、端末を変えた場合は別ID扱いになります。
                     共有したい場合は JSON でエクスポートし、必要に応じてインポートしてください。
                 </div>
+                <div className="flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
+                    <div className="flex flex-col">
+                        <label className="text-sm text-gray-600 mb-1">案件を選択</label>
+                        <select
+                            value={selectedCaseId || ''}
+                            onChange={handleCaseSelectChange}
+                            className="p-2 border rounded-lg min-w-[220px]"
+                        >
+                            {cases.length === 0 && <option value="">案件がありません</option>}
+                            {cases.map((item) => (
+                                <option key={item.id} value={item.id}>{item.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <MainButton Icon={Plus} onClick={handleCreateCaseClick} className="bg-indigo-600 hover:bg-indigo-700">
+                            案件を追加
+                        </MainButton>
+                    </div>
+                </div>
+
+                {jobPreview && (
+                    <section className="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 mb-5 space-y-4">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div>
+                                <h3 className="text-xl font-semibold text-yellow-900">OCR結果を案件へ取り込み</h3>
+                                <p className="text-sm text-yellow-800">ジョブID: {jobPreview.jobId} ／ 口座候補 {jobPreview.accounts.length} 件</p>
+                            </div>
+                            <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                                <div className="flex flex-col">
+                                    <label className="text-xs text-yellow-900">既存案件を選択</label>
+                                    <select
+                                        value={newCaseName ? '' : (selectedCaseId || '')}
+                                        onChange={(e) => {
+                                            setNewCaseName('');
+                                            handleCaseSelectChange(e);
+                                        }}
+                                        className="p-2 border rounded-md text-sm"
+                                        disabled={jobImportStatus === 'applying'}
+                                    >
+                                        <option value="">案件を選択</option>
+                                        {cases.map((item) => (
+                                            <option key={item.id} value={item.id}>{item.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="flex flex-col">
+                                    <label className="text-xs text-yellow-900">新しい案件名（任意）</label>
+                                    <input
+                                        type="text"
+                                        value={newCaseName}
+                                        onChange={(e) => setNewCaseName(e.target.value)}
+                                        placeholder="例: 佐藤家_2025"
+                                        className="p-2 border rounded-md text-sm"
+                                        disabled={jobImportStatus === 'applying'}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {jobPreview.accounts.map((account) => {
+                                const config = jobImportMappings[account.assetId] || { mode: 'new' };
+                                return (
+                                    <div key={account.assetId} className="bg-white border border-yellow-200 rounded-xl p-4 space-y-3 shadow-sm">
+                                        <div>
+                                            <h4 className="text-lg font-semibold text-gray-900">{account.accountName || '預金口座'}</h4>
+                                            <p className="text-xs text-gray-500">口座番号: {account.accountNumber || '不明'}</p>
+                                            <p className="text-xs text-gray-500">取引件数: {account.transactionCount} ／ 入金 {account.totalDeposit} ／ 出金 {account.totalWithdrawal}</p>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="flex items-center space-x-2 text-sm">
+                                                <input
+                                                    type="radio"
+                                                    checked={config.mode === 'new'}
+                                                    onChange={() => handleJobMappingChange(account.assetId, { mode: 'new', targetAccountId: null })}
+                                                />
+                                                <span>新規口座として登録</span>
+                                            </label>
+                                            {config.mode === 'new' && (
+                                                <div className="grid grid-cols-1 gap-2 text-sm">
+                                                    <input
+                                                        type="text"
+                                                        value={config.accountName ?? account.accountName ?? ''}
+                                                        onChange={(e) => handleJobMappingChange(account.assetId, { accountName: e.target.value })}
+                                                        placeholder="口座名"
+                                                        className="p-2 border rounded-md"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        value={config.accountNumber ?? account.accountNumber ?? ''}
+                                                        onChange={(e) => handleJobMappingChange(account.assetId, { accountNumber: e.target.value })}
+                                                        placeholder="口座番号"
+                                                        className="p-2 border rounded-md"
+                                                    />
+                                                </div>
+                                            )}
+                                            <label className="flex items-center space-x-2 text-sm">
+                                                <input
+                                                    type="radio"
+                                                    checked={config.mode === 'merge'}
+                                                    onChange={() => handleJobMappingChange(account.assetId, { mode: 'merge' })}
+                                                />
+                                                <span>既存口座とマージ</span>
+                                            </label>
+                                            {config.mode === 'merge' && (
+                                                <select
+                                                    value={config.targetAccountId || ''}
+                                                    onChange={(e) => handleJobMappingChange(account.assetId, { targetAccountId: e.target.value })}
+                                                    className="p-2 border rounded-md text-sm"
+                                                >
+                                                    <option value="">既存口座を選択</option>
+                                                    {accounts.map((acc) => (
+                                                        <option key={acc.id} value={acc.id}>{acc.name} / {acc.number || '番号なし'}</option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {jobImportError && <p className="text-sm text-red-600 bg-red-100 border border-red-200 rounded-lg p-2">{jobImportError}</p>}
+                        <div className="flex justify-end">
+                            <MainButton
+                                onClick={handleApplyJobImport}
+                                Icon={jobImportStatus === 'applying' ? Loader2 : Save}
+                                className="bg-yellow-600 hover:bg-yellow-700"
+                                disabled={jobImportStatus === 'applying'}
+                            >
+                                {jobImportStatus === 'applying' ? '取り込み中…' : 'この内容で案件に反映'}
+                            </MainButton>
+                        </div>
+                    </section>
+                )}
                 {/* タブナビゲーション */}
                 <div className="flex border-b border-gray-200 overflow-x-auto whitespace-nowrap">
                     {/* 口座登録/ホームタブ (機能強化済み) */}
@@ -1671,6 +1987,7 @@ const LedgerApp = () => {
                 isOpen={showAddAccountModal}
                 onClose={() => setShowAddAccountModal(false)}
                 onCreateAccount={handleCreateAccount}
+                caseName={cases.find((item) => item.id === selectedCaseId)?.name}
             />
             
             {/* 取引編集モーダル */}
@@ -1692,6 +2009,7 @@ const LedgerApp = () => {
                 isOpen={showImportModal}
                 onClose={() => setShowImportModal(false)}
                 onImport={handleImportData}
+                caseName={cases.find((item) => item.id === selectedCaseId)?.name}
             />
 
             {/* 認証状態の表示 */}

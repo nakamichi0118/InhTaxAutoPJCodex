@@ -30,6 +30,7 @@ from .config import get_settings
 from .exporter import export_to_csv_strings
 from .gemini import GeminiClient, GeminiError, GeminiExtraction
 from .job_manager import JobHandle, JobManager, JobRecord
+from . import job_registry
 from .ledger_router import router as ledger_router
 from .models import (
     AssetRecord,
@@ -1258,6 +1259,7 @@ def _log_timing(job_id: str, component: str, page: int, start_ts: float) -> None
 
 
 job_manager = JobManager(_process_job_record)
+job_registry.job_manager = job_manager
 
 
 @app.get("/api/ping")

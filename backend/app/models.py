@@ -131,6 +131,7 @@ class LedgerAccountPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
+    case_id: str = Field(alias="caseId")
     name: str
     number: Optional[str] = None
     order: int = 0
@@ -143,6 +144,7 @@ class LedgerAccountCreateRequest(BaseModel):
     name: str
     number: Optional[str] = None
     order: Optional[int] = None
+    case_id: Optional[str] = Field(default=None, alias="caseId")
 
 
 class LedgerAccountUpdateRequest(BaseModel):
@@ -216,13 +218,30 @@ class LedgerTransactionsReorderRequest(BaseModel):
     items: List[LedgerTransactionOrderItem]
 
 
+class LedgerCasePayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    name: str
+    user_id: str = Field(alias="userId")
+    created_at: Optional[str] = Field(default=None, alias="createdAt")
+    updated_at: Optional[str] = Field(default=None, alias="updatedAt")
+
+
+class LedgerCaseCreateRequest(BaseModel):
+    name: str
+
+
 class LedgerStateResponse(BaseModel):
     status: Literal["ok"]
+    case: LedgerCasePayload
+    cases: List[LedgerCasePayload]
     accounts: List[LedgerAccountPayload]
     transactions: List[LedgerTransactionPayload]
 
 
 class LedgerImportRequest(BaseModel):
+    case_id: str = Field(alias="caseId")
     accounts: List[LedgerAccountPayload]
     transactions: List[LedgerTransactionPayload]
 
@@ -231,3 +250,42 @@ class LedgerExportResponse(LedgerStateResponse):
     model_config = ConfigDict(populate_by_name=True)
 
     exported_at: Optional[str] = Field(default=None, alias="exportedAt")
+
+
+class LedgerJobPreviewTransaction(BaseModel):
+    transaction_date: Optional[str]
+    description: Optional[str]
+    withdrawal_amount: int = 0
+    deposit_amount: int = 0
+    memo: Optional[str] = None
+
+
+class LedgerJobPreviewAccount(BaseModel):
+    asset_id: str = Field(alias="assetId")
+    account_name: Optional[str] = Field(alias="accountName", default=None)
+    account_number: Optional[str] = Field(alias="accountNumber", default=None)
+    owner_name: List[str] = Field(default_factory=list, alias="ownerName")
+    transaction_count: int = Field(alias="transactionCount")
+    total_withdrawal: int = Field(alias="totalWithdrawal")
+    total_deposit: int = Field(alias="totalDeposit")
+    sample_transactions: List[LedgerJobPreviewTransaction] = Field(default_factory=list, alias="sampleTransactions")
+
+
+class LedgerJobPreviewResponse(BaseModel):
+    status: Literal["ok"]
+    job_id: str = Field(alias="jobId")
+    accounts: List[LedgerJobPreviewAccount]
+
+
+class LedgerJobImportMapping(BaseModel):
+    asset_id: str = Field(alias="assetId")
+    mode: Literal["new", "merge"]
+    target_account_id: Optional[str] = Field(default=None, alias="targetAccountId")
+    account_name: Optional[str] = Field(default=None, alias="accountName")
+    account_number: Optional[str] = Field(default=None, alias="accountNumber")
+
+
+class LedgerJobImportRequest(BaseModel):
+    case_id: Optional[str] = Field(default=None, alias="caseId")
+    new_case_name: Optional[str] = Field(default=None, alias="newCaseName")
+    mappings: List[LedgerJobImportMapping]

@@ -5,7 +5,7 @@ import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 
 @dataclass(frozen=True)
@@ -15,13 +15,17 @@ class LedgerScope:
 
 
 class LedgerStore:
-    """Lightweight SQLite-backed storage for ledger accounts and transactions."""
+    """SQLite-backed storage for ledger cases, accounts, and transactions."""
 
     def __init__(self, db_path: Path) -> None:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._initialize()
+
+    # ------------------------------------------------------------------
+    # Low-level helpers
+    # ------------------------------------------------------------------
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self._db_path, check_same_thread=False)
@@ -34,15 +38,25 @@ class LedgerStore:
             conn.executescript(
                 """
                 PRAGMA journal_mode=WAL;
-                CREATE TABLE IF NOT EXISTS ledger_accounts (
+                CREATE TABLE IF NOT EXISTS ledger_cases (
                     id TEXT PRIMARY KEY,
                     app_id TEXT NOT NULL,
                     user_id TEXT NOT NULL,
                     name TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                CREATE TABLE IF NOT EXISTS ledger_accounts (
+                    id TEXT PRIMARY KEY,
+                    app_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
                     number TEXT,
                     display_order REAL NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY(case_id) REFERENCES ledger_cases(id) ON DELETE CASCADE
                 );
                 CREATE TABLE IF NOT EXISTS ledger_transactions (
                     id TEXT PRIMARY KEY,
@@ -60,48 +74,128 @@ class LedgerStore:
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY(account_id) REFERENCES ledger_accounts(id) ON DELETE CASCADE
                 );
-                CREATE INDEX IF NOT EXISTS idx_ledger_accounts_scope ON ledger_accounts(app_id, user_id);
-                CREATE INDEX IF NOT EXISTS idx_ledger_transactions_scope ON ledger_transactions(app_id, user_id);
-                CREATE INDEX IF NOT EXISTS idx_ledger_transactions_account ON ledger_transactions(account_id);
+                CREATE INDEX IF NOT EXISTS idx_cases_scope ON ledger_cases(app_id, user_id);
+                CREATE INDEX IF NOT EXISTS idx_accounts_scope_case ON ledger_accounts(app_id, user_id, case_id);
+                CREATE INDEX IF NOT EXISTS idx_transactions_scope ON ledger_transactions(app_id, user_id);
+                CREATE INDEX IF NOT EXISTS idx_transactions_account ON ledger_transactions(account_id);
                 """
             )
+            self._ensure_case_column(conn)
+
+    def _ensure_case_column(self, conn: sqlite3.Connection) -> None:
+        cursor = conn.execute("PRAGMA table_info(ledger_accounts)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "case_id" not in columns:
+            conn.execute("ALTER TABLE ledger_accounts ADD COLUMN case_id TEXT")
+            conn.execute("UPDATE ledger_accounts SET case_id = '' WHERE case_id IS NULL")
+
+    # ------------------------------------------------------------------
+    # Case operations
+    # ------------------------------------------------------------------
+
+    def list_cases(self, scope: LedgerScope) -> List[dict]:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, name, created_at, updated_at
+                FROM ledger_cases
+                WHERE app_id = ? AND user_id = ?
+                ORDER BY created_at ASC
+                """,
+                (scope.app_id, scope.user_id),
+            )
+            return [self._serialize_case(row, scope) for row in cursor.fetchall()]
+
+    def _serialize_case(self, row: sqlite3.Row, scope: LedgerScope) -> dict:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "user_id": scope.user_id,
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def create_case(self, scope: LedgerScope, name: str) -> dict:
+        case_id = uuid.uuid4().hex
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO ledger_cases (id, app_id, user_id, name)
+                VALUES (?, ?, ?, ?)
+                """,
+                (case_id, scope.app_id, scope.user_id, name.strip() or "案件"),
+            )
+        return self.get_case(scope, case_id)
+
+    def get_case(self, scope: LedgerScope, case_id: str) -> dict:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, name, created_at, updated_at
+                FROM ledger_cases
+                WHERE app_id = ? AND user_id = ? AND id = ?
+                """,
+                (scope.app_id, scope.user_id, case_id),
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise KeyError("case_not_found")
+            return self._serialize_case(row, scope)
+
+    def get_or_create_default_case(self, scope: LedgerScope) -> dict:
+        cases = self.list_cases(scope)
+        if cases:
+            return cases[0]
+        return self.create_case(scope, "案件")
 
     # ------------------------------------------------------------------
     # Account operations
     # ------------------------------------------------------------------
 
-    def list_accounts(self, scope: LedgerScope) -> List[dict]:
+    def list_accounts(self, scope: LedgerScope, case_id: str) -> List[dict]:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, name, number, display_order, created_at, updated_at
+                SELECT id, name, number, case_id, display_order, created_at, updated_at
                 FROM ledger_accounts
-                WHERE app_id = ? AND user_id = ?
+                WHERE app_id = ? AND user_id = ? AND case_id = ?
                 ORDER BY display_order ASC, created_at ASC
                 """,
-                (scope.app_id, scope.user_id),
+                (scope.app_id, scope.user_id, case_id),
             )
             return [self._serialize_account(row, scope) for row in cursor.fetchall()]
 
-    def _next_account_order(self, conn: sqlite3.Connection, scope: LedgerScope) -> float:
+    def _next_account_order(self, conn: sqlite3.Connection, scope: LedgerScope, case_id: str) -> float:
         cursor = conn.execute(
-            "SELECT COALESCE(MAX(display_order), 0) FROM ledger_accounts WHERE app_id = ? AND user_id = ?",
-            (scope.app_id, scope.user_id),
+            """
+            SELECT COALESCE(MAX(display_order), 0)
+            FROM ledger_accounts
+            WHERE app_id = ? AND user_id = ? AND case_id = ?
+            """,
+            (scope.app_id, scope.user_id, case_id),
         )
         current = cursor.fetchone()[0]
         return float(current or 0) + 1000.0
 
-    def create_account(self, scope: LedgerScope, *, name: str, number: Optional[str], order: Optional[float] = None) -> dict:
+    def create_account(
+        self,
+        scope: LedgerScope,
+        *,
+        case_id: str,
+        name: str,
+        number: Optional[str],
+        order: Optional[float] = None,
+    ) -> dict:
         account_id = uuid.uuid4().hex
         with self._connect() as conn:
             conn.execute("BEGIN")
-            resolved_order = order if order is not None else self._next_account_order(conn, scope)
+            resolved_order = order if order is not None else self._next_account_order(conn, scope, case_id)
             conn.execute(
                 """
-                INSERT INTO ledger_accounts (id, app_id, user_id, name, number, display_order)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO ledger_accounts (id, app_id, user_id, case_id, name, number, display_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (account_id, scope.app_id, scope.user_id, name.strip(), (number or "").strip(), resolved_order),
+                (account_id, scope.app_id, scope.user_id, case_id, name.strip(), (number or "").strip(), resolved_order),
             )
             conn.commit()
         return self.get_account(scope, account_id)
@@ -110,7 +204,7 @@ class LedgerStore:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, name, number, display_order, created_at, updated_at
+                SELECT id, name, number, case_id, display_order, created_at, updated_at
                 FROM ledger_accounts
                 WHERE app_id = ? AND user_id = ? AND id = ?
                 """,
@@ -121,7 +215,15 @@ class LedgerStore:
                 raise KeyError("account_not_found")
             return self._serialize_account(row, scope)
 
-    def update_account(self, scope: LedgerScope, account_id: str, *, name: Optional[str] = None, number: Optional[str] = None, order: Optional[float] = None) -> dict:
+    def update_account(
+        self,
+        scope: LedgerScope,
+        account_id: str,
+        *,
+        name: Optional[str] = None,
+        number: Optional[str] = None,
+        order: Optional[float] = None,
+    ) -> dict:
         updates = []
         params: List[object] = []
         if name is not None:
@@ -153,7 +255,7 @@ class LedgerStore:
             if cursor.rowcount == 0:
                 raise KeyError("account_not_found")
 
-    def reorder_accounts(self, scope: LedgerScope, items: Iterable[tuple[str, float]]) -> None:
+    def reorder_accounts(self, scope: LedgerScope, case_id: str, items: Iterable[tuple[str, float]]) -> None:
         with self._connect() as conn:
             conn.execute("BEGIN")
             for account_id, order in items:
@@ -161,9 +263,9 @@ class LedgerStore:
                     """
                     UPDATE ledger_accounts
                     SET display_order = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE app_id = ? AND user_id = ? AND id = ?
+                    WHERE app_id = ? AND user_id = ? AND id = ? AND case_id = ?
                     """,
-                    (order, scope.app_id, scope.user_id, account_id),
+                    (order, scope.app_id, scope.user_id, account_id, case_id),
                 )
             conn.commit()
 
@@ -171,16 +273,18 @@ class LedgerStore:
     # Transaction operations
     # ------------------------------------------------------------------
 
-    def list_transactions(self, scope: LedgerScope) -> List[dict]:
+    def list_transactions(self, scope: LedgerScope, case_id: str) -> List[dict]:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, account_id, date, withdrawal, deposit, memo, type, row_color, user_order, created_at, updated_at
-                FROM ledger_transactions
-                WHERE app_id = ? AND user_id = ?
-                ORDER BY COALESCE(user_order, CAST(strftime('%s', date || ' 00:00:00') AS REAL)), date ASC, id ASC
+                SELECT t.id, t.account_id, t.date, t.withdrawal, t.deposit, t.memo, t.type,
+                       t.row_color, t.user_order, t.created_at, t.updated_at
+                FROM ledger_transactions AS t
+                INNER JOIN ledger_accounts AS a ON t.account_id = a.id
+                WHERE t.app_id = ? AND t.user_id = ? AND a.case_id = ?
+                ORDER BY COALESCE(t.user_order, CAST(strftime('%s', t.date || ' 00:00:00') AS REAL)), t.date ASC, t.id ASC
                 """,
-                (scope.app_id, scope.user_id),
+                (scope.app_id, scope.user_id, case_id),
             )
             return [self._serialize_transaction(row, scope) for row in cursor.fetchall()]
 
@@ -190,6 +294,17 @@ class LedgerStore:
             (scope.app_id, scope.user_id, account_id),
         )
         return cursor.fetchone() is not None
+
+    def _max_user_order_for_account(self, conn: sqlite3.Connection, scope: LedgerScope, account_id: str) -> float:
+        cursor = conn.execute(
+            """
+            SELECT COALESCE(MAX(user_order), 0)
+            FROM ledger_transactions
+            WHERE app_id = ? AND user_id = ? AND account_id = ?
+            """,
+            (scope.app_id, scope.user_id, account_id),
+        )
+        return float(cursor.fetchone()[0] or 0)
 
     def create_transaction(
         self,
@@ -211,6 +326,9 @@ class LedgerStore:
             conn.execute("BEGIN")
             if not self._account_exists(conn, scope, account_id):
                 raise KeyError("account_not_found")
+            resolved_order = user_order
+            if resolved_order is None:
+                resolved_order = self._max_user_order_for_account(conn, scope, account_id) + 1000.0
             conn.execute(
                 """
                 INSERT INTO ledger_transactions (id, app_id, user_id, account_id, date, withdrawal, deposit, memo, type, user_order, row_color)
@@ -226,12 +344,47 @@ class LedgerStore:
                     deposit,
                     (memo or "").strip(),
                     (txn_type or "").strip(),
-                    user_order,
+                    resolved_order,
                     (row_color or None),
                 ),
             )
             conn.commit()
         return self.get_transaction(scope, txn_id)
+
+    def bulk_insert_transactions(
+        self,
+        scope: LedgerScope,
+        account_id: str,
+        records: Sequence[Tuple[str, int, int, Optional[str], Optional[str]]],
+    ) -> None:
+        if not records:
+            return
+        with self._connect() as conn:
+            conn.execute("BEGIN")
+            if not self._account_exists(conn, scope, account_id):
+                raise KeyError("account_not_found")
+            base_order = self._max_user_order_for_account(conn, scope, account_id) + 1000.0
+            for index, (date, withdrawal, deposit, memo, txn_type) in enumerate(records, start=1):
+                txn_id = uuid.uuid4().hex
+                conn.execute(
+                    """
+                    INSERT INTO ledger_transactions (id, app_id, user_id, account_id, date, withdrawal, deposit, memo, type, user_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        txn_id,
+                        scope.app_id,
+                        scope.user_id,
+                        account_id,
+                        date,
+                        withdrawal,
+                        deposit,
+                        (memo or "").strip(),
+                        (txn_type or "").strip(),
+                        base_order + index,
+                    ),
+                )
+            conn.commit()
 
     def get_transaction(self, scope: LedgerScope, transaction_id: str) -> dict:
         with self._connect() as conn:
@@ -326,33 +479,36 @@ class LedgerStore:
     # Import / export helpers
     # ------------------------------------------------------------------
 
-    def replace_all(self, scope: LedgerScope, *, accounts: List[dict], transactions: List[dict]) -> None:
+    def replace_all(self, scope: LedgerScope, *, case_id: str, accounts: List[dict], transactions: List[dict]) -> None:
         with self._connect() as conn:
             conn.execute("BEGIN")
-            conn.execute("DELETE FROM ledger_transactions WHERE app_id = ? AND user_id = ?", (scope.app_id, scope.user_id))
-            conn.execute("DELETE FROM ledger_accounts WHERE app_id = ? AND user_id = ?", (scope.app_id, scope.user_id))
+            conn.execute(
+                "DELETE FROM ledger_transactions WHERE app_id = ? AND user_id = ? AND account_id IN (SELECT id FROM ledger_accounts WHERE case_id = ?)",
+                (scope.app_id, scope.user_id, case_id),
+            )
+            conn.execute(
+                "DELETE FROM ledger_accounts WHERE app_id = ? AND user_id = ? AND case_id = ?",
+                (scope.app_id, scope.user_id, case_id),
+            )
             for account in accounts:
-                order_value = account.get("order")
-                if order_value is None:
-                    order_value = account.get("display_order")
                 conn.execute(
                     """
-                    INSERT INTO ledger_accounts (id, app_id, user_id, name, number, display_order)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO ledger_accounts (id, app_id, user_id, case_id, name, number, display_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         account.get("id") or uuid.uuid4().hex,
                         scope.app_id,
                         scope.user_id,
+                        case_id,
                         (account.get("name") or "").strip(),
                         (account.get("number") or "").strip(),
-                        float(order_value or 0),
+                        float(account.get("order") or 0),
                     ),
                 )
             for txn in transactions:
                 account_id = txn.get("accountId") or txn.get("account_id")
-                date_value = txn.get("date")
-                if not account_id or not date_value:
+                if not account_id:
                     continue
                 conn.execute(
                     """
@@ -364,7 +520,7 @@ class LedgerStore:
                         scope.app_id,
                         scope.user_id,
                         account_id,
-                        date_value,
+                        txn.get("date"),
                         int(txn.get("withdrawal") or txn.get("withdrawal_amount") or 0),
                         int(txn.get("deposit") or txn.get("deposit_amount") or 0),
                         (txn.get("memo") or "").strip(),
@@ -375,10 +531,10 @@ class LedgerStore:
                 )
             conn.commit()
 
-    def snapshot(self, scope: LedgerScope) -> dict:
+    def snapshot(self, scope: LedgerScope, case_id: str) -> dict:
         return {
-            "accounts": self.list_accounts(scope),
-            "transactions": self.list_transactions(scope),
+            "accounts": self.list_accounts(scope, case_id),
+            "transactions": self.list_transactions(scope, case_id),
         }
 
     # ------------------------------------------------------------------
@@ -388,6 +544,7 @@ class LedgerStore:
     def _serialize_account(self, row: sqlite3.Row, scope: LedgerScope) -> dict:
         return {
             "id": row["id"],
+            "case_id": row["case_id"],
             "name": row["name"],
             "number": row["number"],
             "order": int(row["display_order"] or 0),
@@ -405,8 +562,8 @@ class LedgerStore:
             "deposit": int(row["deposit"] or 0),
             "memo": row["memo"],
             "type": row["type"],
-            "row_color": row["row_color"],
-            "user_order": row["user_order"],
+            "rowColor": row["row_color"],
+            "userOrder": row["user_order"],
             "user_id": scope.user_id,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],

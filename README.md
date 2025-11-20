@@ -10,6 +10,7 @@
  - Static Web UI that talks to the deployed API and downloads CSVs.
 - `ledger_frontend/`
  - React + Vite 入出金検討表ツール。`npm run build` で成果物を `webapp/ledger/` に書き出し、Railway 上の FastAPI (`/api/ledger` 系) と連携して勘定科目のCRUDやインポート/エクスポートを行います。
+  - OCRジョブが完了したら `webapp/index.html` の「入出金検討表ツールに送る」から `job_id` 付きで遷移し、案件選択→口座ごとの新規登録/既存マージを行えます。案件はRailway上のLedger APIで管理し、ブラウザ間で共有されます。
 - `docs/USAGE.md`
  - How-to guide (usage + FAQ).
 

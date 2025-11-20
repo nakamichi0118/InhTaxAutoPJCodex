@@ -155,5 +155,7 @@
 - `ledger_frontend/` は React + Vite で構築された帳票ツールで、`npm run build` すると `webapp/ledger/` に静的成果物が生成されます。
 - Firebase 依存を撤廃し、Railway 上の FastAPI に追加された `/api/ledger/*` REST エンドポイントへ `fetch` で直接アクセスします。
 - ブラウザごとに `POST /api/ledger/session` で匿名トークンを取得し、以降のリクエストで `X-Ledger-Token` として送信することでユーザー領域を判別します。
-- 口座/取引の取得は `GET /api/ledger/state`、追加・削除は `/api/ledger/accounts*` / `/api/ledger/transactions*`、順序更新は `/reorder` エンドポイントで完結します。
+- 口座/取引の取得は `GET /api/ledger/state?case_id=...`、追加・削除は `/api/ledger/accounts*` / `/api/ledger/transactions*`、順序更新は `/reorder` エンドポイントで完結します。
+- 案件（case）は `/api/ledger/cases` で管理し、UI の案件切替ドロップダウンから既存案件を選択または新規案件を作成できます。
+- OCR完了後は `webapp/index.html` のCTAが `job_id` 付きで `/ledger/?job_id=...` に遷移します。Ledger側では `GET /api/ledger/jobs/{job_id}/preview` で検出口座を取得し、ユーザーが「新規口座として登録」または「既存口座へマージ」を選択→`POST /api/ledger/jobs/{job_id}/import` で取引を案件へ反映します。
 - `LEDGER_DB_PATH`（既定: `data/ledger.db`）で指定されたSQLiteに永続化され、Cloudflare Pages + Railway だけで入出金検討表の保存・復元が可能になりました。

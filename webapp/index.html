@@ -611,6 +611,14 @@
             ? window.__ledger_app_url
             : './ledger/';
 
+    function buildLedgerUrl(jobId) {
+        if (!jobId) {
+            return LEDGER_APP_URL;
+        }
+        const separator = LEDGER_APP_URL.includes('?') ? '&' : '?';
+        return `${LEDGER_APP_URL}${separator}job_id=${encodeURIComponent(jobId)}`;
+    }
+
     const state = {
         documents: [],
         activeDocId: null,
@@ -622,6 +630,7 @@
         isProcessing: false,
         currentAbortController: null,
         analysisMode: 'gemini_pro',
+        latestJobId: null,
     };
 
     const TAB_DEFINITIONS = [
@@ -730,11 +739,6 @@
         loadLimits();
         setupNotificationButton();
         setupCancelButton();
-        if (openLedgerButton) {
-            openLedgerButton.addEventListener('click', () => {
-                window.open(LEDGER_APP_URL, '_blank', 'noopener');
-            });
-        }
         statusBox.style.display = 'none';
         statusBox.classList.remove('visible');
     }
@@ -1227,6 +1231,7 @@
             throw new Error('取引情報が見つかりませんでした。');
         }
         const durationSeconds = Math.max(0, (performance.now() - startedAt) / 1000);
+        state.latestJobId = jobId;
         return {
             id: createDocId(),
             name: file.name,
@@ -1524,6 +1529,10 @@
         downloadSection.style.display = hasDownloads ? 'block' : 'none';
         if (ledgerShortcut) {
             ledgerShortcut.style.display = hasDownloads ? 'flex' : 'none';
+            if (hasDownloads && openLedgerButton) {
+                const ledgerUrl = buildLedgerUrl(state.latestJobId);
+                openLedgerButton.onclick = () => window.open(ledgerUrl, '_blank', 'noopener');
+            }
         }
     }
 
