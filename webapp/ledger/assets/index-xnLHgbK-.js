@@ -7861,6 +7861,78 @@ const AddAccountModal = ({ isOpen, onClose, onCreateAccount, caseName }) => {
     ] })
   ] });
 };
+const EditAccountModal = ({ isOpen, onClose, account, onUpdateAccount }) => {
+  const [holder, setHolder] = reactExports.useState((account == null ? void 0 : account.holder_name) || (account == null ? void 0 : account.holderName) || "");
+  const [name, setName] = reactExports.useState((account == null ? void 0 : account.name) || "");
+  const [number, setNumber] = reactExports.useState((account == null ? void 0 : account.number) || "");
+  const [message, setMessage] = reactExports.useState("");
+  reactExports.useEffect(() => {
+    setHolder((account == null ? void 0 : account.holder_name) || (account == null ? void 0 : account.holderName) || "");
+    setName((account == null ? void 0 : account.name) || "");
+    setNumber((account == null ? void 0 : account.number) || "");
+    setMessage("");
+  }, [account, isOpen]);
+  if (!account) {
+    return null;
+  }
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    try {
+      await onUpdateAccount(account.id, {
+        name,
+        number,
+        holderName: holder
+      });
+      setMessage("口座情報を更新しました。");
+      setTimeout(() => {
+        setMessage("");
+        onClose();
+      }, 1200);
+    } catch (error) {
+      console.error("Failed to update account:", error);
+      setMessage(error.message || "更新に失敗しました。");
+    }
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(Modal, { isOpen, onClose, title: "口座情報を編集", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { onSubmit: handleSubmit, className: "space-y-4", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      InputField,
+      {
+        label: "名義人",
+        id: "editHolder",
+        value: holder,
+        onChange: (e) => setHolder(e.target.value),
+        icon: Clipboard
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      InputField,
+      {
+        label: "口座表示名",
+        id: "editAccountName",
+        value: name,
+        onChange: (e) => setName(e.target.value),
+        icon: List
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      InputField,
+      {
+        label: "口座番号",
+        id: "editAccountNumber",
+        value: number,
+        onChange: (e) => setNumber(e.target.value.replace(/[^0-9]/g, "")),
+        icon: CreditCard,
+        inputMode: "numeric",
+        pattern: "[0-9]*"
+      }
+    ),
+    message && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: `p-3 rounded-lg my-2 text-sm ${message.includes("失敗") ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`, children: message }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-end gap-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "text-sm text-gray-500", onClick: onClose, children: "キャンセル" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { type: "submit", Icon: Save, className: "bg-blue-600 hover:bg-blue-700", children: "更新する" })
+    ] })
+  ] }) });
+};
 const UsageGuideModal = ({ isOpen, onClose }) => {
   return /* @__PURE__ */ jsxRuntimeExports.jsx(Modal, { isOpen, onClose, title: "入出金検討表の使い方", className: "max-w-3xl", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-5 text-sm text-gray-700 leading-relaxed", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-base text-gray-800", children: [
@@ -8149,7 +8221,8 @@ const AccountManagementContent = ({
   setShowImportModal,
   onReorderAccountOrder,
   onDeleteAccount,
-  onAddAccountClick
+  onAddAccountClick,
+  onEditAccount
 }) => {
   const [message, setMessage] = reactExports.useState("");
   const handleReorderAccount = async (currentAccount, targetAccount) => {
@@ -8228,6 +8301,15 @@ const AccountManagementContent = ({
               index > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleReorderAccount(acc, sortedAccounts[index - 1]), title: "上へ移動", className: "text-gray-500 hover:text-blue-600 p-0.5 rounded-full hover:bg-blue-50 transition", children: /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronUp, { size: 20 }) }),
               index < sortedAccounts.length - 1 && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { onClick: () => handleReorderAccount(acc, sortedAccounts[index + 1]), title: "下へ移動", className: "text-gray-500 hover:text-blue-600 p-0.5 rounded-full hover:bg-blue-50 transition", children: /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronDown, { size: 20 }) })
             ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "button",
+              {
+                onClick: () => onEditAccount(acc),
+                className: "text-blue-500 hover:text-blue-700 p-2 rounded-full hover:bg-blue-50 transition",
+                title: "口座情報を編集",
+                children: /* @__PURE__ */ jsxRuntimeExports.jsx(SquarePen, { size: 18 })
+              }
+            ),
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               "button",
               {
@@ -8439,7 +8521,7 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
     ] })
   ] });
 };
-const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorChange, onReorder, showAccountInfo = true, sorting = null, onSortField = null, sortableFields = [] }) => {
+const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorChange, onReorder, showAccountInfo = true, sorting = null, onSortField = null, sortableFields = [], highlightAccountIds = [] }) => {
   const accountMap = reactExports.useMemo(() => {
     if (!accounts) return {};
     return accounts.reduce((map, acc) => {
@@ -8545,7 +8627,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
             return "hover:bg-gray-50";
         }
       };
-      const rowClass = getRowClass(t.rowColor);
+      const rowClass = `${getRowClass(t.rowColor)} ${(highlightAccountIds == null ? void 0 : highlightAccountIds.includes(t.accountId)) ? "ring-1 ring-blue-200" : ""}`;
       return /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { className: `${rowClass} transition duration-150`, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900", children: t.date }),
         showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { className: "px-3 py-3 whitespace-nowrap text-xs text-gray-600", children: [
@@ -8625,7 +8707,11 @@ const IntegratedTabContent = ({
   onSortChange,
   filters,
   onFilterChange,
-  onFilterReset
+  onFilterReset,
+  comparisonSelection,
+  onToggleComparisonAccount,
+  onClearComparisonSelection,
+  onApplyComparisonFilter
 }) => {
   const [message, setMessage] = reactExports.useState("");
   const accountMap = reactExports.useMemo(() => {
@@ -8634,10 +8720,22 @@ const IntegratedTabContent = ({
       return map;
     }, {});
   }, [allAccounts]);
-  const accountFilterOptions = reactExports.useMemo(() => [
-    { value: "all", label: "すべての口座" },
-    ...(allAccounts || []).map((account) => ({ value: account.id, label: account.name || account.number || account.id }))
-  ], [allAccounts]);
+  const comparisonSet = reactExports.useMemo(() => new Set(comparisonSelection || []), [comparisonSelection]);
+  const accountFilterOptions = reactExports.useMemo(() => {
+    const list = [{ value: "all", label: "すべての口座" }];
+    if ((comparisonSelection || []).length) {
+      list.push({ value: "selected", label: "比較中の口座" });
+    } else {
+      list.push({ value: "selected", label: "比較中の口座 (未選択)", disabled: true });
+    }
+    list.push(
+      ...(allAccounts || []).map((account) => ({
+        value: account.id,
+        label: account.name || account.number || account.id
+      }))
+    );
+    return list;
+  }, [allAccounts, comparisonSelection]);
   const colorOptions = [
     { value: "all", label: "すべて" },
     { value: "green", label: "緑" },
@@ -8665,7 +8763,11 @@ const IntegratedTabContent = ({
     const maxAmount = filters.maxAmount ? parseInt(filters.maxAmount, 10) : null;
     return integratedTransactions.filter((transaction) => {
       const account = accountMap[transaction.accountId];
-      if (filters.accountId && filters.accountId !== "all" && transaction.accountId !== filters.accountId) {
+      if (filters.accountId === "selected") {
+        if (!comparisonSet.size || !comparisonSet.has(transaction.accountId)) {
+          return false;
+        }
+      } else if (filters.accountId && filters.accountId !== "all" && transaction.accountId !== filters.accountId) {
         return false;
       }
       const isWithdrawal = (transaction.withdrawal || 0) > 0;
@@ -8705,6 +8807,54 @@ const IntegratedTabContent = ({
     () => sortTransactionsByConfig(filteredTransactions, sorting, accountMap),
     [filteredTransactions, sorting, accountMap]
   );
+  const accountSummaries = reactExports.useMemo(() => {
+    const totals = {};
+    (allTransactions || []).forEach((txn) => {
+      const accountId = txn.accountId;
+      if (!accountId) {
+        return;
+      }
+      if (!totals[accountId]) {
+        totals[accountId] = {
+          deposit: 0,
+          withdrawal: 0,
+          count: 0,
+          latestTimestamp: null,
+          latestDate: "-"
+        };
+      }
+      const record = totals[accountId];
+      record.deposit += txn.deposit || 0;
+      record.withdrawal += txn.withdrawal || 0;
+      record.count += 1;
+      if (txn.date) {
+        const timestamp = new Date(txn.date).getTime();
+        if (!record.latestTimestamp || timestamp > record.latestTimestamp) {
+          record.latestTimestamp = timestamp;
+          record.latestDate = txn.date;
+        }
+      }
+    });
+    return (allAccounts || []).map((account) => {
+      const summary = totals[account.id] || {};
+      return {
+        id: account.id,
+        name: account.name,
+        number: account.number,
+        holderName: resolveHolderName(account),
+        deposit: summary.deposit || 0,
+        withdrawal: summary.withdrawal || 0,
+        count: summary.count || 0,
+        latestDate: summary.latestDate || "-"
+      };
+    });
+  }, [allAccounts, allTransactions]);
+  const comparisonCards = reactExports.useMemo(() => {
+    if ((comparisonSelection || []).length) {
+      return accountSummaries.filter((summary) => comparisonSelection.includes(summary.id));
+    }
+    return accountSummaries.slice(0, Math.min(3, accountSummaries.length));
+  }, [accountSummaries, comparisonSelection]);
   const allowManualReorder = !sorting || sorting.field === "custom";
   const sortOptions = [
     { value: "custom", label: "手動順序（既定）" },
@@ -8865,6 +9015,89 @@ const IntegratedTabContent = ({
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "ソート対象を切り替えると即座に表示が更新されます。手動順序モードのときのみ列内の矢印から微調整できます。" })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white border border-slate-200 rounded-xl p-4 space-y-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center justify-between gap-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-base font-semibold text-slate-800", children: "口座比較パネル" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "比較したい口座をタップすると下のカードに並べて表示されます。" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              type: "button",
+              onClick: onApplyComparisonFilter,
+              disabled: !(comparisonSelection == null ? void 0 : comparisonSelection.length),
+              className: `rounded-lg px-3 py-1.5 text-sm font-semibold ${(comparisonSelection == null ? void 0 : comparisonSelection.length) ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-200 text-slate-500 cursor-not-allowed"}`,
+              children: "比較中の口座で表示"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              type: "button",
+              onClick: onClearComparisonSelection,
+              disabled: !(comparisonSelection == null ? void 0 : comparisonSelection.length),
+              className: `rounded-lg px-3 py-1.5 text-sm ${(comparisonSelection == null ? void 0 : comparisonSelection.length) ? "border border-slate-300 text-slate-600 hover:bg-slate-50" : "border border-slate-200 text-slate-400 cursor-not-allowed"}`,
+              children: "比較をクリア"
+            }
+          )
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
+        accountSummaries.map((summary) => {
+          const isSelected = comparisonSelection == null ? void 0 : comparisonSelection.includes(summary.id);
+          return /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              type: "button",
+              onClick: () => onToggleComparisonAccount(summary.id),
+              className: `rounded-full border px-3 py-1 text-xs font-semibold transition ${isSelected ? "bg-blue-600 text-white border-blue-600" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`,
+              children: summary.name || summary.number || "口座"
+            },
+            summary.id
+          );
+        }),
+        accountSummaries.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "口座がありません。" })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 md:grid-cols-2", children: [
+        comparisonCards.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-slate-500", children: "比較したい口座を上のボタンから選択してください。" }),
+        comparisonCards.map((summary) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-2xl border border-slate-200 bg-slate-50 p-4", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-widest text-slate-500", children: summary.number || "No. ---" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-lg font-semibold text-slate-900", children: summary.name || "口座" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: summary.holderName || "名義未登録" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-right text-xs text-slate-500", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { children: [
+                "取引 ",
+                summary.count || 0,
+                " 件"
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { children: [
+                "最終更新 ",
+                summary.latestDate
+              ] })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-4 grid grid-cols-3 gap-3 text-center", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[0.65rem] uppercase text-slate-500", children: "出金" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-red-600", children: formatCurrency(summary.withdrawal || 0) })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[0.65rem] uppercase text-slate-500", children: "入金" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-green-600", children: formatCurrency(summary.deposit || 0) })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[0.65rem] uppercase text-slate-500", children: "差引" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: `text-sm font-semibold ${(summary.deposit || 0) - (summary.withdrawal || 0) >= 0 ? "text-green-700" : "text-red-700"}`, children: formatCurrency((summary.deposit || 0) - (summary.withdrawal || 0)) })
+            ] })
+          ] })
+        ] }, summary.id))
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white border border-slate-200 rounded-xl p-4 space-y-4", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 md:grid-cols-3", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-slate-500", children: "口座で絞り込む" }),
@@ -8874,7 +9107,7 @@ const IntegratedTabContent = ({
               value: (filters == null ? void 0 : filters.accountId) || "all",
               onChange: (e) => onFilterChange == null ? void 0 : onFilterChange({ accountId: e.target.value }),
               className: "mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm",
-              children: accountFilterOptions.map((option) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: option.value, children: option.label }, option.value))
+              children: accountFilterOptions.map((option) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: option.value, disabled: option.disabled, children: option.label }, option.value))
             }
           )
         ] }),
@@ -8974,6 +9207,7 @@ const IntegratedTabContent = ({
           onReorder: allowManualReorder ? handleReorderTransaction : void 0,
           onColorChange: handleColorChange,
           showAccountInfo: true,
+          highlightAccountIds: comparisonSelection,
           sorting,
           onSortField: handleSortFromHeader,
           sortableFields: ["date", "account", "withdrawal", "deposit", "memo"]
@@ -8996,6 +9230,7 @@ const LedgerApp = () => {
   const [showExportModal, setShowExportModal] = reactExports.useState(false);
   const [showImportModal, setShowImportModal] = reactExports.useState(false);
   const [editingTransaction, setEditingTransaction] = reactExports.useState(null);
+  const [editingAccount, setEditingAccount] = reactExports.useState(null);
   const [loading, setLoading] = reactExports.useState(true);
   const [error, setError] = reactExports.useState(null);
   const [jobPreview, setJobPreview] = reactExports.useState(null);
@@ -9010,6 +9245,16 @@ const LedgerApp = () => {
   const [showGuide, setShowGuide] = reactExports.useState(false);
   const [transactionSort, setTransactionSort] = reactExports.useState({ field: "custom", direction: "asc" });
   const [transactionFilter, setTransactionFilter] = reactExports.useState(() => ({ ...INITIAL_TRANSACTION_FILTER }));
+  const [comparisonSelection, setComparisonSelection] = reactExports.useState([]);
+  const accountFilterMode = transactionFilter.accountId;
+  reactExports.useEffect(() => {
+    if (comparisonSelection.length === 0 && accountFilterMode === "selected") {
+      setTransactionFilter((prev) => ({
+        ...prev,
+        accountId: "all"
+      }));
+    }
+  }, [comparisonSelection, accountFilterMode]);
   const initialJobId = reactExports.useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("job_id");
@@ -9266,6 +9511,13 @@ const LedgerApp = () => {
     await callLedgerApi(`/accounts/${accountId}`, { method: "DELETE" });
     await refreshState(selectedCaseId, false);
   }, [callLedgerApi, refreshState, selectedCaseId]);
+  const handleUpdateAccount = reactExports.useCallback(async (accountId, payload) => {
+    await callLedgerApi(`/accounts/${accountId}`, {
+      method: "PATCH",
+      body: payload
+    });
+    await refreshState(selectedCaseId, false);
+  }, [callLedgerApi, refreshState, selectedCaseId]);
   const handleCreateTransaction = reactExports.useCallback(async (payload) => {
     await callLedgerApi("/transactions", {
       method: "POST",
@@ -9336,6 +9588,23 @@ const LedgerApp = () => {
   }, []);
   const handleTransactionFilterReset = reactExports.useCallback(() => {
     setTransactionFilter({ ...INITIAL_TRANSACTION_FILTER });
+  }, []);
+  const toggleComparisonAccount = reactExports.useCallback((accountId) => {
+    setComparisonSelection((prev) => {
+      if (prev.includes(accountId)) {
+        return prev.filter((id) => id !== accountId);
+      }
+      return [...prev, accountId];
+    });
+  }, []);
+  const clearComparisonSelection = reactExports.useCallback(() => {
+    setComparisonSelection([]);
+  }, []);
+  const applyComparisonFilter = reactExports.useCallback(() => {
+    setTransactionFilter((prev) => ({
+      ...prev,
+      accountId: "selected"
+    }));
   }, []);
   const handleImportPendingEntry = reactExports.useCallback(
     async (entry, { targetCaseId, newCaseName: newCaseName2 } = {}) => {
@@ -9505,7 +9774,8 @@ const LedgerApp = () => {
           setShowImportModal,
           onReorderAccountOrder: handleReorderAccounts,
           onDeleteAccount: handleDeleteAccount,
-          onAddAccountClick: handleAddAccountClick
+          onAddAccountClick: handleAddAccountClick,
+          onEditAccount: setEditingAccount
         }
       );
     }
@@ -9523,7 +9793,11 @@ const LedgerApp = () => {
           onSortChange: handleTransactionSortChange,
           filters: transactionFilter,
           onFilterChange: handleTransactionFilterChange,
-          onFilterReset: handleTransactionFilterReset
+          onFilterReset: handleTransactionFilterReset,
+          comparisonSelection,
+          onToggleComparisonAccount: toggleComparisonAccount,
+          onClearComparisonSelection: clearComparisonSelection,
+          onApplyComparisonFilter: applyComparisonFilter
         }
       );
     }
@@ -9576,11 +9850,15 @@ const LedgerApp = () => {
     );
   };
   const totalTransactionCount = transactions.length;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-h-screen bg-gray-50 font-sans", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("header", { className: "bg-white shadow-md", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("h1", { className: "text-3xl font-extrabold text-blue-800 flex items-center space-x-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(List, { size: 30, className: "text-blue-500" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "入出金検討表作成ツール" })
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-h-screen bg-[#f1f5f9] font-sans", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("header", { className: "bg-[#0f172a] text-white border-b border-[#1f2937]", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.3em] text-[#94a3b8]", children: "SOROBOCR LEDGER" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("h1", { className: "text-3xl font-extrabold flex items-center gap-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(List, { size: 30, className: "text-[#60a5fa]" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "入出金検討表ツール" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-[#cbd5f5] mt-1", children: "CSVで取り込んだ通帳をWeb上で整理し、税務チェックを高速化します。" })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-3", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs(
@@ -9588,7 +9866,7 @@ const LedgerApp = () => {
           {
             type: "button",
             onClick: () => setShowGuide(true),
-            className: "inline-flex items-center gap-2 rounded-xl border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700 bg-white hover:bg-blue-50",
+            className: "inline-flex items-center gap-2 rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10",
             children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
               " 使い方を見る"
@@ -9601,14 +9879,14 @@ const LedgerApp = () => {
             href: "./guide.html",
             target: "_blank",
             rel: "noopener",
-            className: "inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50",
+            className: "inline-flex items-center gap-2 rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10",
             children: "詳細ガイド"
           }
         ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: () => setShowAddAccountModal(true), className: "bg-green-600 hover:bg-green-700 px-4 py-2", children: "新規口座を登録" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: () => setShowAddAccountModal(true), className: "bg-[#22c55e] hover:bg-[#16a34a] px-4 py-2", children: "新規口座を登録" })
       ] })
     ] }) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto mt-4 px-4 sm:px-6 lg:px-8", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-[220px]", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-sm text-gray-600 mb-1 block", children: "案件を選択" }),
@@ -9868,6 +10146,15 @@ const LedgerApp = () => {
         onClose: () => setShowAddAccountModal(false),
         onCreateAccount: handleCreateAccount,
         caseName: (_b = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _b.name
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      EditAccountModal,
+      {
+        isOpen: !!editingAccount,
+        onClose: () => setEditingAccount(null),
+        account: editingAccount,
+        onUpdateAccount: handleUpdateAccount
       }
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsx(

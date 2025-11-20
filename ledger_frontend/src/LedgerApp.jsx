@@ -761,6 +761,84 @@ const AddAccountModal = ({ isOpen, onClose, onCreateAccount, caseName }) => {
   );
 };
 
+const EditAccountModal = ({ isOpen, onClose, account, onUpdateAccount }) => {
+    const [holder, setHolder] = useState(account?.holder_name || account?.holderName || '');
+    const [name, setName] = useState(account?.name || '');
+    const [number, setNumber] = useState(account?.number || '');
+    const [message, setMessage] = useState('');
+
+    useEffect(() => {
+        setHolder(account?.holder_name || account?.holderName || '');
+        setName(account?.name || '');
+        setNumber(account?.number || '');
+        setMessage('');
+    }, [account, isOpen]);
+
+    if (!account) {
+        return null;
+    }
+
+    const handleSubmit = async (event) => {
+        event.preventDefault();
+        try {
+            await onUpdateAccount(account.id, {
+                name,
+                number,
+                holderName: holder,
+            });
+            setMessage('口座情報を更新しました。');
+            setTimeout(() => {
+                setMessage('');
+                onClose();
+            }, 1200);
+        } catch (error) {
+            console.error('Failed to update account:', error);
+            setMessage(error.message || '更新に失敗しました。');
+        }
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="口座情報を編集">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <InputField
+                    label="名義人"
+                    id="editHolder"
+                    value={holder}
+                    onChange={(e) => setHolder(e.target.value)}
+                    icon={Clipboard}
+                />
+                <InputField
+                    label="口座表示名"
+                    id="editAccountName"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    icon={List}
+                />
+                <InputField
+                    label="口座番号"
+                    id="editAccountNumber"
+                    value={number}
+                    onChange={(e) => setNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                    icon={CreditCard}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                />
+                {message && (
+                    <p className={`p-3 rounded-lg my-2 text-sm ${message.includes('失敗') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}`}>
+                        {message}
+                    </p>
+                )}
+                <div className="flex justify-end gap-3">
+                    <button type="button" className="text-sm text-gray-500" onClick={onClose}>キャンセル</button>
+                    <MainButton type="submit" Icon={Save} className="bg-blue-600 hover:bg-blue-700">
+                        更新する
+                    </MainButton>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
 const UsageGuideModal = ({ isOpen, onClose }) => {
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="入出金検討表の使い方" className="max-w-3xl">
@@ -1063,6 +1141,7 @@ const AccountManagementContent = ({
     onReorderAccountOrder,
     onDeleteAccount,
     onAddAccountClick,
+    onEditAccount,
 }) => {
     const [message, setMessage] = useState('');
 
@@ -1164,6 +1243,13 @@ const AccountManagementContent = ({
                                 </button>
                             )}
                         </div>
+                        <button
+                            onClick={() => onEditAccount(acc)}
+                            className="text-blue-500 hover:text-blue-700 p-2 rounded-full hover:bg-blue-50 transition"
+                            title="口座情報を編集"
+                        >
+                            <Edit size={18} />
+                        </button>
                         <button
                             onClick={() => handleDeleteAccount(acc.id)}
                             className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-100 transition"
@@ -1372,7 +1458,7 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
     );
 };
 
-const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorChange, onReorder, showAccountInfo = true, sorting = null, onSortField = null, sortableFields = [] }) => {
+const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorChange, onReorder, showAccountInfo = true, sorting = null, onSortField = null, sortableFields = [], highlightAccountIds = [] }) => {
     const accountMap = useMemo(() => {
         if (!accounts) return {};
         return accounts.reduce((map, acc) => {
@@ -1506,7 +1592,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
                                         return 'hover:bg-gray-50';
                                 }
                             };
-                            const rowClass = getRowClass(t.rowColor);
+                            const rowClass = `${getRowClass(t.rowColor)} ${highlightAccountIds?.includes(t.accountId) ? 'ring-1 ring-blue-200' : ''}`;
                             return (
                                 <tr key={t.id} className={`${rowClass} transition duration-150`}>
                                     <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{t.date}</td>
@@ -1615,6 +1701,10 @@ const IntegratedTabContent = ({
     filters,
     onFilterChange,
     onFilterReset,
+    comparisonSelection,
+    onToggleComparisonAccount,
+    onClearComparisonSelection,
+    onApplyComparisonFilter,
 }) => {
     const [message, setMessage] = useState(''); // メッセージ表示用ステートを追加
     const accountMap = useMemo(() => {
@@ -1623,10 +1713,22 @@ const IntegratedTabContent = ({
             return map;
         }, {});
     }, [allAccounts]);
-    const accountFilterOptions = useMemo(() => [
-        { value: 'all', label: 'すべての口座' },
-        ...(allAccounts || []).map((account) => ({ value: account.id, label: account.name || account.number || account.id })),
-    ], [allAccounts]);
+    const comparisonSet = useMemo(() => new Set(comparisonSelection || []), [comparisonSelection]);
+    const accountFilterOptions = useMemo(() => {
+        const list = [{ value: 'all', label: 'すべての口座' }];
+        if ((comparisonSelection || []).length) {
+            list.push({ value: 'selected', label: '比較中の口座' });
+        } else {
+            list.push({ value: 'selected', label: '比較中の口座 (未選択)', disabled: true });
+        }
+        list.push(
+            ...(allAccounts || []).map((account) => ({
+                value: account.id,
+                label: account.name || account.number || account.id,
+            })),
+        );
+        return list;
+    }, [allAccounts, comparisonSelection]);
     const colorOptions = [
         { value: 'all', label: 'すべて' },
         { value: 'green', label: '緑' },
@@ -1661,7 +1763,11 @@ const IntegratedTabContent = ({
         const maxAmount = filters.maxAmount ? parseInt(filters.maxAmount, 10) : null;
         return integratedTransactions.filter((transaction) => {
             const account = accountMap[transaction.accountId];
-            if (filters.accountId && filters.accountId !== 'all' && transaction.accountId !== filters.accountId) {
+            if (filters.accountId === 'selected') {
+                if (!comparisonSet.size || !comparisonSet.has(transaction.accountId)) {
+                    return false;
+                }
+            } else if (filters.accountId && filters.accountId !== 'all' && transaction.accountId !== filters.accountId) {
                 return false;
             }
             const isWithdrawal = (transaction.withdrawal || 0) > 0;
@@ -1704,6 +1810,54 @@ const IntegratedTabContent = ({
         () => sortTransactionsByConfig(filteredTransactions, sorting, accountMap),
         [filteredTransactions, sorting, accountMap],
     );
+    const accountSummaries = useMemo(() => {
+        const totals = {};
+        (allTransactions || []).forEach((txn) => {
+            const accountId = txn.accountId;
+            if (!accountId) {
+                return;
+            }
+            if (!totals[accountId]) {
+                totals[accountId] = {
+                    deposit: 0,
+                    withdrawal: 0,
+                    count: 0,
+                    latestTimestamp: null,
+                    latestDate: '-',
+                };
+            }
+            const record = totals[accountId];
+            record.deposit += txn.deposit || 0;
+            record.withdrawal += txn.withdrawal || 0;
+            record.count += 1;
+            if (txn.date) {
+                const timestamp = new Date(txn.date).getTime();
+                if (!record.latestTimestamp || timestamp > record.latestTimestamp) {
+                    record.latestTimestamp = timestamp;
+                    record.latestDate = txn.date;
+                }
+            }
+        });
+        return (allAccounts || []).map((account) => {
+            const summary = totals[account.id] || {};
+            return {
+                id: account.id,
+                name: account.name,
+                number: account.number,
+                holderName: resolveHolderName(account),
+                deposit: summary.deposit || 0,
+                withdrawal: summary.withdrawal || 0,
+                count: summary.count || 0,
+                latestDate: summary.latestDate || '-',
+            };
+        });
+    }, [allAccounts, allTransactions]);
+    const comparisonCards = useMemo(() => {
+        if ((comparisonSelection || []).length) {
+            return accountSummaries.filter((summary) => comparisonSelection.includes(summary.id));
+        }
+        return accountSummaries.slice(0, Math.min(3, accountSummaries.length));
+    }, [accountSummaries, comparisonSelection]);
     const allowManualReorder = !sorting || sorting.field === 'custom';
     const sortOptions = [
         { value: 'custom', label: '手動順序（既定）' },
@@ -1880,6 +2034,85 @@ const IntegratedTabContent = ({
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h3 className="text-base font-semibold text-slate-800">口座比較パネル</h3>
+                        <p className="text-xs text-slate-500">比較したい口座をタップすると下のカードに並べて表示されます。</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={onApplyComparisonFilter}
+                            disabled={!comparisonSelection?.length}
+                            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${comparisonSelection?.length ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-200 text-slate-500 cursor-not-allowed'}`}
+                        >
+                            比較中の口座で表示
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onClearComparisonSelection}
+                            disabled={!comparisonSelection?.length}
+                            className={`rounded-lg px-3 py-1.5 text-sm ${comparisonSelection?.length ? 'border border-slate-300 text-slate-600 hover:bg-slate-50' : 'border border-slate-200 text-slate-400 cursor-not-allowed'}`}
+                        >
+                            比較をクリア
+                        </button>
+                    </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    {accountSummaries.map((summary) => {
+                        const isSelected = comparisonSelection?.includes(summary.id);
+                        return (
+                            <button
+                                key={summary.id}
+                                type="button"
+                                onClick={() => onToggleComparisonAccount(summary.id)}
+                                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${isSelected ? 'bg-blue-600 text-white border-blue-600' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                {summary.name || summary.number || '口座'}
+                            </button>
+                        );
+                    })}
+                    {accountSummaries.length === 0 && <p className="text-xs text-slate-500">口座がありません。</p>}
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                    {comparisonCards.length === 0 && (
+                        <p className="text-sm text-slate-500">比較したい口座を上のボタンから選択してください。</p>
+                    )}
+                    {comparisonCards.map((summary) => (
+                        <div key={summary.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-xs uppercase tracking-widest text-slate-500">{summary.number || 'No. ---'}</p>
+                                    <p className="text-lg font-semibold text-slate-900">{summary.name || '口座'}</p>
+                                    <p className="text-xs text-slate-500">{summary.holderName || '名義未登録'}</p>
+                                </div>
+                                <div className="text-right text-xs text-slate-500">
+                                    <p>取引 {summary.count || 0} 件</p>
+                                    <p>最終更新 {summary.latestDate}</p>
+                                </div>
+                            </div>
+                            <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+                                <div>
+                                    <p className="text-[0.65rem] uppercase text-slate-500">出金</p>
+                                    <p className="text-sm font-semibold text-red-600">{formatCurrency(summary.withdrawal || 0)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[0.65rem] uppercase text-slate-500">入金</p>
+                                    <p className="text-sm font-semibold text-green-600">{formatCurrency(summary.deposit || 0)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-[0.65rem] uppercase text-slate-500">差引</p>
+                                    <p className={`text-sm font-semibold ${((summary.deposit || 0) - (summary.withdrawal || 0)) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                                        {formatCurrency((summary.deposit || 0) - (summary.withdrawal || 0))}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
                 <div className="grid gap-3 md:grid-cols-3">
                     <div>
                         <label className="text-xs text-slate-500">口座で絞り込む</label>
@@ -1889,7 +2122,9 @@ const IntegratedTabContent = ({
                             className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
                         >
                             {accountFilterOptions.map((option) => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
+                                <option key={option.value} value={option.value} disabled={option.disabled}>
+                                    {option.label}
+                                </option>
                             ))}
                         </select>
                     </div>
@@ -1973,6 +2208,7 @@ const IntegratedTabContent = ({
                     onReorder={allowManualReorder ? handleReorderTransaction : undefined}
                     onColorChange={handleColorChange}
                     showAccountInfo={true}
+                    highlightAccountIds={comparisonSelection}
                     sorting={sorting}
                     onSortField={handleSortFromHeader}
                     sortableFields={['date', 'account', 'withdrawal', 'deposit', 'memo']}
@@ -1999,6 +2235,7 @@ const LedgerApp = () => {
     const [showExportModal, setShowExportModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState(null);
+    const [editingAccount, setEditingAccount] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [jobPreview, setJobPreview] = useState(null);
@@ -2013,6 +2250,17 @@ const LedgerApp = () => {
     const [showGuide, setShowGuide] = useState(false);
     const [transactionSort, setTransactionSort] = useState({ field: 'custom', direction: 'asc' });
     const [transactionFilter, setTransactionFilter] = useState(() => ({ ...INITIAL_TRANSACTION_FILTER }));
+    const [comparisonSelection, setComparisonSelection] = useState([]);
+    const accountFilterMode = transactionFilter.accountId;
+
+    useEffect(() => {
+        if (comparisonSelection.length === 0 && accountFilterMode === 'selected') {
+            setTransactionFilter((prev) => ({
+                ...prev,
+                accountId: 'all',
+            }));
+        }
+    }, [comparisonSelection, accountFilterMode]);
     const initialJobId = useMemo(() => {
         const params = new URLSearchParams(window.location.search);
         return params.get('job_id');
@@ -2284,6 +2532,14 @@ const handleAddAccountClick = useCallback(() => {
         await refreshState(selectedCaseId, false);
     }, [callLedgerApi, refreshState, selectedCaseId]);
 
+    const handleUpdateAccount = useCallback(async (accountId, payload) => {
+        await callLedgerApi(`/accounts/${accountId}`, {
+            method: 'PATCH',
+            body: payload,
+        });
+        await refreshState(selectedCaseId, false);
+    }, [callLedgerApi, refreshState, selectedCaseId]);
+
     const handleCreateTransaction = useCallback(async (payload) => {
         await callLedgerApi('/transactions', {
             method: 'POST',
@@ -2363,6 +2619,26 @@ const handleAddAccountClick = useCallback(() => {
 
     const handleTransactionFilterReset = useCallback(() => {
         setTransactionFilter({ ...INITIAL_TRANSACTION_FILTER });
+    }, []);
+
+    const toggleComparisonAccount = useCallback((accountId) => {
+        setComparisonSelection((prev) => {
+            if (prev.includes(accountId)) {
+                return prev.filter((id) => id !== accountId);
+            }
+            return [...prev, accountId];
+        });
+    }, []);
+
+    const clearComparisonSelection = useCallback(() => {
+        setComparisonSelection([]);
+    }, []);
+
+    const applyComparisonFilter = useCallback(() => {
+        setTransactionFilter((prev) => ({
+            ...prev,
+            accountId: 'selected',
+        }));
     }, []);
 
     const handleImportPendingEntry = useCallback(
@@ -2538,6 +2814,7 @@ const handleAddAccountClick = useCallback(() => {
                     onReorderAccountOrder={handleReorderAccounts}
                     onDeleteAccount={handleDeleteAccount}
                     onAddAccountClick={handleAddAccountClick}
+                    onEditAccount={setEditingAccount}
                 />
             );
         }
@@ -2556,6 +2833,10 @@ const handleAddAccountClick = useCallback(() => {
                     filters={transactionFilter}
                     onFilterChange={handleTransactionFilterChange}
                     onFilterReset={handleTransactionFilterReset}
+                    comparisonSelection={comparisonSelection}
+                    onToggleComparisonAccount={toggleComparisonAccount}
+                    onClearComparisonSelection={clearComparisonSelection}
+                    onApplyComparisonFilter={applyComparisonFilter}
                 />
             );
         }
@@ -2618,18 +2899,22 @@ const handleAddAccountClick = useCallback(() => {
     const totalTransactionCount = transactions.length;
 
     return (
-        <div className="min-h-screen bg-gray-50 font-sans">
-            <header className="bg-white shadow-md">
-                <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <h1 className="text-3xl font-extrabold text-blue-800 flex items-center space-x-2">
-                        <List size={30} className="text-blue-500" />
-                        <span>入出金検討表作成ツール</span>
-                    </h1>
+        <div className="min-h-screen bg-[#f1f5f9] font-sans">
+            <header className="bg-[#0f172a] text-white border-b border-[#1f2937]">
+                <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <p className="text-xs uppercase tracking-[0.3em] text-[#94a3b8]">SOROBOCR LEDGER</p>
+                        <h1 className="text-3xl font-extrabold flex items-center gap-2">
+                            <List size={30} className="text-[#60a5fa]" />
+                            <span>入出金検討表ツール</span>
+                        </h1>
+                        <p className="text-sm text-[#cbd5f5] mt-1">CSVで取り込んだ通帳をWeb上で整理し、税務チェックを高速化します。</p>
+                    </div>
                     <div className="flex flex-wrap gap-3">
                         <button
                             type="button"
                             onClick={() => setShowGuide(true)}
-                            className="inline-flex items-center gap-2 rounded-xl border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700 bg-white hover:bg-blue-50"
+                            className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
                         >
                             <BookOpen size={16} /> 使い方を見る
                         </button>
@@ -2637,18 +2922,18 @@ const handleAddAccountClick = useCallback(() => {
                             href="./guide.html"
                             target="_blank"
                             rel="noopener"
-                            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50"
+                            className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
                         >
                             詳細ガイド
                         </a>
-                        <MainButton Icon={Plus} onClick={() => setShowAddAccountModal(true)} className="bg-green-600 hover:bg-green-700 px-4 py-2">
+                        <MainButton Icon={Plus} onClick={() => setShowAddAccountModal(true)} className="bg-[#22c55e] hover:bg-[#16a34a] px-4 py-2">
                             新規口座を登録
                         </MainButton>
                     </div>
                 </div>
             </header>
 
-            <div className="max-w-7xl mx-auto mt-4 px-4 sm:px-6 lg:px-8">
+            <div className="max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8">
                 <div className="flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
                     <div className="flex-1 min-w-[220px]">
                         <label className="text-sm text-gray-600 mb-1 block">案件を選択</label>
@@ -2878,6 +3163,13 @@ const handleAddAccountClick = useCallback(() => {
                 onClose={() => setShowAddAccountModal(false)}
                 onCreateAccount={handleCreateAccount}
                 caseName={cases.find((item) => item.id === selectedCaseId)?.name}
+            />
+
+            <EditAccountModal
+                isOpen={!!editingAccount}
+                onClose={() => setEditingAccount(null)}
+                account={editingAccount}
+                onUpdateAccount={handleUpdateAccount}
             />
             
             {/* 取引編集モーダル */}
