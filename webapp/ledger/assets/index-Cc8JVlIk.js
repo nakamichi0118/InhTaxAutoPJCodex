@@ -7083,18 +7083,36 @@ const createLucideIcon = (iconName, iconNode) => {
   Component.displayName = toPascalCase(iconName);
   return Component;
 };
-const __iconNode$e = [
+const __iconNode$i = [
   ["path", { d: "m3 16 4 4 4-4", key: "1co6wj" }],
   ["path", { d: "M7 20V4", key: "1yoxec" }],
   ["path", { d: "m21 8-4-4-4 4", key: "1c9v7m" }],
   ["path", { d: "M17 4v16", key: "7dpous" }]
 ];
-const ArrowDownUp = createLucideIcon("arrow-down-up", __iconNode$e);
-const __iconNode$d = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
-const ChevronDown = createLucideIcon("chevron-down", __iconNode$d);
-const __iconNode$c = [["path", { d: "m18 15-6-6-6 6", key: "153udz" }]];
-const ChevronUp = createLucideIcon("chevron-up", __iconNode$c);
-const __iconNode$b = [
+const ArrowDownUp = createLucideIcon("arrow-down-up", __iconNode$i);
+const __iconNode$h = [
+  ["path", { d: "m21 16-4 4-4-4", key: "f6ql7i" }],
+  ["path", { d: "M17 20V4", key: "1ejh1v" }],
+  ["path", { d: "m3 8 4-4 4 4", key: "11wl7u" }],
+  ["path", { d: "M7 4v16", key: "1glfcx" }]
+];
+const ArrowUpDown = createLucideIcon("arrow-up-down", __iconNode$h);
+const __iconNode$g = [
+  ["path", { d: "M12 7v14", key: "1akyts" }],
+  [
+    "path",
+    {
+      d: "M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z",
+      key: "ruj8y"
+    }
+  ]
+];
+const BookOpen = createLucideIcon("book-open", __iconNode$g);
+const __iconNode$f = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
+const ChevronDown = createLucideIcon("chevron-down", __iconNode$f);
+const __iconNode$e = [["path", { d: "m18 15-6-6-6 6", key: "153udz" }]];
+const ChevronUp = createLucideIcon("chevron-up", __iconNode$e);
+const __iconNode$d = [
   ["rect", { width: "8", height: "4", x: "8", y: "2", rx: "1", ry: "1", key: "tgr4d6" }],
   [
     "path",
@@ -7104,13 +7122,13 @@ const __iconNode$b = [
     }
   ]
 ];
-const Clipboard = createLucideIcon("clipboard", __iconNode$b);
-const __iconNode$a = [
+const Clipboard = createLucideIcon("clipboard", __iconNode$d);
+const __iconNode$c = [
   ["rect", { width: "20", height: "14", x: "2", y: "5", rx: "2", key: "ynyp8z" }],
   ["line", { x1: "2", x2: "22", y1: "10", y2: "10", key: "1b3vmo" }]
 ];
-const CreditCard = createLucideIcon("credit-card", __iconNode$a);
-const __iconNode$9 = [
+const CreditCard = createLucideIcon("credit-card", __iconNode$c);
+const __iconNode$b = [
   [
     "path",
     {
@@ -7122,8 +7140,8 @@ const __iconNode$9 = [
   ["path", { d: "M12 18v-6", key: "17g6i2" }],
   ["path", { d: "m9 15 3 3 3-3", key: "1npd3o" }]
 ];
-const FileDown = createLucideIcon("file-down", __iconNode$9);
-const __iconNode$8 = [
+const FileDown = createLucideIcon("file-down", __iconNode$b);
+const __iconNode$a = [
   [
     "path",
     {
@@ -7135,8 +7153,14 @@ const __iconNode$8 = [
   ["path", { d: "M12 12v6", key: "3ahymv" }],
   ["path", { d: "m15 15-3-3-3 3", key: "15xj92" }]
 ];
-const FileUp = createLucideIcon("file-up", __iconNode$8);
-const __iconNode$7 = [
+const FileUp = createLucideIcon("file-up", __iconNode$a);
+const __iconNode$9 = [
+  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+  ["path", { d: "M12 16v-4", key: "1dtifu" }],
+  ["path", { d: "M12 8h.01", key: "e9boi3" }]
+];
+const Info = createLucideIcon("info", __iconNode$9);
+const __iconNode$8 = [
   ["path", { d: "M3 5h.01", key: "18ugdj" }],
   ["path", { d: "M3 12h.01", key: "nlz23k" }],
   ["path", { d: "M3 19h.01", key: "noohij" }],
@@ -7144,17 +7168,17 @@ const __iconNode$7 = [
   ["path", { d: "M8 12h13", key: "1za7za" }],
   ["path", { d: "M8 19h13", key: "m83p4d" }]
 ];
-const List = createLucideIcon("list", __iconNode$7);
-const __iconNode$6 = [["path", { d: "M21 12a9 9 0 1 1-6.219-8.56", key: "13zald" }]];
-const LoaderCircle = createLucideIcon("loader-circle", __iconNode$6);
-const __iconNode$5 = [["path", { d: "M5 12h14", key: "1ays0h" }]];
-const Minus = createLucideIcon("minus", __iconNode$5);
-const __iconNode$4 = [
+const List = createLucideIcon("list", __iconNode$8);
+const __iconNode$7 = [["path", { d: "M21 12a9 9 0 1 1-6.219-8.56", key: "13zald" }]];
+const LoaderCircle = createLucideIcon("loader-circle", __iconNode$7);
+const __iconNode$6 = [["path", { d: "M5 12h14", key: "1ays0h" }]];
+const Minus = createLucideIcon("minus", __iconNode$6);
+const __iconNode$5 = [
   ["path", { d: "M5 12h14", key: "1ays0h" }],
   ["path", { d: "M12 5v14", key: "s699le" }]
 ];
-const Plus = createLucideIcon("plus", __iconNode$4);
-const __iconNode$3 = [
+const Plus = createLucideIcon("plus", __iconNode$5);
+const __iconNode$4 = [
   [
     "path",
     {
@@ -7165,7 +7189,20 @@ const __iconNode$3 = [
   ["path", { d: "M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7", key: "1ydtos" }],
   ["path", { d: "M7 3v4a1 1 0 0 0 1 1h7", key: "t51u73" }]
 ];
-const Save = createLucideIcon("save", __iconNode$3);
+const Save = createLucideIcon("save", __iconNode$4);
+const __iconNode$3 = [
+  [
+    "path",
+    {
+      d: "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z",
+      key: "1s2grr"
+    }
+  ],
+  ["path", { d: "M20 2v4", key: "1rf3ol" }],
+  ["path", { d: "M22 4h-4", key: "gwowj6" }],
+  ["circle", { cx: "4", cy: "20", r: "2", key: "6kqj1y" }]
+];
+const Sparkles = createLucideIcon("sparkles", __iconNode$3);
 const __iconNode$2 = [
   ["path", { d: "M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7", key: "1m0v6g" }],
   [
@@ -7262,6 +7299,72 @@ const convertFirestoreTimestamps = (data) => {
     newData[key] = convertFirestoreTimestamps(data[key]);
   }
   return newData;
+};
+const baseOrderValue = (transaction) => {
+  if (!transaction) return 0;
+  if (typeof transaction.userOrder === "number") {
+    return transaction.userOrder;
+  }
+  const dateValue = new Date(transaction.date).getTime();
+  return Number.isFinite(dateValue) ? dateValue : 0;
+};
+const resolveHolderName = (account) => {
+  if (!account) return "";
+  if (account.holderName) return account.holderName;
+  if (account.holder_name) return account.holder_name;
+  if (account.holder) return account.holder;
+  if (Array.isArray(account.ownerName)) {
+    return account.ownerName.filter(Boolean).join(" / ");
+  }
+  if (Array.isArray(account.owner_name)) {
+    return account.owner_name.filter(Boolean).join(" / ");
+  }
+  return "";
+};
+const sortTransactionsByConfig = (transactions, sort, accountMap = {}) => {
+  if (!Array.isArray(transactions)) return [];
+  if (!sort || sort.field === "custom") {
+    return [...transactions];
+  }
+  const direction = sort.direction === "desc" ? -1 : 1;
+  const getComparableValue = (transaction) => {
+    var _a;
+    switch (sort.field) {
+      case "date": {
+        const timestamp = new Date(transaction.date).getTime();
+        return Number.isFinite(timestamp) ? timestamp : 0;
+      }
+      case "withdrawal":
+        return Number(transaction.withdrawal) || 0;
+      case "deposit":
+        return Number(transaction.deposit) || 0;
+      case "memo":
+        return (transaction.memo || "").toString().toLowerCase();
+      case "account":
+        return (((_a = accountMap[transaction.accountId]) == null ? void 0 : _a.name) || "").toLowerCase();
+      case "holder":
+        return resolveHolderName(accountMap[transaction.accountId]).toLowerCase();
+      default:
+        return baseOrderValue(transaction);
+    }
+  };
+  return [...transactions].sort((a, b) => {
+    const valueA = getComparableValue(a);
+    const valueB = getComparableValue(b);
+    if (typeof valueA === "string" && typeof valueB === "string") {
+      const comparison = valueA.localeCompare(valueB, "ja");
+      if (comparison !== 0) {
+        return comparison * direction;
+      }
+    } else if (valueA !== valueB) {
+      return (valueA > valueB ? 1 : -1) * direction;
+    }
+    const fallback = baseOrderValue(a) - baseOrderValue(b);
+    if (fallback !== 0) {
+      return fallback;
+    }
+    return a.id.localeCompare(b.id);
+  });
 };
 const StatusMessage = ({ loading, error, userId }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-4 bg-white/90 backdrop-blur-sm shadow-xl rounded-xl", children: [
   loading && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-blue-600 font-semibold flex items-center justify-center", children: "データをロード中..." }),
@@ -7655,17 +7758,19 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
   ] }) });
 };
 const AddAccountModal = ({ isOpen, onClose, onCreateAccount, caseName }) => {
+  const [holder, setHolder] = reactExports.useState("");
   const [name, setName] = reactExports.useState("");
   const [number, setNumber] = reactExports.useState("");
   const [message, setMessage] = reactExports.useState("");
   const handleSaveAccount = async () => {
-    if (!name || !number) {
-      setMessage("名義人と口座番号を入力してください。");
+    if (!holder || !name || !number) {
+      setMessage("名義人・口座名・口座番号を入力してください。");
       return;
     }
     try {
-      await onCreateAccount({ name, number });
+      await onCreateAccount({ name, number, holderName: holder });
       setMessage("口座情報が正常に登録されました！");
+      setHolder("");
       setName("");
       setNumber("");
       setTimeout(onClose, 1500);
@@ -7683,12 +7788,64 @@ const AddAccountModal = ({ isOpen, onClose, onCreateAccount, caseName }) => {
       e.preventDefault();
       handleSaveAccount();
     }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx(InputField, { label: "名義人 (口座名)", id: "accountName", value: name, onChange: (e) => setName(e.target.value), required: true, icon: Clipboard, placeholder: "山田 太郎" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(InputField, { label: "名義人", id: "accountHolder", value: holder, onChange: (e) => setHolder(e.target.value), required: true, icon: Clipboard, placeholder: "山田 太郎" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(InputField, { label: "口座表示名", id: "accountName", value: name, onChange: (e) => setName(e.target.value), required: true, icon: List, placeholder: "生活費 口座" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(InputField, { label: "口座番号", id: "accountNumber", value: number, onChange: (e) => setNumber(e.target.value.replace(/[^0-9]/g, "")), required: true, icon: CreditCard, placeholder: "1234567", type: "tel", inputMode: "numeric", pattern: "[0-9]*" }),
       message && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: `p-3 rounded-lg my-3 ${message.includes("エラー") ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`, children: message }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { type: "submit", Icon: Plus, className: "w-full mt-4 bg-green-600 hover:bg-green-700", children: "新規口座を登録" })
     ] })
   ] });
+};
+const UsageGuideModal = ({ isOpen, onClose }) => {
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(Modal, { isOpen, onClose, title: "入出金検討表の使い方", className: "max-w-3xl", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-5 text-sm text-gray-700 leading-relaxed", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-base text-gray-800", children: [
+      "SOROBOCRで読み取った ",
+      /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "bg-gray-100 text-gray-800 px-1 rounded", children: "bank_transactions.json" }),
+      " をそのまま案件へ取り込み、通帳単位で色付け・ソートできます。 3分で把握できる流れをまとめました。"
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("ol", { className: "list-decimal list-inside space-y-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold", children: "案件を作成/選択" }),
+        "…上部の案件セレクターで対象案件を決め、必要なら「案件を追加」で新規作成します。"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold", children: "OCR結果を自動連携" }),
+        "…SOROBOCRで読み取り後に表示される「入出金検討表ツールを開く」から遷移すると、ブラウザに保存済みの通帳候補が検出されます。黄色のカードで取り込み方法を選択してください。"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold", children: "口座情報を整える" }),
+        "…名義と口座表示名をそれぞれ入力し、口座順を整えます。案件ごとにFastAPI (Railway) 上へ保存され、ブラウザを閉じても復元できます。"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold", children: "統合タブで検討" }),
+        "…統合タブではすべての取引をリスト化。今回追加したソートバーで日付や金額順に並び替え、最終的な優先度は「手動順序」で調整してください。"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold", children: "PDF/JSONで共有" }),
+        "…統合タブ右上のPDFボタンや、設定タブのエクスポートからJSONを出力し、レビュー資料に貼り付けられます。"
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-indigo-50 border border-indigo-100 text-indigo-900 rounded-lg p-4 space-y-2", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm font-semibold flex items-center gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkles, { size: 16 }),
+        " さらに詳しい手順"
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "より詳細な画面遷移やFAQは別タブのガイドページにまとめています。" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "a",
+        {
+          href: "./guide.html",
+          target: "_blank",
+          rel: "noopener",
+          className: "inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
+            " ガイドページを開く"
+          ]
+        }
+      )
+    ] })
+  ] }) });
 };
 const ExportModal = ({ isOpen, onClose, accounts, transactions }) => {
   const [fileName, setFileName] = reactExports.useState(`取引データ_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}`);
@@ -7980,17 +8137,28 @@ const AccountManagementContent = ({
         "件)"
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-3 p-2 bg-gray-50 rounded-xl shadow-inner max-h-[50vh] overflow-y-auto", children: [
-        sortedAccounts.map((acc, index) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-center bg-white p-4 rounded-lg border border-gray-200 shadow-sm", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-sm", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "font-bold text-gray-800 text-lg", children: acc.name }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-gray-500 font-mono text-xs", children: [
-              "口座番号: ",
-              acc.number
+        sortedAccounts.map((acc, index) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-3 md:flex-row md:items-center md:justify-between bg-white p-4 rounded-lg border border-gray-200 shadow-sm", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-sm space-y-2 w-full", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 sm:grid-cols-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-semibold text-gray-500 tracking-wide uppercase", children: "名義人" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-base text-gray-900", children: resolveHolderName(acc) || "未登録" })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-semibold text-gray-500 tracking-wide uppercase", children: "口座表示名" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-lg font-bold text-gray-900", children: acc.name || "---" })
+              ] })
             ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-gray-400 text-xs mt-1", children: [
-              "表示順: ",
-              index + 1,
-              "番目"
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2 text-xs text-gray-500", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 font-mono", children: [
+                "No. ",
+                acc.number || "---"
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100", children: [
+                "表示順: ",
+                index + 1,
+                "番目"
+              ] })
             ] })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex space-x-3 items-center", children: [
@@ -8021,11 +8189,12 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
   const [memo, setMemo] = reactExports.useState("");
   const [type, setType] = reactExports.useState("振込");
   const [message, setMessage] = reactExports.useState("");
-  const accountTransactions = transactions.filter((t) => t.accountId === account.id).sort((a, b) => {
-    const dateComparison = new Date(a.date) - new Date(b.date);
-    if (dateComparison !== 0) return dateComparison;
-    return a.id.localeCompare(b.id);
-  });
+  const [localSort, setLocalSort] = reactExports.useState({ field: "date", direction: "asc" });
+  const accountTransactions = reactExports.useMemo(() => {
+    return transactions.filter((t) => t.accountId === account.id);
+  }, [transactions, account.id]);
+  const accountMap = reactExports.useMemo(() => ({ [account.id]: account }), [account]);
+  const sortedTransactions = reactExports.useMemo(() => sortTransactionsByConfig(accountTransactions, localSort, accountMap), [accountTransactions, localSort, accountMap]);
   const transactionTypes = [
     { value: "振込", label: "振込 (銀行)" },
     { value: "振替", label: "振替 (口座間)" },
@@ -8137,27 +8306,78 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
       message && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: `p-3 rounded-lg my-3 text-sm ${message.includes("エラー") ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`, children: message })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("h3", { className: "text-xl font-bold text-gray-700 mb-3", children: [
-        "取引履歴 (",
-        accountTransactions.length,
-        "件)"
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-start justify-between gap-3 mb-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("h3", { className: "text-xl font-bold text-gray-700", children: [
+            "取引履歴 (",
+            accountTransactions.length,
+            "件)"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-500", children: "日付や金額で並べ替えてから編集できます。" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2 text-sm", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-gray-500", children: "並び替え" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "select",
+            {
+              value: localSort.field,
+              onChange: (e) => {
+                const value = e.target.value;
+                setLocalSort((prev) => ({
+                  field: value,
+                  direction: value === prev.field ? prev.direction : value === "withdrawal" || value === "deposit" ? "desc" : "asc"
+                }));
+              },
+              className: "border border-gray-300 rounded-lg px-3 py-1.5 bg-white",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "date", children: "日付" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "withdrawal", children: "出金額" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "deposit", children: "入金額" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "memo", children: "摘要" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              onClick: () => setLocalSort((prev) => ({ field: prev.field, direction: prev.direction === "asc" ? "desc" : "asc" })),
+              className: "inline-flex items-center gap-1 px-3 py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUpDown, { size: 16 }),
+                " ",
+                localSort.direction === "asc" ? "昇順" : "降順"
+              ]
+            }
+          )
+        ] })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-white rounded-xl shadow-lg overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
         TransactionTable,
         {
-          transactions: accountTransactions,
+          transactions: sortedTransactions,
           accounts: [{ id: account.id, name: account.name }],
           onDelete: handleDeleteTransaction,
           onEdit: setEditingTransaction,
           onColorChange: () => {
           },
-          showAccountInfo: false
+          showAccountInfo: false,
+          sorting: localSort,
+          onSortField: (field) => {
+            setLocalSort((prev) => {
+              if (prev.field === field) {
+                return { field, direction: prev.direction === "asc" ? "desc" : "asc" };
+              }
+              return { field, direction: field === "withdrawal" || field === "deposit" ? "desc" : "asc" };
+            });
+          },
+          sortableFields: ["date", "withdrawal", "deposit", "memo"]
         }
       ) })
     ] })
   ] });
 };
-const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorChange, onReorder, showAccountInfo = true }) => {
+const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorChange, onReorder, showAccountInfo = true, sorting = null, onSortField = null, sortableFields = [] }) => {
   const accountMap = reactExports.useMemo(() => {
     if (!accounts) return {};
     return accounts.reduce((map, acc) => {
@@ -8165,7 +8385,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
       return map;
     }, {});
   }, [accounts]);
-  const ColorPicker = ({ transactionId, currentColor }) => {
+  const ColorPicker = ({ transactionId, currentColor, disabled }) => {
     const colors = ["green", "blue", "yellow", "pink"];
     const colorTooltips = { green: "緑", blue: "青", yellow: "黄", pink: "ピンク" };
     const getBorderClass = (color) => {
@@ -8199,9 +8419,11 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
     return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center justify-center space-x-1", children: colors.map((color) => /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
       {
-        onClick: () => onColorChange(transactionId, color === currentColor ? null : color),
-        className: `w-4 h-4 rounded-full border-2 transition-transform transform hover:scale-125 ${currentColor === color ? getBorderClass(color) : "border-transparent"} ${getBgClass(color)}`,
-        title: `${colorTooltips[color]}でマーク`
+        type: "button",
+        disabled,
+        onClick: () => !disabled && onColorChange(transactionId, color === currentColor ? null : color),
+        className: `w-4 h-4 rounded-full border-2 transition-transform ${disabled ? "opacity-40 cursor-not-allowed" : "transform hover:scale-125"} ${currentColor === color ? getBorderClass(color) : "border-transparent"} ${getBgClass(color)}`,
+        title: disabled ? "このビューでは色付けを利用できません" : `${colorTooltips[color]}でマーク`
       },
       color
     )) });
@@ -8209,20 +8431,44 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
   const totalWithdrawal = transactions.reduce((sum, t) => sum + (t.withdrawal || 0), 0);
   const totalDeposit = transactions.reduce((sum, t) => sum + (t.deposit || 0), 0);
   const balance = totalDeposit - totalWithdrawal;
+  const showReorderColumn = showAccountInfo && typeof onReorder === "function";
+  const totalColumns = 7 + (showAccountInfo ? 2 : 0) + (showReorderColumn ? 1 : 0);
+  const isSortableField = (field) => Array.isArray(sortableFields) && sortableFields.includes(field);
+  const renderHeaderCell = (field, label, align = "text-left") => {
+    const sortable = typeof onSortField === "function" && isSortableField(field);
+    if (!sortable) {
+      return /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: `px-3 py-3 ${align} text-xs font-medium text-gray-500 uppercase tracking-wider`, children: label });
+    }
+    const isActive = (sorting == null ? void 0 : sorting.field) === field;
+    const icon = !isActive ? /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUpDown, { size: 14, className: "text-gray-400" }) : sorting.direction === "asc" ? /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronUp, { size: 14, className: "text-blue-600" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronDown, { size: 14, className: "text-blue-600" });
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: `px-3 py-3 ${align} text-xs font-medium text-gray-500 uppercase tracking-wider`, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+      "button",
+      {
+        type: "button",
+        onClick: () => onSortField(field),
+        className: "inline-flex items-center gap-1 text-gray-700 hover:text-blue-600",
+        children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: label }),
+          icon
+        ]
+      }
+    ) });
+  };
   return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "overflow-x-auto", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { className: "min-w-full divide-y divide-gray-200", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { className: "bg-gray-50", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider", children: "日付" }),
-      showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider", children: "取引口座" }),
+      renderHeaderCell("date", "日付"),
+      showAccountInfo && renderHeaderCell("account", "取引口座"),
       /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider", children: "種別" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider", children: "出金額" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider", children: "入金額" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider", children: "備考/カテゴリ" }),
+      renderHeaderCell("withdrawal", "出金額", "text-right"),
+      renderHeaderCell("deposit", "入金額", "text-right"),
+      renderHeaderCell("memo", "備考/カテゴリ"),
       showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider", children: "着色" }),
-      showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-1 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider", children: "順序" }),
+      showReorderColumn && /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-1 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider", children: "順序" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider", colSpan: "2", children: "操作" })
     ] }) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { className: "bg-white divide-y divide-gray-200", children: transactions.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: /* @__PURE__ */ jsxRuntimeExports.jsx("td", { colSpan: showAccountInfo ? 10 : 7, className: "px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center", children: "取引履歴はありません。" }) }) : transactions.map((t, index) => {
+    /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { className: "bg-white divide-y divide-gray-200", children: transactions.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: /* @__PURE__ */ jsxRuntimeExports.jsx("td", { colSpan: totalColumns, className: "px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center", children: "取引履歴はありません。" }) }) : transactions.map((t, index) => {
       const account = accountMap[t.accountId];
+      const holderName = resolveHolderName(account);
       const getRowClass = (color) => {
         switch (color) {
           case "green":
@@ -8240,9 +8486,12 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
       const rowClass = getRowClass(t.rowColor);
       return /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { className: `${rowClass} transition duration-150`, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900", children: t.date }),
-        showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { className: "px-3 py-3 whitespace-nowrap text-xs text-gray-500", children: [
+        showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { className: "px-3 py-3 whitespace-nowrap text-xs text-gray-600", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[0.7rem] font-semibold text-gray-500 uppercase tracking-wide", children: "名義人" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-900", children: holderName || "---" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[0.7rem] font-semibold text-gray-500 uppercase tracking-wide mt-2", children: "口座名" }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "font-semibold text-gray-800", children: (account == null ? void 0 : account.name) || "不明な口座" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "font-mono text-gray-400", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "font-mono text-gray-400 mt-1", children: [
             "No. ",
             (account == null ? void 0 : account.number) || "---"
           ] })
@@ -8250,9 +8499,9 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
         /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-700", children: t.type || "---" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-right text-red-600 font-mono", children: (t.withdrawal || 0) > 0 ? formatCurrency(t.withdrawal) : "-" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-right text-green-600 font-mono", children: (t.deposit || 0) > 0 ? formatCurrency(t.deposit) : "-" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 max-w-xs overflow-hidden text-ellipsis text-sm text-gray-700", children: /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: t.memo || "---" }) }),
-        showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsx(ColorPicker, { transactionId: t.id, currentColor: t.rowColor }) }),
-        showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-1 py-3 whitespace-nowrap text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-700", children: t.memo || "---" }),
+        showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-center text-sm text-gray-500", children: /* @__PURE__ */ jsxRuntimeExports.jsx(ColorPicker, { transactionId: t.id, currentColor: t.rowColor, disabled: typeof onColorChange !== "function" }) }),
+        showReorderColumn && /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-1 py-3 whitespace-nowrap text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center", children: [
           index > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
             "button",
             {
@@ -8296,7 +8545,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
       /* @__PURE__ */ jsxRuntimeExports.jsx("td", { colSpan: showAccountInfo ? 3 : 2, className: "px-3 py-3 text-left text-base text-gray-800", children: "合計" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 text-right text-red-600 text-base font-mono", children: formatCurrency(totalWithdrawal) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 text-right text-green-600 text-base font-mono", children: formatCurrency(totalDeposit) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { className: "px-3 py-3 text-right text-base text-gray-800", colSpan: showAccountInfo ? 5 : 3, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { className: "px-3 py-3 text-right text-base text-gray-800", colSpan: Math.max(1, totalColumns - (showAccountInfo ? 5 : 4)), children: [
         "差引残高: ",
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: balance >= 0 ? "text-green-700" : "text-red-700", children: formatCurrency(balance) })
       ] })
@@ -8309,9 +8558,17 @@ const IntegratedTabContent = ({
   setEditingTransaction,
   onReorderTransactions,
   onDeleteTransaction,
-  onUpdateTransactionColor
+  onUpdateTransactionColor,
+  sorting,
+  onSortChange
 }) => {
   const [message, setMessage] = reactExports.useState("");
+  const accountMap = reactExports.useMemo(() => {
+    return (allAccounts || []).reduce((map, account) => {
+      map[account.id] = account;
+      return map;
+    }, {});
+  }, [allAccounts]);
   const integratedTransactions = reactExports.useMemo(() => {
     return [...allTransactions].sort((a, b) => {
       var _a, _b;
@@ -8323,18 +8580,29 @@ const IntegratedTabContent = ({
       return a.id.localeCompare(b.id);
     });
   }, [allTransactions]);
+  const displayTransactions = reactExports.useMemo(() => sortTransactionsByConfig(integratedTransactions, sorting, accountMap), [integratedTransactions, sorting, accountMap]);
+  const allowManualReorder = !sorting || sorting.field === "custom";
+  const sortOptions = [
+    { value: "custom", label: "手動順序（既定）" },
+    { value: "date", label: "日付" },
+    { value: "withdrawal", label: "出金額" },
+    { value: "deposit", label: "入金額" },
+    { value: "memo", label: "摘要" },
+    { value: "account", label: "口座名" }
+  ];
   const handleReorderTransaction = async (movedItem, adjacentItem) => {
     var _a, _b;
+    const sourceList = displayTransactions;
     try {
-      const movedIndex = integratedTransactions.findIndex((t) => t.id === movedItem.id);
-      const adjacentIndex = integratedTransactions.findIndex((t) => t.id === adjacentItem.id);
+      const movedIndex = sourceList.findIndex((t) => t.id === movedItem.id);
+      const adjacentIndex = sourceList.findIndex((t) => t.id === adjacentItem.id);
       const isMovingDown = movedIndex < adjacentIndex;
       let prevItem, nextItem;
       if (isMovingDown) {
         prevItem = adjacentItem;
-        nextItem = integratedTransactions[adjacentIndex + 1];
+        nextItem = sourceList[adjacentIndex + 1];
       } else {
-        prevItem = integratedTransactions[adjacentIndex - 1];
+        prevItem = sourceList[adjacentIndex - 1];
         nextItem = adjacentItem;
       }
       const prevOrder = prevItem ? (_a = prevItem.userOrder) != null ? _a : new Date(prevItem.date).getTime() : null;
@@ -8352,7 +8620,7 @@ const IntegratedTabContent = ({
       const isCollision = prevOrder !== null && newOrder <= prevOrder || nextOrder !== null && newOrder >= nextOrder;
       if (isCollision) {
         setMessage("順序を再整理しています...");
-        const reorderedTransactions = [...integratedTransactions];
+        const reorderedTransactions = [...sourceList];
         const itemToMove = reorderedTransactions.splice(movedIndex, 1)[0];
         const newAdjacentIndex = reorderedTransactions.findIndex((t) => t.id === adjacentItem.id);
         if (isMovingDown) {
@@ -8397,6 +8665,39 @@ const IntegratedTabContent = ({
     }
     setTimeout(() => setMessage(""), 3e3);
   };
+  const handleSortFromHeader = (field) => {
+    if (!onSortChange) return;
+    onSortChange((prev) => {
+      if (field === "custom") {
+        return { field: "custom", direction: "asc" };
+      }
+      if (!prev || prev.field !== field) {
+        return { field, direction: field === "withdrawal" ? "desc" : "asc" };
+      }
+      return { field, direction: prev.direction === "asc" ? "desc" : "asc" };
+    });
+  };
+  const handleSortFieldSelect = (value) => {
+    if (!onSortChange) return;
+    onSortChange((prev) => {
+      if (value === "custom") {
+        return { field: "custom", direction: "asc" };
+      }
+      if (!prev || prev.field !== value) {
+        return { field: value, direction: value === "withdrawal" ? "desc" : "asc" };
+      }
+      return prev;
+    });
+  };
+  const handleSortDirectionToggle = () => {
+    if (!onSortChange) return;
+    onSortChange((prev) => {
+      if (!prev || prev.field === "custom") {
+        return { field: "date", direction: "asc" };
+      }
+      return { field: prev.field, direction: prev.direction === "asc" ? "desc" : "asc" };
+    });
+  };
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-4 space-y-6", id: "integrated-transactions-area", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-center border-b pb-2", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("h2", { className: "text-2xl font-bold text-gray-800 flex items-center space-x-2", children: [
@@ -8411,28 +8712,61 @@ const IntegratedTabContent = ({
         }
       )
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-gray-600", children: "すべての口座の取引が集約されています。「順序」列の矢印ボタンで表示順を変更できます。" }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-slate-600 flex items-center gap-2 font-medium", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowUpDown, { size: 16 }),
+          " 並び替えモード"
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "select",
+          {
+            value: (sorting == null ? void 0 : sorting.field) || "custom",
+            onChange: (e) => handleSortFieldSelect(e.target.value),
+            className: "px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm",
+            children: sortOptions.map((option) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: option.value, children: option.label }, option.value))
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            type: "button",
+            onClick: handleSortDirectionToggle,
+            disabled: !sorting || sorting.field === "custom",
+            className: `inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-sm ${sorting && sorting.field !== "custom" ? "border-slate-400 text-slate-700 hover:bg-white/60" : "border-slate-200 text-slate-400 cursor-not-allowed bg-white"}`,
+            children: (sorting == null ? void 0 : sorting.direction) === "desc" ? "降順" : "昇順"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "ソート対象を切り替えると即座に表示が更新されます。手動順序モードのときのみ列内の矢印から微調整できます。" })
+    ] }),
     message && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: `p-3 rounded-lg my-3 text-sm flex items-center justify-center ${message.includes("エラー") ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(LoaderCircle, { size: 16, className: "animate-spin mr-2" }),
       " ",
       message
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "bg-white rounded-xl shadow-lg overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-      TransactionTable,
-      {
-        transactions: integratedTransactions,
-        accounts: allAccounts,
-        onDelete: handleDeleteTransaction,
-        onEdit: setEditingTransaction,
-        onReorder: handleReorderTransaction,
-        onColorChange: handleColorChange,
-        showAccountInfo: true
-      }
-    ) })
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white rounded-xl shadow-lg overflow-hidden", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        TransactionTable,
+        {
+          transactions: displayTransactions,
+          accounts: allAccounts,
+          onDelete: handleDeleteTransaction,
+          onEdit: setEditingTransaction,
+          onReorder: allowManualReorder ? handleReorderTransaction : void 0,
+          onColorChange: handleColorChange,
+          showAccountInfo: true,
+          sorting,
+          onSortField: handleSortFromHeader,
+          sortableFields: ["date", "account", "withdrawal", "deposit", "memo"]
+        }
+      ),
+      !allowManualReorder && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "px-4 py-2 text-xs text-slate-500 bg-slate-50 border-t border-slate-100", children: "※ 並び替えモードが「手動順序」以外の間は順序列のボタンを無効化しています。" })
+    ] })
   ] });
 };
 const LedgerApp = () => {
-  var _a, _b, _c;
+  var _a, _b, _c, _d;
   const [sessionToken, setSessionToken] = reactExports.useState(null);
   const [userId, setUserId] = reactExports.useState(null);
   const [cases, setCases] = reactExports.useState([]);
@@ -8455,6 +8789,8 @@ const LedgerApp = () => {
   const [showPendingImportModal, setShowPendingImportModal2] = reactExports.useState(false);
   const [pendingImportStatus, setPendingImportStatus] = reactExports.useState("idle");
   const [pendingImportError, setPendingImportError] = reactExports.useState("");
+  const [showGuide, setShowGuide] = reactExports.useState(false);
+  const [transactionSort, setTransactionSort] = reactExports.useState({ field: "custom", direction: "asc" });
   const initialJobId = reactExports.useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("job_id");
@@ -8613,11 +8949,13 @@ const LedgerApp = () => {
     ((entry == null ? void 0 : entry.assets) || []).forEach((asset, index) => {
       const identifiers = (asset == null ? void 0 : asset.identifiers) || {};
       const accountId = String((asset == null ? void 0 : asset.record_id) || identifiers.primary || `${entry.id || "pending"}_${index + 1}`);
-      const name = (asset == null ? void 0 : asset.asset_name) || Array.isArray(asset == null ? void 0 : asset.owner_name) && asset.owner_name[0] || `口座${index + 1}`;
+      const holderName = Array.isArray(asset == null ? void 0 : asset.owner_name) ? asset.owner_name.filter(Boolean).join(" / ") || void 0 : (asset == null ? void 0 : asset.owner_name) || void 0;
+      const name = (asset == null ? void 0 : asset.asset_name) || holderName || `口座${index + 1}`;
       accounts2.push({
         id: accountId,
         name,
         number: identifiers.primary || identifiers.secondary || "",
+        holderName,
         order: (index + 1) * 1e3
       });
       ((asset == null ? void 0 : asset.transactions) || []).forEach((txn, txnIndex) => {
@@ -8649,7 +8987,8 @@ const LedgerApp = () => {
           defaultMappings[account.assetId] = {
             mode: "new",
             accountName: account.accountName,
-            accountNumber: account.accountNumber
+            accountNumber: account.accountNumber,
+            holderName: account.ownerName && account.ownerName.filter(Boolean).join(" / ") || ""
           };
         });
         setJobPreview({ jobId: data.job_id || data.jobId, accounts: normalizedAccounts });
@@ -8684,13 +9023,13 @@ const LedgerApp = () => {
     setPendingImportError("");
   }, [removePendingImportEntry]);
   const handleCreateAccount = reactExports.useCallback(
-    async ({ name, number }) => {
+    async ({ name, number, holderName }) => {
       if (!selectedCaseId) {
         throw new Error("案件が選択されていません。");
       }
       await callLedgerApi("/accounts", {
         method: "POST",
-        body: { name, number, caseId: selectedCaseId }
+        body: { name, number, caseId: selectedCaseId, holderName }
       });
       await refreshState(selectedCaseId, false);
     },
@@ -8759,6 +9098,16 @@ const LedgerApp = () => {
         ...updates
       }
     }));
+  }, []);
+  const handleTransactionSortChange = reactExports.useCallback((updater) => {
+    setTransactionSort((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (!next || !next.field || next.field === "custom") {
+        return { field: "custom", direction: "asc" };
+      }
+      const direction = next.direction || (next.field === "withdrawal" ? "desc" : "asc");
+      return { field: next.field, direction };
+    });
   }, []);
   const handleImportPendingEntry = reactExports.useCallback(
     async (entry, { targetCaseId, newCaseName: newCaseName2 } = {}) => {
@@ -8911,7 +9260,9 @@ const LedgerApp = () => {
           setEditingTransaction,
           onReorderTransactions: handleReorderTransactions,
           onDeleteTransaction: handleDeleteTransaction,
-          onUpdateTransactionColor: handleUpdateTransactionColor
+          onUpdateTransactionColor: handleUpdateTransactionColor,
+          sorting: transactionSort,
+          onSortChange: handleTransactionSortChange
         }
       );
     }
@@ -8964,25 +9315,92 @@ const LedgerApp = () => {
     );
   };
   const totalTransactionCount = transactions.length;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-h-screen bg-gray-50 font-sans", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("header", { className: "bg-white shadow-md", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("h1", { className: "text-3xl font-extrabold text-blue-800 flex items-center space-x-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(List, { size: 30, className: "text-blue-500" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "入出金検討表作成ツール" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: () => setShowAddAccountModal(true), className: "bg-green-600 hover:bg-green-700 px-4 py-2", children: "新規口座を登録" })
-    ] }) }),
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-h-screen bg-slate-50 font-sans", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { className: "relative overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-900 to-slate-800 text-white", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-from),transparent_60%)]", "aria-hidden": "true" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "relative max-w-7xl mx-auto py-10 lg:py-14 px-4 sm:px-6 lg:px-8", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-10 lg:grid-cols-[2fr,1fr] items-center", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm uppercase tracking-[0.25em] text-indigo-200", children: "SOROBOCR ツール群" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-4xl lg:text-5xl font-extrabold mt-2", children: "入出金検討表" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-4 text-lg text-indigo-100 leading-relaxed", children: "Geminiで正規化した通帳データをRailwayのLedger APIに保存し、ブラウザだけでソート・色付け・PDF化まで完結させます。" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 flex flex-wrap gap-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: () => setShowAddAccountModal(true), className: "bg-emerald-500 hover:bg-emerald-600 px-5 py-2.5", children: "新規口座を登録" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                type: "button",
+                onClick: () => setShowGuide(true),
+                className: "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-white/30 bg-white/10 text-white font-semibold hover:bg-white/20",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 18 }),
+                  " クイックガイド"
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "a",
+              {
+                href: "./guide.html",
+                target: "_blank",
+                rel: "noopener",
+                className: "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white text-slate-900 font-semibold hover:bg-slate-100",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkles, { size: 18, className: "text-amber-500" }),
+                  " 使い方ページ"
+                ]
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-8 grid gap-4 sm:grid-cols-3", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/10 rounded-2xl p-4 border border-white/20", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-widest text-indigo-200", children: "案件" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-3xl font-bold", children: cases.length }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-indigo-100 mt-1", children: "Railway上のLedger DBに保存" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/10 rounded-2xl p-4 border border-white/20", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-widest text-indigo-200", children: "登録口座" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-3xl font-bold", children: accounts.length }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-indigo-100 mt-1", children: "名義と口座名を個別管理" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/10 rounded-2xl p-4 border border-white/20", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-widest text-indigo-200", children: "取引件数" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-3xl font-bold", children: transactions.length }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-indigo-100 mt-1", children: "統合タブでまとめて検討" })
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/10 border border-white/20 rounded-2xl p-5 backdrop-blur", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm uppercase tracking-[0.2em] text-indigo-200", children: "SOROBOCR 連携" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-semibold mt-2", children: "Ledger API (Railway)" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-indigo-100 mt-2 leading-relaxed", children: "ブラウザごとに匿名トークンを発行し、OCR結果のJSONをそのまま保存します。案件を跨いだユースケースはJSONエクスポート→別案件へインポートで再現可能です。" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("ul", { className: "mt-4 space-y-2 text-sm text-indigo-100 list-disc list-inside", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "手動並べ替えとPDF書き出しに対応" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "通帳名義・口座名を個別に保持" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "ブラウザに残る pending import からワンクリック取り込み" })
+          ] })
+        ] })
+      ] }) })
+    ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto mt-4 px-4 sm:px-6 lg:px-8", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mb-4 text-xs text-gray-600 bg-yellow-50 border border-yellow-200 rounded-md p-3 leading-relaxed", children: "この画面では Railway 上の FastAPI + Ledger API にデータを保存します。ブラウザごとに匿名IDが割り当てられるため、端末を変えた場合は別ID扱いになります。 共有したい場合は JSON でエクスポートし、必要に応じてインポートしてください。" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-sm text-gray-600 mb-1", children: "案件を選択" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mb-4 flex items-start gap-3 rounded-2xl border border-indigo-100 bg-white p-4 text-sm text-slate-600 shadow-sm", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Info, { size: 18, className: "text-indigo-500 flex-shrink-0 mt-0.5" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { children: [
+          "データはRailway上のFastAPI + SQLite (Ledger API) に保存されます。ブラウザごとに匿名IDが割り当てられるため、別端末では",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "mx-1 rounded bg-slate-100 px-1", children: "エクスポート" }),
+          "したJSONをインポートしてください。 SOROBOCR本体のガイドは ",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href: "../help.html", target: "_blank", rel: "noopener", className: "text-indigo-600 underline", children: "こちら" }),
+          "。"
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-end gap-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm mb-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-[220px]", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-sm text-gray-600 mb-1 block", children: "案件を選択" }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs(
             "select",
             {
               value: selectedCaseId || "",
               onChange: handleCaseSelectChange,
-              className: "p-2 border rounded-lg min-w-[220px]",
+              className: "p-2.5 border border-slate-300 rounded-lg w-full bg-white",
               children: [
                 cases.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "案件がありません" }),
                 cases.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: item.id, children: item.name }, item.id))
@@ -8991,6 +9409,20 @@ const LedgerApp = () => {
           )
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: handleCreateCaseClick, className: "bg-indigo-600 hover:bg-indigo-700", children: "案件を追加" }) })
+      ] }),
+      selectedCaseId && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 sm:grid-cols-3 mb-6", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-slate-200 bg-white p-4 shadow-sm", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "案件名" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-lg font-semibold text-slate-900", children: ((_a = cases.find((c) => c.id === selectedCaseId)) == null ? void 0 : _a.name) || "---" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-slate-200 bg-white p-4 shadow-sm", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "登録口座数" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-2xl font-bold text-slate-900", children: accounts.length })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-slate-200 bg-white p-4 shadow-sm", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "取引件数" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-2xl font-bold text-slate-900", children: transactions.length })
+        ] })
       ] }),
       jobPreview && /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "bg-yellow-50 border border-yellow-200 rounded-2xl p-5 mb-5 space-y-4", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col md:flex-row md:items-center md:justify-between gap-3", children: [
@@ -9041,7 +9473,7 @@ const LedgerApp = () => {
           ] })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid gap-4 md:grid-cols-2", children: jobPreview.accounts.map((account) => {
-          var _a2, _b2, _c2, _d;
+          var _a2, _b2, _c2, _d2;
           const config = jobImportMappings[account.assetId] || { mode: "new" };
           return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white border border-yellow-200 rounded-xl p-4 space-y-3 shadow-sm", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
@@ -9086,7 +9518,7 @@ const LedgerApp = () => {
                   "input",
                   {
                     type: "text",
-                    value: (_d = (_c2 = config.accountNumber) != null ? _c2 : account.accountNumber) != null ? _d : "",
+                    value: (_d2 = (_c2 = config.accountNumber) != null ? _c2 : account.accountNumber) != null ? _d2 : "",
                     onChange: (e) => handleJobMappingChange(account.assetId, { accountNumber: e.target.value }),
                     placeholder: "口座番号",
                     className: "p-2 border rounded-md"
@@ -9174,7 +9606,7 @@ const LedgerApp = () => {
         isOpen: showAddAccountModal,
         onClose: () => setShowAddAccountModal(false),
         onCreateAccount: handleCreateAccount,
-        caseName: (_a = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _a.name
+        caseName: (_b = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _b.name
       }
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -9201,16 +9633,17 @@ const LedgerApp = () => {
         isOpen: showImportModal,
         onClose: () => setShowImportModal(false),
         onImport: handleImportData,
-        caseName: (_b = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _b.name
+        caseName: (_c = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _c.name
       }
     ),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(UsageGuideModal, { isOpen: showGuide, onClose: () => setShowGuide(false) }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       PendingImportModal,
       {
         isOpen: showPendingImportModal,
         onClose: () => setShowPendingImportModal2(false),
         pendingImports: pendingImports2,
-        caseName: (_c = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _c.name,
+        caseName: (_d = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _d.name,
         onApply: (entry, overrides = {}) => handleImportPendingEntry(entry, { targetCaseId: selectedCaseId, ...overrides }),
         onManual: handleManualAddAccount,
         onDismiss: handleDismissPendingEntry,

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>入出金検討表ツール｜使い方ガイド</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            font-family: 'Noto Sans JP', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0f172a;
+            background-color: #f8fafc;
+        }
+        body {
+            margin: 0;
+            background: linear-gradient(135deg, #0f172a 0%, #312e81 60%, #4c1d95 100%);
+            min-height: 100vh;
+        }
+        header {
+            padding: 3rem 1.5rem 2rem;
+            text-align: center;
+            color: #fff;
+        }
+        header h1 {
+            margin: 0.4rem 0 0.8rem;
+            font-size: clamp(2rem, 4vw, 2.75rem);
+        }
+        header p {
+            margin: 0;
+            color: #c7d2fe;
+            font-size: 1rem;
+        }
+        main {
+            background: #fff;
+            border-radius: 24px 24px 0 0;
+            padding: 2.5rem 1.5rem 3rem;
+            max-width: 960px;
+            margin: 0 auto;
+            box-shadow: 0 -15px 40px rgba(15, 23, 42, 0.25);
+        }
+        .steps {
+            display: grid;
+            gap: 1.5rem;
+        }
+        .step-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            padding: 1.5rem;
+            background: #f8fafc;
+        }
+        .step-card h2 {
+            margin: 0;
+            font-size: 1.2rem;
+            color: #1d4ed8;
+        }
+        .step-card p {
+            margin: 0.6rem 0 0;
+            color: #475569;
+            line-height: 1.7;
+        }
+        .faq {
+            margin-top: 3rem;
+        }
+        .faq h3 {
+            font-size: 1.3rem;
+            color: #0f172a;
+        }
+        .faq dl {
+            margin: 1rem 0 0;
+        }
+        .faq dt {
+            font-weight: 600;
+            color: #1d4ed8;
+            margin-top: 1rem;
+        }
+        .faq dd {
+            margin: 0.3rem 0 0;
+            color: #475569;
+            line-height: 1.7;
+        }
+        .links {
+            margin-top: 2.5rem;
+            padding: 1.5rem;
+            background: #eef2ff;
+            border-radius: 18px;
+        }
+        .links a {
+            color: #4338ca;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .links a:hover {
+            text-decoration: underline;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.8rem;
+            background: rgba(255,255,255,0.2);
+            border-radius: 999px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="badge">SOROBOCR ツールガイド</div>
+        <h1>入出金検討表ツールの使い方</h1>
+        <p>Geminiで整形した通帳データをFastAPI + Railwayに保存し、ブラウザだけで色付け・並べ替え・PDF出力まで完結させましょう。</p>
+    </header>
+    <main>
+        <section class="steps">
+            <article class="step-card">
+                <h2>1. 案件を作成・選択する</h2>
+                <p>画面上部のセレクターで案件を選択します。初回は「案件を追加」で名称を登録してください。案件単位で口座・取引・色付けが保持されます。</p>
+            </article>
+            <article class="step-card">
+                <h2>2. pending import から口座を取り込む</h2>
+                <p>SOROBOCRのダウンロード一覧から「入出金検討表」を開くと、ブラウザに保存された通帳候補が自動的に検出されます。黄色いモーダルで案件へ取り込むか、新案件へ分離するか選びましょう。</p>
+            </article>
+            <article class="step-card">
+                <h2>3. 名義・口座名を整え、順序を決める</h2>
+                <p>設定タブで名義人と口座名を別々に編集できます。上下ボタンで表示順序を決めたら、統合タブで「手動順序」を選び色付け・メモを整理します。</p>
+            </article>
+            <article class="step-card">
+                <h2>4. ソートバーで並べ替えながら確認</h2>
+                <p>統合タブにはソートバーを追加しました。日付・金額・摘要で並べ替え、必要なときだけ手動順序に戻すことで優先度検討がスムーズになります。</p>
+            </article>
+            <article class="step-card">
+                <h2>5. PDFやJSONで共有する</h2>
+                <p>統合タブ右上のPDFボタンで並び順そのままに出力できます。JSONエクスポート/インポートを使えば、別案件や他のブラウザへも容易に共有可能です。</p>
+            </article>
+        </section>
+
+        <section class="faq">
+            <h3>FAQ</h3>
+            <dl>
+                <dt>Q. 別の端末でも同じ案件を開けますか？</dt>
+                <dd>A. JSONでエクスポートしてから新しいブラウザでインポートしてください。トークンはブラウザごとに発行されます。</dd>
+                <dt>Q. ソート中に手動並べ替えはできますか？</dt>
+                <dd>A. ソートバーで「手動順序」を選択すると、順序列の矢印が再び有効になります。その他のモードでは表示順のみの切り替えです。</dd>
+                <dt>Q. SOROBOCR本体の使い方は？</dt>
+                <dd>A. <a href="../help.html" target="_blank" rel="noopener">SOROBOCR 使い方ガイド</a>をご覧ください。Gemini 2.5 Proの読み取り手順とFAQをまとめています。</dd>
+            </dl>
+        </section>
+
+        <section class="links">
+            <p>関連リンク:</p>
+            <ul>
+                <li><a href="../index.html" target="_blank" rel="noopener">SOROBOCR トップへ戻る</a></li>
+                <li><a href="./" target="_blank" rel="noopener">入出金検討表ツールを開く</a></li>
+            </ul>
+        </section>
+    </main>
+</body>
+</html>

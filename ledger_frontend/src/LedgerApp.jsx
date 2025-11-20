@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { List, Plus, Minus, CreditCard, Save, Trash2, X, Clipboard, ArrowDownUp, Edit, ChevronUp, ChevronDown, FileDown, Loader2, FileUp } from 'lucide-react';
+import { List, Plus, Minus, CreditCard, Save, Trash2, X, Clipboard, ArrowDownUp, ArrowUpDown, Edit, ChevronUp, ChevronDown, FileDown, Loader2, FileUp, BookOpen, Info, Sparkles } from 'lucide-react';
 
 // --- Ledger API & Utility Setup ---
 const DEFAULT_APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'ledger-app';
@@ -93,6 +93,78 @@ const convertFirestoreTimestamps = (data) => {
         newData[key] = convertFirestoreTimestamps(data[key]);
     }
     return newData;
+};
+
+const baseOrderValue = (transaction) => {
+    if (!transaction) return 0;
+    if (typeof transaction.userOrder === 'number') {
+        return transaction.userOrder;
+    }
+    const dateValue = new Date(transaction.date).getTime();
+    return Number.isFinite(dateValue) ? dateValue : 0;
+};
+
+const resolveHolderName = (account) => {
+    if (!account) return '';
+    if (account.holderName) return account.holderName;
+    if (account.holder_name) return account.holder_name;
+    if (account.holder) return account.holder;
+    if (Array.isArray(account.ownerName)) {
+        return account.ownerName.filter(Boolean).join(' / ');
+    }
+    if (Array.isArray(account.owner_name)) {
+        return account.owner_name.filter(Boolean).join(' / ');
+    }
+    return '';
+};
+
+const sortTransactionsByConfig = (transactions, sort, accountMap = {}) => {
+    if (!Array.isArray(transactions)) return [];
+    if (!sort || sort.field === 'custom') {
+        return [...transactions];
+    }
+    const direction = sort.direction === 'desc' ? -1 : 1;
+
+    const getComparableValue = (transaction) => {
+        switch (sort.field) {
+            case 'date': {
+                const timestamp = new Date(transaction.date).getTime();
+                return Number.isFinite(timestamp) ? timestamp : 0;
+            }
+            case 'withdrawal':
+                return Number(transaction.withdrawal) || 0;
+            case 'deposit':
+                return Number(transaction.deposit) || 0;
+            case 'memo':
+                return (transaction.memo || '').toString().toLowerCase();
+            case 'account':
+                return (accountMap[transaction.accountId]?.name || '').toLowerCase();
+            case 'holder':
+                return resolveHolderName(accountMap[transaction.accountId]).toLowerCase();
+            default:
+                return baseOrderValue(transaction);
+        }
+    };
+
+    return [...transactions].sort((a, b) => {
+        const valueA = getComparableValue(a);
+        const valueB = getComparableValue(b);
+
+        if (typeof valueA === 'string' && typeof valueB === 'string') {
+            const comparison = valueA.localeCompare(valueB, 'ja');
+            if (comparison !== 0) {
+                return comparison * direction;
+            }
+        } else if (valueA !== valueB) {
+            return (valueA > valueB ? 1 : -1) * direction;
+        }
+
+        const fallback = baseOrderValue(a) - baseOrderValue(b);
+        if (fallback !== 0) {
+            return fallback;
+        }
+        return a.id.localeCompare(b.id);
+    });
 };
 
 
@@ -559,19 +631,21 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
 // --- Add Account Modal Component (New) ---
 
 const AddAccountModal = ({ isOpen, onClose, onCreateAccount, caseName }) => {
+  const [holder, setHolder] = useState('');
   const [name, setName] = useState('');
   const [number, setNumber] = useState('');
   const [message, setMessage] = useState('');
 
     const handleSaveAccount = async () => {
-        if (!name || !number) {
-            setMessage('名義人と口座番号を入力してください。');
+        if (!holder || !name || !number) {
+            setMessage('名義人・口座名・口座番号を入力してください。');
             return;
         }
 
         try {
-            await onCreateAccount({ name, number });
+            await onCreateAccount({ name, number, holderName: holder });
             setMessage('口座情報が正常に登録されました！');
+            setHolder('');
             setName('');
             setNumber('');
             setTimeout(onClose, 1500);
@@ -585,7 +659,8 @@ const AddAccountModal = ({ isOpen, onClose, onCreateAccount, caseName }) => {
     <Modal isOpen={isOpen} title="新規取引口座の登録" onClose={onClose}>
       {caseName && <p className="text-sm text-gray-500 mb-3">案件: {caseName}</p>}
       <form onSubmit={(e) => { e.preventDefault(); handleSaveAccount(); }}>
-        <InputField label="名義人 (口座名)" id="accountName" value={name} onChange={(e) => setName(e.target.value)} required icon={Clipboard} placeholder="山田 太郎" />
+        <InputField label="名義人" id="accountHolder" value={holder} onChange={(e) => setHolder(e.target.value)} required icon={Clipboard} placeholder="山田 太郎" />
+        <InputField label="口座表示名" id="accountName" value={name} onChange={(e) => setName(e.target.value)} required icon={List} placeholder="生活費 口座" />
         <InputField label="口座番号" id="accountNumber" value={number} onChange={(e) => setNumber(e.target.value.replace(/[^0-9]/g, ''))} required icon={CreditCard} placeholder="1234567" type="tel" inputMode="numeric" pattern="[0-9]*" />
         
         {message && <p className={`p-3 rounded-lg my-3 ${message.includes('エラー') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{message}</p>}
@@ -596,6 +671,48 @@ const AddAccountModal = ({ isOpen, onClose, onCreateAccount, caseName }) => {
       </form>
     </Modal>
   );
+};
+
+const UsageGuideModal = ({ isOpen, onClose }) => {
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="入出金検討表の使い方" className="max-w-3xl">
+            <div className="space-y-5 text-sm text-gray-700 leading-relaxed">
+                <p className="text-base text-gray-800">
+                    SOROBOCRで読み取った <code className="bg-gray-100 text-gray-800 px-1 rounded">bank_transactions.json</code> をそのまま案件へ取り込み、通帳単位で色付け・ソートできます。
+                    3分で把握できる流れをまとめました。
+                </p>
+                <ol className="list-decimal list-inside space-y-3">
+                    <li>
+                        <span className="font-semibold">案件を作成/選択</span>…上部の案件セレクターで対象案件を決め、必要なら「案件を追加」で新規作成します。
+                    </li>
+                    <li>
+                        <span className="font-semibold">OCR結果を自動連携</span>…SOROBOCRで読み取り後に表示される「入出金検討表ツールを開く」から遷移すると、ブラウザに保存済みの通帳候補が検出されます。黄色のカードで取り込み方法を選択してください。
+                    </li>
+                    <li>
+                        <span className="font-semibold">口座情報を整える</span>…名義と口座表示名をそれぞれ入力し、口座順を整えます。案件ごとにFastAPI (Railway) 上へ保存され、ブラウザを閉じても復元できます。
+                    </li>
+                    <li>
+                        <span className="font-semibold">統合タブで検討</span>…統合タブではすべての取引をリスト化。今回追加したソートバーで日付や金額順に並び替え、最終的な優先度は「手動順序」で調整してください。
+                    </li>
+                    <li>
+                        <span className="font-semibold">PDF/JSONで共有</span>…統合タブ右上のPDFボタンや、設定タブのエクスポートからJSONを出力し、レビュー資料に貼り付けられます。
+                    </li>
+                </ol>
+                <div className="bg-indigo-50 border border-indigo-100 text-indigo-900 rounded-lg p-4 space-y-2">
+                    <p className="text-sm font-semibold flex items-center gap-2"><Sparkles size={16} /> さらに詳しい手順</p>
+                    <p>より詳細な画面遷移やFAQは別タブのガイドページにまとめています。</p>
+                    <a
+                        href="./guide.html"
+                        target="_blank"
+                        rel="noopener"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700"
+                    >
+                        <BookOpen size={16} /> ガイドページを開く
+                    </a>
+                </div>
+            </div>
+        </Modal>
+    );
 };
 
 
@@ -928,11 +1045,22 @@ const AccountManagementContent = ({
                 <h4 className="text-lg font-semibold mb-3 text-gray-700">登録済み口座 ({accounts.length}件)</h4>
                 <div className="space-y-3 p-2 bg-gray-50 rounded-xl shadow-inner max-h-[50vh] overflow-y-auto">
                 {sortedAccounts.map((acc, index) => (
-                    <div key={acc.id} className="flex justify-between items-center bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-                    <div className="text-sm">
-                        <p className="font-bold text-gray-800 text-lg">{acc.name}</p>
-                        <p className="text-gray-500 font-mono text-xs">口座番号: {acc.number}</p>
-                        <p className="text-gray-400 text-xs mt-1">表示順: {index + 1}番目</p>
+                    <div key={acc.id} className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
+                    <div className="text-sm space-y-2 w-full">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <div>
+                                <p className="text-xs font-semibold text-gray-500 tracking-wide uppercase">名義人</p>
+                                <p className="text-base text-gray-900">{resolveHolderName(acc) || '未登録'}</p>
+                            </div>
+                            <div>
+                                <p className="text-xs font-semibold text-gray-500 tracking-wide uppercase">口座表示名</p>
+                                <p className="text-lg font-bold text-gray-900">{acc.name || '---'}</p>
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 font-mono">No. {acc.number || '---'}</span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100">表示順: {index + 1}番目</span>
+                        </div>
                     </div>
                     <div className="flex space-x-3 items-center">
                         {/* 順序変更ボタン */}
@@ -975,13 +1103,14 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
     const [memo, setMemo] = useState('');
     const [type, setType] = useState('振込'); // 新しい取引種別
     const [message, setMessage] = useState('');
+    const [localSort, setLocalSort] = useState({ field: 'date', direction: 'asc' });
 
-    const accountTransactions = transactions.filter(t => t.accountId === account.id)
-        .sort((a, b) => {
-            const dateComparison = new Date(a.date) - new Date(b.date);
-            if (dateComparison !== 0) return dateComparison;
-            return a.id.localeCompare(b.id);
-        });
+    const accountTransactions = useMemo(() => {
+        return transactions.filter(t => t.accountId === account.id);
+    }, [transactions, account.id]);
+
+    const accountMap = useMemo(() => ({ [account.id]: account }), [account]);
+    const sortedTransactions = useMemo(() => sortTransactionsByConfig(accountTransactions, localSort, accountMap), [accountTransactions, localSort, accountMap]);
 
     const transactionTypes = [
         { value: '振込', label: '振込 (銀行)' },
@@ -1098,15 +1227,56 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
 
             {/* 取引履歴リスト */}
             <div className="mt-6">
-                <h3 className="text-xl font-bold text-gray-700 mb-3">取引履歴 ({accountTransactions.length}件)</h3>
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                    <div>
+                        <h3 className="text-xl font-bold text-gray-700">取引履歴 ({accountTransactions.length}件)</h3>
+                        <p className="text-sm text-gray-500">日付や金額で並べ替えてから編集できます。</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <label className="text-gray-500">並び替え</label>
+                        <select
+                            value={localSort.field}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setLocalSort((prev) => ({
+                                    field: value,
+                                    direction: value === prev.field ? prev.direction : (value === 'withdrawal' || value === 'deposit' ? 'desc' : 'asc'),
+                                }));
+                            }}
+                            className="border border-gray-300 rounded-lg px-3 py-1.5 bg-white"
+                        >
+                            <option value="date">日付</option>
+                            <option value="withdrawal">出金額</option>
+                            <option value="deposit">入金額</option>
+                            <option value="memo">摘要</option>
+                        </select>
+                        <button
+                            type="button"
+                            onClick={() => setLocalSort((prev) => ({ field: prev.field, direction: prev.direction === 'asc' ? 'desc' : 'asc' }))}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                        >
+                            <ArrowUpDown size={16} /> {localSort.direction === 'asc' ? '昇順' : '降順'}
+                        </button>
+                    </div>
+                </div>
                 <div className="bg-white rounded-xl shadow-lg overflow-hidden">
                     <TransactionTable
-                        transactions={accountTransactions}
+                        transactions={sortedTransactions}
                         accounts={[{id: account.id, name: account.name}]} // Pass the current account in an array
                         onDelete={handleDeleteTransaction}
                         onEdit={setEditingTransaction}
                         onColorChange={() => {}} // Dummy function as color is not changed here
                         showAccountInfo={false} // We are in a single account view
+                        sorting={localSort}
+                        onSortField={(field) => {
+                            setLocalSort((prev) => {
+                                if (prev.field === field) {
+                                    return { field, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+                                }
+                                return { field, direction: field === 'withdrawal' || field === 'deposit' ? 'desc' : 'asc' };
+                            });
+                        }}
+                        sortableFields={['date', 'withdrawal', 'deposit', 'memo']}
                     />
                 </div>
             </div>
@@ -1114,17 +1284,16 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
     );
 };
 
-const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorChange, onReorder, showAccountInfo = true }) => {
+const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorChange, onReorder, showAccountInfo = true, sorting = null, onSortField = null, sortableFields = [] }) => {
     const accountMap = useMemo(() => {
-        // accountsがundefinedでないことを保証してからreduceを呼び出す
-        if (!accounts) return {}; 
+        if (!accounts) return {};
         return accounts.reduce((map, acc) => {
             map[acc.id] = acc;
             return map;
         }, {});
     }, [accounts]);
 
-    const ColorPicker = ({ transactionId, currentColor }) => {
+    const ColorPicker = ({ transactionId, currentColor, disabled }) => {
         const colors = ['green', 'blue', 'yellow', 'pink'];
         const colorTooltips = { green: '緑', blue: '青', yellow: '黄', pink: 'ピンク' };
 
@@ -1137,7 +1306,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
                 default: return 'border-transparent';
             }
         };
-        
+
         const getBgClass = (color) => {
             switch (color) {
                 case 'green': return 'bg-green-400';
@@ -1146,18 +1315,20 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
                 case 'pink': return 'bg-pink-400';
                 default: return 'bg-gray-400';
             }
-        }
+        };
 
         return (
             <div className="flex items-center justify-center space-x-1">
-                {colors.map(color => (
+                {colors.map((color) => (
                     <button
                         key={color}
-                        onClick={() => onColorChange(transactionId, color === currentColor ? null : color)}
-                        className={`w-4 h-4 rounded-full border-2 transition-transform transform hover:scale-125 ${
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => !disabled && onColorChange(transactionId, color === currentColor ? null : color)}
+                        className={`w-4 h-4 rounded-full border-2 transition-transform ${disabled ? 'opacity-40 cursor-not-allowed' : 'transform hover:scale-125'} ${
                             currentColor === color ? getBorderClass(color) : 'border-transparent'
                         } ${getBgClass(color)}`}
-                        title={`${colorTooltips[color]}でマーク`}
+                        title={disabled ? 'このビューでは色付けを利用できません' : `${colorTooltips[color]}でマーク`}
                     />
                 ))}
             </div>
@@ -1167,24 +1338,56 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
     const totalWithdrawal = transactions.reduce((sum, t) => sum + (t.withdrawal || 0), 0);
     const totalDeposit = transactions.reduce((sum, t) => sum + (t.deposit || 0), 0);
     const balance = totalDeposit - totalWithdrawal;
+    const showReorderColumn = showAccountInfo && typeof onReorder === 'function';
+    const totalColumns = 7 + (showAccountInfo ? 2 : 0) + (showReorderColumn ? 1 : 0);
+    const isSortableField = (field) => Array.isArray(sortableFields) && sortableFields.includes(field);
+
+    const renderHeaderCell = (field, label, align = 'text-left') => {
+        const sortable = typeof onSortField === 'function' && isSortableField(field);
+        if (!sortable) {
+            return (
+                <th className={`px-3 py-3 ${align} text-xs font-medium text-gray-500 uppercase tracking-wider`}>
+                    {label}
+                </th>
+            );
+        }
+        const isActive = sorting?.field === field;
+        const icon = !isActive ? (
+            <ArrowUpDown size={14} className="text-gray-400" />
+        ) : sorting.direction === 'asc' ? (
+            <ChevronUp size={14} className="text-blue-600" />
+        ) : (
+            <ChevronDown size={14} className="text-blue-600" />
+        );
+        return (
+            <th className={`px-3 py-3 ${align} text-xs font-medium text-gray-500 uppercase tracking-wider`}>
+                <button
+                    type="button"
+                    onClick={() => onSortField(field)}
+                    className="inline-flex items-center gap-1 text-gray-700 hover:text-blue-600"
+                >
+                    <span>{label}</span>
+                    {icon}
+                </button>
+            </th>
+        );
+    };
 
     return (
         <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                     <tr>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">日付</th>
-                        {showAccountInfo && (
-                            <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">取引口座</th>
-                        )}
+                        {renderHeaderCell('date', '日付')}
+                        {showAccountInfo && renderHeaderCell('account', '取引口座')}
                         <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">種別</th>
-                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">出金額</th>
-                        <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">入金額</th>
-                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">備考/カテゴリ</th>
+                        {renderHeaderCell('withdrawal', '出金額', 'text-right')}
+                        {renderHeaderCell('deposit', '入金額', 'text-right')}
+                        {renderHeaderCell('memo', '備考/カテゴリ')}
                         {showAccountInfo && (
                             <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">着色</th>
                         )}
-                        {showAccountInfo && (
+                        {showReorderColumn && (
                             <th className="px-1 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">順序</th>
                         )}
                         <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider" colSpan="2">操作</th>
@@ -1193,30 +1396,39 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
                 <tbody className="bg-white divide-y divide-gray-200">
                     {transactions.length === 0 ? (
                         <tr>
-                            <td colSpan={showAccountInfo ? 10 : 7} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                            <td colSpan={totalColumns} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
                                 取引履歴はありません。
                             </td>
                         </tr>
                     ) : (
                         transactions.map((t, index) => {
                             const account = accountMap[t.accountId];
+                            const holderName = resolveHolderName(account);
                             const getRowClass = (color) => {
-                                switch(color) {
-                                    case 'green': return 'bg-green-50 hover:bg-green-100';
-                                    case 'blue': return 'bg-blue-50 hover:bg-blue-100';
-                                    case 'yellow': return 'bg-yellow-50 hover:bg-yellow-100';
-                                    case 'pink': return 'bg-pink-50 hover:bg-pink-100';
-                                    default: return 'hover:bg-gray-50';
+                                switch (color) {
+                                    case 'green':
+                                        return 'bg-green-50 hover:bg-green-100';
+                                    case 'blue':
+                                        return 'bg-blue-50 hover:bg-blue-100';
+                                    case 'yellow':
+                                        return 'bg-yellow-50 hover:bg-yellow-100';
+                                    case 'pink':
+                                        return 'bg-pink-50 hover:bg-pink-100';
+                                    default:
+                                        return 'hover:bg-gray-50';
                                 }
-                            }
+                            };
                             const rowClass = getRowClass(t.rowColor);
                             return (
                                 <tr key={t.id} className={`${rowClass} transition duration-150`}>
                                     <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{t.date}</td>
                                     {showAccountInfo && (
-                                        <td className="px-3 py-3 whitespace-nowrap text-xs text-gray-500">
+                                        <td className="px-3 py-3 whitespace-nowrap text-xs text-gray-600">
+                                            <p className="text-[0.7rem] font-semibold text-gray-500 uppercase tracking-wide">名義人</p>
+                                            <p className="text-sm text-gray-900">{holderName || '---'}</p>
+                                            <p className="text-[0.7rem] font-semibold text-gray-500 uppercase tracking-wide mt-2">口座名</p>
                                             <p className="font-semibold text-gray-800">{account?.name || '不明な口座'}</p>
-                                            <p className="font-mono text-gray-400">No. {account?.number || '---'}</p>
+                                            <p className="font-mono text-gray-400 mt-1">No. {account?.number || '---'}</p>
                                         </td>
                                     )}
                                     <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700">{t.type || '---'}</td>
@@ -1226,17 +1438,15 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
                                     <td className="px-3 py-3 whitespace-nowrap text-sm text-right text-green-600 font-mono">
                                         {(t.deposit || 0) > 0 ? formatCurrency(t.deposit) : '-'}
                                     </td>
-                                    <td className="px-3 py-3 max-w-xs overflow-hidden text-ellipsis text-sm text-gray-700">
-                                        <p>{t.memo || '---'}</p>
+                                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700">
+                                        {t.memo || '---'}
                                     </td>
-                                    
                                     {showAccountInfo && (
-                                        <td className="px-3 py-3 whitespace-nowrap text-center">
-                                            <ColorPicker transactionId={t.id} currentColor={t.rowColor} />
+                                        <td className="px-3 py-3 whitespace-nowrap text-center text-sm text-gray-500">
+                                            <ColorPicker transactionId={t.id} currentColor={t.rowColor} disabled={typeof onColorChange !== 'function'} />
                                         </td>
                                     )}
-
-                                    {showAccountInfo && (
+                                    {showReorderColumn && (
                                         <td className="px-1 py-3 whitespace-nowrap text-center">
                                             <div className="flex flex-col items-center">
                                                 {index > 0 && (
@@ -1264,7 +1474,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
                                     {/* 編集ボタン */}
                                     <td className="px-3 py-3 whitespace-nowrap text-center text-sm font-medium">
                                         <button
-                                            onClick={() => onEdit({...t, accountName: account?.name})}
+                                            onClick={() => onEdit({ ...t, accountName: account?.name })}
                                             className="text-indigo-500 hover:text-indigo-700 p-1 rounded-full hover:bg-indigo-100 transition"
                                             title="取引を編集"
                                         >
@@ -1287,16 +1497,14 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
                         })
                     )}
                 </tbody>
-                {/* 合計フッター */}
                 <tfoot className="bg-gray-100 font-bold">
                     <tr>
                         <td colSpan={showAccountInfo ? 3 : 2} className="px-3 py-3 text-left text-base text-gray-800">合計</td>
                         <td className="px-3 py-3 text-right text-red-600 text-base font-mono">{formatCurrency(totalWithdrawal)}</td>
                         <td className="px-3 py-3 text-right text-green-600 text-base font-mono">{formatCurrency(totalDeposit)}</td>
-                        <td className="px-3 py-3 text-right text-base text-gray-800" colSpan={showAccountInfo ? 5 : 3}>
+                        <td className="px-3 py-3 text-right text-base text-gray-800" colSpan={Math.max(1, totalColumns - (showAccountInfo ? 5 : 4))}>
                             差引残高: <span className={balance >= 0 ? 'text-green-700' : 'text-red-700'}>{formatCurrency(balance)}</span>
                         </td>
-                        
                     </tr>
                 </tfoot>
             </table>
@@ -1314,8 +1522,16 @@ const IntegratedTabContent = ({
     onReorderTransactions,
     onDeleteTransaction,
     onUpdateTransactionColor,
+    sorting,
+    onSortChange,
 }) => {
     const [message, setMessage] = useState(''); // メッセージ表示用ステートを追加
+    const accountMap = useMemo(() => {
+        return (allAccounts || []).reduce((map, account) => {
+            map[account.id] = account;
+            return map;
+        }, {});
+    }, [allAccounts]);
 
     // 統合ロジック: userOrderがあればそれを優先し、なければ日付（昇順）でソート
     const integratedTransactions = useMemo(() => {
@@ -1334,10 +1550,22 @@ const IntegratedTabContent = ({
         });
     }, [allTransactions]);
 
+    const displayTransactions = useMemo(() => sortTransactionsByConfig(integratedTransactions, sorting, accountMap), [integratedTransactions, sorting, accountMap]);
+    const allowManualReorder = !sorting || sorting.field === 'custom';
+    const sortOptions = [
+        { value: 'custom', label: '手動順序（既定）' },
+        { value: 'date', label: '日付' },
+        { value: 'withdrawal', label: '出金額' },
+        { value: 'deposit', label: '入金額' },
+        { value: 'memo', label: '摘要' },
+        { value: 'account', label: '口座名' },
+    ];
+
     const handleReorderTransaction = async (movedItem, adjacentItem) => {
+        const sourceList = displayTransactions;
         try {
-            const movedIndex = integratedTransactions.findIndex(t => t.id === movedItem.id);
-            const adjacentIndex = integratedTransactions.findIndex(t => t.id === adjacentItem.id);
+            const movedIndex = sourceList.findIndex(t => t.id === movedItem.id);
+            const adjacentIndex = sourceList.findIndex(t => t.id === adjacentItem.id);
 
             const isMovingDown = movedIndex < adjacentIndex;
 
@@ -1345,9 +1573,9 @@ const IntegratedTabContent = ({
 
             if (isMovingDown) {
                 prevItem = adjacentItem;
-                nextItem = integratedTransactions[adjacentIndex + 1];
+                nextItem = sourceList[adjacentIndex + 1];
             } else {
-                prevItem = integratedTransactions[adjacentIndex - 1];
+                prevItem = sourceList[adjacentIndex - 1];
                 nextItem = adjacentItem;
             }
 
@@ -1371,7 +1599,7 @@ const IntegratedTabContent = ({
 
             if (isCollision) {
                 setMessage('順序を再整理しています...');
-                const reorderedTransactions = [...integratedTransactions];
+                const reorderedTransactions = [...sourceList];
                 const itemToMove = reorderedTransactions.splice(movedIndex, 1)[0];
                 const newAdjacentIndex = reorderedTransactions.findIndex(t => t.id === adjacentItem.id);
                 if (isMovingDown) {
@@ -1422,6 +1650,42 @@ const IntegratedTabContent = ({
         setTimeout(() => setMessage(''), 3000);
     };
 
+    const handleSortFromHeader = (field) => {
+        if (!onSortChange) return;
+        onSortChange((prev) => {
+            if (field === 'custom') {
+                return { field: 'custom', direction: 'asc' };
+            }
+            if (!prev || prev.field !== field) {
+                return { field, direction: field === 'withdrawal' ? 'desc' : 'asc' };
+            }
+            return { field, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+        });
+    };
+
+    const handleSortFieldSelect = (value) => {
+        if (!onSortChange) return;
+        onSortChange((prev) => {
+            if (value === 'custom') {
+                return { field: 'custom', direction: 'asc' };
+            }
+            if (!prev || prev.field !== value) {
+                return { field: value, direction: value === 'withdrawal' ? 'desc' : 'asc' };
+            }
+            return prev;
+        });
+    };
+
+    const handleSortDirectionToggle = () => {
+        if (!onSortChange) return;
+        onSortChange((prev) => {
+            if (!prev || prev.field === 'custom') {
+                return { field: 'date', direction: 'asc' };
+            }
+            return { field: prev.field, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+        });
+    };
+
     return (
         <div className="p-4 space-y-6" id="integrated-transactions-area">
             <div className="flex justify-between items-center border-b pb-2">
@@ -1434,23 +1698,53 @@ const IntegratedTabContent = ({
                     fileName={`統合取引一覧_${new Date().toISOString().substring(0, 10)}`}
                 />
             </div>
-            <p className="text-gray-600">
-                すべての口座の取引が集約されています。「順序」列の矢印ボタンで表示順を変更できます。
-            </p>
-            
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                    <p className="text-sm text-slate-600 flex items-center gap-2 font-medium">
+                        <ArrowUpDown size={16} /> 並び替えモード
+                    </p>
+                    <select
+                        value={sorting?.field || 'custom'}
+                        onChange={(e) => handleSortFieldSelect(e.target.value)}
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm"
+                    >
+                        {sortOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                    </select>
+                    <button
+                        type="button"
+                        onClick={handleSortDirectionToggle}
+                        disabled={!sorting || sorting.field === 'custom'}
+                        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-sm ${sorting && sorting.field !== 'custom' ? 'border-slate-400 text-slate-700 hover:bg-white/60' : 'border-slate-200 text-slate-400 cursor-not-allowed bg-white'}`}
+                    >
+                        {sorting?.direction === 'desc' ? '降順' : '昇順'}
+                    </button>
+                </div>
+                <p className="text-xs text-slate-500">
+                    ソート対象を切り替えると即座に表示が更新されます。手動順序モードのときのみ列内の矢印から微調整できます。
+                </p>
+            </div>
+
             {/* メッセージ表示 */}
             {message && <p className={`p-3 rounded-lg my-3 text-sm flex items-center justify-center ${message.includes('エラー') ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}><Loader2 size={16} className="animate-spin mr-2" /> {message}</p>}
 
             <div className="bg-white rounded-xl shadow-lg overflow-hidden">
                 <TransactionTable
-                    transactions={integratedTransactions}
+                    transactions={displayTransactions}
                     accounts={allAccounts}
                     onDelete={handleDeleteTransaction}
                     onEdit={setEditingTransaction}
-                    onReorder={handleReorderTransaction}
+                    onReorder={allowManualReorder ? handleReorderTransaction : undefined}
                     onColorChange={handleColorChange}
                     showAccountInfo={true}
+                    sorting={sorting}
+                    onSortField={handleSortFromHeader}
+                    sortableFields={['date', 'account', 'withdrawal', 'deposit', 'memo']}
                 />
+                {!allowManualReorder && (
+                    <p className="px-4 py-2 text-xs text-slate-500 bg-slate-50 border-t border-slate-100">※ 並び替えモードが「手動順序」以外の間は順序列のボタンを無効化しています。</p>
+                )}
             </div>
         </div>
     );
@@ -1481,6 +1775,8 @@ const LedgerApp = () => {
     const [showPendingImportModal, setShowPendingImportModal] = useState(false);
     const [pendingImportStatus, setPendingImportStatus] = useState('idle');
     const [pendingImportError, setPendingImportError] = useState('');
+    const [showGuide, setShowGuide] = useState(false);
+    const [transactionSort, setTransactionSort] = useState({ field: 'custom', direction: 'asc' });
     const initialJobId = useMemo(() => {
         const params = new URLSearchParams(window.location.search);
         return params.get('job_id');
@@ -1643,11 +1939,15 @@ const LedgerApp = () => {
         (entry?.assets || []).forEach((asset, index) => {
             const identifiers = asset?.identifiers || {};
             const accountId = String(asset?.record_id || identifiers.primary || `${entry.id || 'pending'}_${index + 1}`);
-            const name = asset?.asset_name || (Array.isArray(asset?.owner_name) && asset.owner_name[0]) || `口座${index + 1}`;
+            const holderName = Array.isArray(asset?.owner_name)
+                ? (asset.owner_name.filter(Boolean).join(' / ') || undefined)
+                : (asset?.owner_name || undefined);
+            const name = asset?.asset_name || holderName || `口座${index + 1}`;
             accounts.push({
                 id: accountId,
                 name,
                 number: identifiers.primary || identifiers.secondary || '',
+                holderName,
                 order: (index + 1) * 1000,
             });
             (asset?.transactions || []).forEach((txn, txnIndex) => {
@@ -1681,6 +1981,7 @@ const LedgerApp = () => {
                         mode: 'new',
                         accountName: account.accountName,
                         accountNumber: account.accountNumber,
+                        holderName: (account.ownerName && account.ownerName.filter(Boolean).join(' / ')) || '',
                     };
                 });
                 setJobPreview({ jobId: data.job_id || data.jobId, accounts: normalizedAccounts });
@@ -1720,13 +2021,13 @@ const handleAddAccountClick = useCallback(() => {
     }, [removePendingImportEntry]);
 
     const handleCreateAccount = useCallback(
-        async ({ name, number }) => {
+        async ({ name, number, holderName }) => {
             if (!selectedCaseId) {
                 throw new Error('案件が選択されていません。');
             }
             await callLedgerApi('/accounts', {
                 method: 'POST',
-                body: { name, number, caseId: selectedCaseId },
+                body: { name, number, caseId: selectedCaseId, holderName },
             });
             await refreshState(selectedCaseId, false);
         },
@@ -1804,6 +2105,17 @@ const handleAddAccountClick = useCallback(() => {
                 ...updates,
             },
         }));
+    }, []);
+
+    const handleTransactionSortChange = useCallback((updater) => {
+        setTransactionSort((prev) => {
+            const next = typeof updater === 'function' ? updater(prev) : updater;
+            if (!next || !next.field || next.field === 'custom') {
+                return { field: 'custom', direction: 'asc' };
+            }
+            const direction = next.direction || (next.field === 'withdrawal' ? 'desc' : 'asc');
+            return { field: next.field, direction };
+        });
     }, []);
 
     const handleImportPendingEntry = useCallback(
@@ -1962,6 +2274,8 @@ const handleAddAccountClick = useCallback(() => {
                     onReorderTransactions={handleReorderTransactions}
                     onDeleteTransaction={handleDeleteTransaction}
                     onUpdateTransactionColor={handleUpdateTransactionColor}
+                    sorting={transactionSort}
+                    onSortChange={handleTransactionSortChange}
                 />
             );
         }
@@ -2024,32 +2338,86 @@ const handleAddAccountClick = useCallback(() => {
     const totalTransactionCount = transactions.length;
 
     return (
-        <div className="min-h-screen bg-gray-50 font-sans">
-            <header className="bg-white shadow-md">
-                <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-                    <h1 className="text-3xl font-extrabold text-blue-800 flex items-center space-x-2">
-                        <List size={30} className="text-blue-500" />
-                        <span>入出金検討表作成ツール</span>
-                    </h1>
-                    {/* 右上のボタンを新規口座登録に変更 */}
-                    <MainButton Icon={Plus} onClick={() => setShowAddAccountModal(true)} className="bg-green-600 hover:bg-green-700 px-4 py-2">
-                        新規口座を登録
-                    </MainButton>
+        <div className="min-h-screen bg-slate-50 font-sans">
+            <header className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-900 to-slate-800 text-white">
+                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-from),transparent_60%)]" aria-hidden="true"></div>
+                <div className="relative max-w-7xl mx-auto py-10 lg:py-14 px-4 sm:px-6 lg:px-8">
+                    <div className="grid gap-10 lg:grid-cols-[2fr,1fr] items-center">
+                        <div>
+                            <p className="text-sm uppercase tracking-[0.25em] text-indigo-200">SOROBOCR ツール群</p>
+                            <h1 className="text-4xl lg:text-5xl font-extrabold mt-2">入出金検討表</h1>
+                            <p className="mt-4 text-lg text-indigo-100 leading-relaxed">
+                                Geminiで正規化した通帳データをRailwayのLedger APIに保存し、ブラウザだけでソート・色付け・PDF化まで完結させます。
+                            </p>
+                            <div className="mt-6 flex flex-wrap gap-3">
+                                <MainButton Icon={Plus} onClick={() => setShowAddAccountModal(true)} className="bg-emerald-500 hover:bg-emerald-600 px-5 py-2.5">
+                                    新規口座を登録
+                                </MainButton>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowGuide(true)}
+                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-white/30 bg-white/10 text-white font-semibold hover:bg-white/20"
+                                >
+                                    <BookOpen size={18} /> クイックガイド
+                                </button>
+                                <a
+                                    href="./guide.html"
+                                    target="_blank"
+                                    rel="noopener"
+                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white text-slate-900 font-semibold hover:bg-slate-100"
+                                >
+                                    <Sparkles size={18} className="text-amber-500" /> 使い方ページ
+                                </a>
+                            </div>
+                            <div className="mt-8 grid gap-4 sm:grid-cols-3">
+                                <div className="bg-white/10 rounded-2xl p-4 border border-white/20">
+                                    <p className="text-xs uppercase tracking-widest text-indigo-200">案件</p>
+                                    <p className="text-3xl font-bold">{cases.length}</p>
+                                    <p className="text-xs text-indigo-100 mt-1">Railway上のLedger DBに保存</p>
+                                </div>
+                                <div className="bg-white/10 rounded-2xl p-4 border border-white/20">
+                                    <p className="text-xs uppercase tracking-widest text-indigo-200">登録口座</p>
+                                    <p className="text-3xl font-bold">{accounts.length}</p>
+                                    <p className="text-xs text-indigo-100 mt-1">名義と口座名を個別管理</p>
+                                </div>
+                                <div className="bg-white/10 rounded-2xl p-4 border border-white/20">
+                                    <p className="text-xs uppercase tracking-widest text-indigo-200">取引件数</p>
+                                    <p className="text-3xl font-bold">{transactions.length}</p>
+                                    <p className="text-xs text-indigo-100 mt-1">統合タブでまとめて検討</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="bg-white/10 border border-white/20 rounded-2xl p-5 backdrop-blur">
+                            <p className="text-sm uppercase tracking-[0.2em] text-indigo-200">SOROBOCR 連携</p>
+                            <h2 className="text-2xl font-semibold mt-2">Ledger API (Railway)</h2>
+                            <p className="text-sm text-indigo-100 mt-2 leading-relaxed">
+                                ブラウザごとに匿名トークンを発行し、OCR結果のJSONをそのまま保存します。案件を跨いだユースケースはJSONエクスポート→別案件へインポートで再現可能です。
+                            </p>
+                            <ul className="mt-4 space-y-2 text-sm text-indigo-100 list-disc list-inside">
+                                <li>手動並べ替えとPDF書き出しに対応</li>
+                                <li>通帳名義・口座名を個別に保持</li>
+                                <li>ブラウザに残る pending import からワンクリック取り込み</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </header>
 
             <div className="max-w-7xl mx-auto mt-4 px-4 sm:px-6 lg:px-8">
-                <div className="mb-4 text-xs text-gray-600 bg-yellow-50 border border-yellow-200 rounded-md p-3 leading-relaxed">
-                    この画面では Railway 上の FastAPI + Ledger API にデータを保存します。ブラウザごとに匿名IDが割り当てられるため、端末を変えた場合は別ID扱いになります。
-                    共有したい場合は JSON でエクスポートし、必要に応じてインポートしてください。
+                <div className="mb-4 flex items-start gap-3 rounded-2xl border border-indigo-100 bg-white p-4 text-sm text-slate-600 shadow-sm">
+                    <Info size={18} className="text-indigo-500 flex-shrink-0 mt-0.5" />
+                    <p>
+                        データはRailway上のFastAPI + SQLite (Ledger API) に保存されます。ブラウザごとに匿名IDが割り当てられるため、別端末では<code className="mx-1 rounded bg-slate-100 px-1">エクスポート</code>したJSONをインポートしてください。
+                        SOROBOCR本体のガイドは <a href="../help.html" target="_blank" rel="noopener" className="text-indigo-600 underline">こちら</a>。
+                    </p>
                 </div>
-                <div className="flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
-                    <div className="flex flex-col">
-                        <label className="text-sm text-gray-600 mb-1">案件を選択</label>
+                <div className="flex flex-wrap items-end gap-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm mb-4">
+                    <div className="flex-1 min-w-[220px]">
+                        <label className="text-sm text-gray-600 mb-1 block">案件を選択</label>
                         <select
                             value={selectedCaseId || ''}
                             onChange={handleCaseSelectChange}
-                            className="p-2 border rounded-lg min-w-[220px]"
+                            className="p-2.5 border border-slate-300 rounded-lg w-full bg-white"
                         >
                             {cases.length === 0 && <option value="">案件がありません</option>}
                             {cases.map((item) => (
@@ -2063,6 +2431,23 @@ const handleAddAccountClick = useCallback(() => {
                         </MainButton>
                     </div>
                 </div>
+
+                {selectedCaseId && (
+                    <div className="grid gap-3 sm:grid-cols-3 mb-6">
+                        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <p className="text-xs text-slate-500">案件名</p>
+                            <p className="text-lg font-semibold text-slate-900">{cases.find((c) => c.id === selectedCaseId)?.name || '---'}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <p className="text-xs text-slate-500">登録口座数</p>
+                            <p className="text-2xl font-bold text-slate-900">{accounts.length}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                            <p className="text-xs text-slate-500">取引件数</p>
+                            <p className="text-2xl font-bold text-slate-900">{transactions.length}</p>
+                        </div>
+                    </div>
+                )}
 
                 {jobPreview && (
                     <section className="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 mb-5 space-y-4">
@@ -2244,6 +2629,8 @@ const handleAddAccountClick = useCallback(() => {
                 onImport={handleImportData}
                 caseName={cases.find((item) => item.id === selectedCaseId)?.name}
             />
+
+            <UsageGuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
 
             <PendingImportModal
                 isOpen={showPendingImportModal}
