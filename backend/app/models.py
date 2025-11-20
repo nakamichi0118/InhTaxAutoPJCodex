@@ -134,6 +134,7 @@ class LedgerAccountPayload(BaseModel):
     case_id: Optional[str] = Field(default=None, alias="caseId")
     name: str
     number: Optional[str] = None
+    holder_name: Optional[str] = Field(default=None, alias="holderName")
     order: int = 0
     user_id: Optional[str] = Field(default=None, alias="userId")
     created_at: Optional[str] = Field(default=None, alias="createdAt")
@@ -143,6 +144,7 @@ class LedgerAccountPayload(BaseModel):
 class LedgerAccountCreateRequest(BaseModel):
     name: str
     number: Optional[str] = None
+    holder_name: Optional[str] = Field(default=None, alias="holderName")
     order: Optional[int] = None
     case_id: Optional[str] = Field(default=None, alias="caseId")
 
@@ -150,6 +152,7 @@ class LedgerAccountCreateRequest(BaseModel):
 class LedgerAccountUpdateRequest(BaseModel):
     name: Optional[str] = None
     number: Optional[str] = None
+    holder_name: Optional[str] = Field(default=None, alias="holderName")
     order: Optional[int] = None
 
 
@@ -283,6 +286,11 @@ class LedgerJobImportMapping(BaseModel):
     target_account_id: Optional[str] = Field(default=None, alias="targetAccountId")
     account_name: Optional[str] = Field(default=None, alias="accountName")
     account_number: Optional[str] = Field(default=None, alias="accountNumber")
+    holder_name: Optional[str] = Field(default=None, alias="holderName")
+    group_key: Optional[str] = Field(default=None, alias="groupKey")
+    group_name: Optional[str] = Field(default=None, alias="groupName")
+    group_number: Optional[str] = Field(default=None, alias="groupNumber")
+    group_holder_name: Optional[str] = Field(default=None, alias="groupHolderName")
 
 
 class LedgerJobImportRequest(BaseModel):

@@ -6,3 +6,9 @@
 - 取引タブにもローカルソートを追加し、入出金の昇降順切替に対応。
 - 使い方モーダル+`public/guide.html` を追加し、pending import〜PDF出力までの手順とFAQを整理。
 - `npm run build` を実行し、`webapp/ledger/`へ最新成果物を配置済み。
+
+## 2025-11-20 17:16 JST
+- ヘッダーや注意書きを既存SOROBOCRテイストへ戻し、グラデーション/サマリーカード/余計なAPI説明を撤去。ガイドはシンプルなボタンとモーダルでアクセスできるよう整理。
+- Job Previewに「統合グループキー」オプションを追加し、同じキーを与えた複数口座を1口座として取り込めるようフロント/バックエンド両方を拡張。
+- `LedgerJobImportMapping` と `/jobs/{id}/import` を改修し、グループ単位でまとめて口座作成＆取引一括投入が可能に。UIにも説明追記。
+- `npm run build` を再実行し、新しいバンドル(`index-bR01U9YX.css` / `index-DbGv-S05.js`)を `webapp/ledger/` に配置。

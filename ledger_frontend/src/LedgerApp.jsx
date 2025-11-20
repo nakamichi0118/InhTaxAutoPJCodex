@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { List, Plus, Minus, CreditCard, Save, Trash2, X, Clipboard, ArrowDownUp, ArrowUpDown, Edit, ChevronUp, ChevronDown, FileDown, Loader2, FileUp, BookOpen, Info, Sparkles } from 'lucide-react';
+import { List, Plus, Minus, CreditCard, Save, Trash2, X, Clipboard, ArrowDownUp, ArrowUpDown, Edit, ChevronUp, ChevronDown, FileDown, Loader2, FileUp, BookOpen } from 'lucide-react';
 
 // --- Ledger API & Utility Setup ---
 const DEFAULT_APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'ledger-app';
@@ -699,7 +699,7 @@ const UsageGuideModal = ({ isOpen, onClose }) => {
                     </li>
                 </ol>
                 <div className="bg-indigo-50 border border-indigo-100 text-indigo-900 rounded-lg p-4 space-y-2">
-                    <p className="text-sm font-semibold flex items-center gap-2"><Sparkles size={16} /> さらに詳しい手順</p>
+                    <p className="text-sm font-semibold">さらに詳しい手順</p>
                     <p>より詳細な画面遷移やFAQは別タブのガイドページにまとめています。</p>
                     <a
                         href="./guide.html"
@@ -2207,15 +2207,26 @@ const handleAddAccountClick = useCallback(() => {
                 newCaseName: newCaseName || null,
                 mappings: jobPreview.accounts.map((account) => {
                     const config = jobImportMappings[account.assetId] || { mode: 'new' };
+                    const isGroupMode = config.mode === 'group';
                     if (config.mode === 'merge' && !config.targetAccountId) {
                         throw new Error(`${account.accountName || '口座'} のマージ先を選択してください。`);
                     }
+                    if (isGroupMode && !config.mergeGroupKey) {
+                        throw new Error(`${account.accountName || '口座'} の統合キーを入力してください。`);
+                    }
+                    const defaultHolderName = (account.ownerName && account.ownerName.filter(Boolean).join(' / ')) || undefined;
+                    const holderName = config.holderName || defaultHolderName;
                     return {
                         assetId: account.assetId,
-                        mode: config.mode || 'new',
-                        targetAccountId: config.targetAccountId || null,
+                        mode: isGroupMode ? 'new' : (config.mode || 'new'),
+                        targetAccountId: isGroupMode ? null : (config.targetAccountId || null),
                         accountName: config.accountName || account.accountName,
                         accountNumber: config.accountNumber || account.accountNumber,
+                        holderName,
+                        groupKey: isGroupMode ? config.mergeGroupKey : null,
+                        groupName: isGroupMode ? (config.mergeGroupName || config.accountName || account.accountName) : null,
+                        groupNumber: isGroupMode ? (config.mergeGroupNumber || config.accountNumber || account.accountNumber) : null,
+                        groupHolderName: isGroupMode ? holderName : null,
                     };
                 }),
             };
@@ -2338,80 +2349,38 @@ const handleAddAccountClick = useCallback(() => {
     const totalTransactionCount = transactions.length;
 
     return (
-        <div className="min-h-screen bg-slate-50 font-sans">
-            <header className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-900 to-slate-800 text-white">
-                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-from),transparent_60%)]" aria-hidden="true"></div>
-                <div className="relative max-w-7xl mx-auto py-10 lg:py-14 px-4 sm:px-6 lg:px-8">
-                    <div className="grid gap-10 lg:grid-cols-[2fr,1fr] items-center">
-                        <div>
-                            <p className="text-sm uppercase tracking-[0.25em] text-indigo-200">SOROBOCR ツール群</p>
-                            <h1 className="text-4xl lg:text-5xl font-extrabold mt-2">入出金検討表</h1>
-                            <p className="mt-4 text-lg text-indigo-100 leading-relaxed">
-                                Geminiで正規化した通帳データをRailwayのLedger APIに保存し、ブラウザだけでソート・色付け・PDF化まで完結させます。
-                            </p>
-                            <div className="mt-6 flex flex-wrap gap-3">
-                                <MainButton Icon={Plus} onClick={() => setShowAddAccountModal(true)} className="bg-emerald-500 hover:bg-emerald-600 px-5 py-2.5">
-                                    新規口座を登録
-                                </MainButton>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowGuide(true)}
-                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-white/30 bg-white/10 text-white font-semibold hover:bg-white/20"
-                                >
-                                    <BookOpen size={18} /> クイックガイド
-                                </button>
-                                <a
-                                    href="./guide.html"
-                                    target="_blank"
-                                    rel="noopener"
-                                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white text-slate-900 font-semibold hover:bg-slate-100"
-                                >
-                                    <Sparkles size={18} className="text-amber-500" /> 使い方ページ
-                                </a>
-                            </div>
-                            <div className="mt-8 grid gap-4 sm:grid-cols-3">
-                                <div className="bg-white/10 rounded-2xl p-4 border border-white/20">
-                                    <p className="text-xs uppercase tracking-widest text-indigo-200">案件</p>
-                                    <p className="text-3xl font-bold">{cases.length}</p>
-                                    <p className="text-xs text-indigo-100 mt-1">Railway上のLedger DBに保存</p>
-                                </div>
-                                <div className="bg-white/10 rounded-2xl p-4 border border-white/20">
-                                    <p className="text-xs uppercase tracking-widest text-indigo-200">登録口座</p>
-                                    <p className="text-3xl font-bold">{accounts.length}</p>
-                                    <p className="text-xs text-indigo-100 mt-1">名義と口座名を個別管理</p>
-                                </div>
-                                <div className="bg-white/10 rounded-2xl p-4 border border-white/20">
-                                    <p className="text-xs uppercase tracking-widest text-indigo-200">取引件数</p>
-                                    <p className="text-3xl font-bold">{transactions.length}</p>
-                                    <p className="text-xs text-indigo-100 mt-1">統合タブでまとめて検討</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="bg-white/10 border border-white/20 rounded-2xl p-5 backdrop-blur">
-                            <p className="text-sm uppercase tracking-[0.2em] text-indigo-200">SOROBOCR 連携</p>
-                            <h2 className="text-2xl font-semibold mt-2">Ledger API (Railway)</h2>
-                            <p className="text-sm text-indigo-100 mt-2 leading-relaxed">
-                                ブラウザごとに匿名トークンを発行し、OCR結果のJSONをそのまま保存します。案件を跨いだユースケースはJSONエクスポート→別案件へインポートで再現可能です。
-                            </p>
-                            <ul className="mt-4 space-y-2 text-sm text-indigo-100 list-disc list-inside">
-                                <li>手動並べ替えとPDF書き出しに対応</li>
-                                <li>通帳名義・口座名を個別に保持</li>
-                                <li>ブラウザに残る pending import からワンクリック取り込み</li>
-                            </ul>
-                        </div>
+        <div className="min-h-screen bg-gray-50 font-sans">
+            <header className="bg-white shadow-md">
+                <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <h1 className="text-3xl font-extrabold text-blue-800 flex items-center space-x-2">
+                        <List size={30} className="text-blue-500" />
+                        <span>入出金検討表作成ツール</span>
+                    </h1>
+                    <div className="flex flex-wrap gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setShowGuide(true)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700 bg-white hover:bg-blue-50"
+                        >
+                            <BookOpen size={16} /> 使い方を見る
+                        </button>
+                        <a
+                            href="./guide.html"
+                            target="_blank"
+                            rel="noopener"
+                            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50"
+                        >
+                            詳細ガイド
+                        </a>
+                        <MainButton Icon={Plus} onClick={() => setShowAddAccountModal(true)} className="bg-green-600 hover:bg-green-700 px-4 py-2">
+                            新規口座を登録
+                        </MainButton>
                     </div>
                 </div>
             </header>
 
             <div className="max-w-7xl mx-auto mt-4 px-4 sm:px-6 lg:px-8">
-                <div className="mb-4 flex items-start gap-3 rounded-2xl border border-indigo-100 bg-white p-4 text-sm text-slate-600 shadow-sm">
-                    <Info size={18} className="text-indigo-500 flex-shrink-0 mt-0.5" />
-                    <p>
-                        データはRailway上のFastAPI + SQLite (Ledger API) に保存されます。ブラウザごとに匿名IDが割り当てられるため、別端末では<code className="mx-1 rounded bg-slate-100 px-1">エクスポート</code>したJSONをインポートしてください。
-                        SOROBOCR本体のガイドは <a href="../help.html" target="_blank" rel="noopener" className="text-indigo-600 underline">こちら</a>。
-                    </p>
-                </div>
-                <div className="flex flex-wrap items-end gap-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm mb-4">
+                <div className="flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
                     <div className="flex-1 min-w-[220px]">
                         <label className="text-sm text-gray-600 mb-1 block">案件を選択</label>
                         <select
@@ -2455,6 +2424,7 @@ const handleAddAccountClick = useCallback(() => {
                             <div>
                                 <h3 className="text-xl font-semibold text-yellow-900">OCR結果を案件へ取り込み</h3>
                                 <p className="text-sm text-yellow-800">ジョブID: {jobPreview.jobId} ／ 口座候補 {jobPreview.accounts.length} 件</p>
+                                <p className="text-xs text-yellow-800 mt-1">同じ統合キーを設定した口座は1口座として登録できます。</p>
                             </div>
                             <div className="flex flex-col gap-2 md:flex-row md:items-center">
                                 <div className="flex flex-col">
@@ -2521,6 +2491,39 @@ const handleAddAccountClick = useCallback(() => {
                                                         value={config.accountNumber ?? account.accountNumber ?? ''}
                                                         onChange={(e) => handleJobMappingChange(account.assetId, { accountNumber: e.target.value })}
                                                         placeholder="口座番号"
+                                                        className="p-2 border rounded-md"
+                                                    />
+                                                </div>
+                                            )}
+                                            <label className="flex items-center space-x-2 text-sm">
+                                                <input
+                                                    type="radio"
+                                                    checked={config.mode === 'group'}
+                                                    onChange={() => handleJobMappingChange(account.assetId, { mode: 'group', mergeGroupKey: config.mergeGroupKey || account.assetId })}
+                                                />
+                                                <span>他の新規口座と統合</span>
+                                            </label>
+                                            {config.mode === 'group' && (
+                                                <div className="grid grid-cols-1 gap-2 text-sm">
+                                                    <input
+                                                        type="text"
+                                                        value={config.mergeGroupKey || ''}
+                                                        onChange={(e) => handleJobMappingChange(account.assetId, { mergeGroupKey: e.target.value })}
+                                                        placeholder="統合グループキー (同じ値でまとめる)"
+                                                        className="p-2 border rounded-md"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        value={config.mergeGroupName ?? config.accountName ?? account.accountName ?? ''}
+                                                        onChange={(e) => handleJobMappingChange(account.assetId, { mergeGroupName: e.target.value })}
+                                                        placeholder="統合後の口座名"
+                                                        className="p-2 border rounded-md"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        value={config.mergeGroupNumber ?? config.accountNumber ?? ''}
+                                                        onChange={(e) => handleJobMappingChange(account.assetId, { mergeGroupNumber: e.target.value })}
+                                                        placeholder="統合後の口座番号"
                                                         className="p-2 border rounded-md"
                                                     />
                                                 </div>

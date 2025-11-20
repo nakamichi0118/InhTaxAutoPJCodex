@@ -7083,21 +7083,21 @@ const createLucideIcon = (iconName, iconNode) => {
   Component.displayName = toPascalCase(iconName);
   return Component;
 };
-const __iconNode$i = [
+const __iconNode$g = [
   ["path", { d: "m3 16 4 4 4-4", key: "1co6wj" }],
   ["path", { d: "M7 20V4", key: "1yoxec" }],
   ["path", { d: "m21 8-4-4-4 4", key: "1c9v7m" }],
   ["path", { d: "M17 4v16", key: "7dpous" }]
 ];
-const ArrowDownUp = createLucideIcon("arrow-down-up", __iconNode$i);
-const __iconNode$h = [
+const ArrowDownUp = createLucideIcon("arrow-down-up", __iconNode$g);
+const __iconNode$f = [
   ["path", { d: "m21 16-4 4-4-4", key: "f6ql7i" }],
   ["path", { d: "M17 20V4", key: "1ejh1v" }],
   ["path", { d: "m3 8 4-4 4 4", key: "11wl7u" }],
   ["path", { d: "M7 4v16", key: "1glfcx" }]
 ];
-const ArrowUpDown = createLucideIcon("arrow-up-down", __iconNode$h);
-const __iconNode$g = [
+const ArrowUpDown = createLucideIcon("arrow-up-down", __iconNode$f);
+const __iconNode$e = [
   ["path", { d: "M12 7v14", key: "1akyts" }],
   [
     "path",
@@ -7107,12 +7107,12 @@ const __iconNode$g = [
     }
   ]
 ];
-const BookOpen = createLucideIcon("book-open", __iconNode$g);
-const __iconNode$f = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
-const ChevronDown = createLucideIcon("chevron-down", __iconNode$f);
-const __iconNode$e = [["path", { d: "m18 15-6-6-6 6", key: "153udz" }]];
-const ChevronUp = createLucideIcon("chevron-up", __iconNode$e);
-const __iconNode$d = [
+const BookOpen = createLucideIcon("book-open", __iconNode$e);
+const __iconNode$d = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
+const ChevronDown = createLucideIcon("chevron-down", __iconNode$d);
+const __iconNode$c = [["path", { d: "m18 15-6-6-6 6", key: "153udz" }]];
+const ChevronUp = createLucideIcon("chevron-up", __iconNode$c);
+const __iconNode$b = [
   ["rect", { width: "8", height: "4", x: "8", y: "2", rx: "1", ry: "1", key: "tgr4d6" }],
   [
     "path",
@@ -7122,13 +7122,13 @@ const __iconNode$d = [
     }
   ]
 ];
-const Clipboard = createLucideIcon("clipboard", __iconNode$d);
-const __iconNode$c = [
+const Clipboard = createLucideIcon("clipboard", __iconNode$b);
+const __iconNode$a = [
   ["rect", { width: "20", height: "14", x: "2", y: "5", rx: "2", key: "ynyp8z" }],
   ["line", { x1: "2", x2: "22", y1: "10", y2: "10", key: "1b3vmo" }]
 ];
-const CreditCard = createLucideIcon("credit-card", __iconNode$c);
-const __iconNode$b = [
+const CreditCard = createLucideIcon("credit-card", __iconNode$a);
+const __iconNode$9 = [
   [
     "path",
     {
@@ -7140,8 +7140,8 @@ const __iconNode$b = [
   ["path", { d: "M12 18v-6", key: "17g6i2" }],
   ["path", { d: "m9 15 3 3 3-3", key: "1npd3o" }]
 ];
-const FileDown = createLucideIcon("file-down", __iconNode$b);
-const __iconNode$a = [
+const FileDown = createLucideIcon("file-down", __iconNode$9);
+const __iconNode$8 = [
   [
     "path",
     {
@@ -7153,14 +7153,8 @@ const __iconNode$a = [
   ["path", { d: "M12 12v6", key: "3ahymv" }],
   ["path", { d: "m15 15-3-3-3 3", key: "15xj92" }]
 ];
-const FileUp = createLucideIcon("file-up", __iconNode$a);
-const __iconNode$9 = [
-  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-  ["path", { d: "M12 16v-4", key: "1dtifu" }],
-  ["path", { d: "M12 8h.01", key: "e9boi3" }]
-];
-const Info = createLucideIcon("info", __iconNode$9);
-const __iconNode$8 = [
+const FileUp = createLucideIcon("file-up", __iconNode$8);
+const __iconNode$7 = [
   ["path", { d: "M3 5h.01", key: "18ugdj" }],
   ["path", { d: "M3 12h.01", key: "nlz23k" }],
   ["path", { d: "M3 19h.01", key: "noohij" }],
@@ -7168,17 +7162,17 @@ const __iconNode$8 = [
   ["path", { d: "M8 12h13", key: "1za7za" }],
   ["path", { d: "M8 19h13", key: "m83p4d" }]
 ];
-const List = createLucideIcon("list", __iconNode$8);
-const __iconNode$7 = [["path", { d: "M21 12a9 9 0 1 1-6.219-8.56", key: "13zald" }]];
-const LoaderCircle = createLucideIcon("loader-circle", __iconNode$7);
-const __iconNode$6 = [["path", { d: "M5 12h14", key: "1ays0h" }]];
-const Minus = createLucideIcon("minus", __iconNode$6);
-const __iconNode$5 = [
+const List = createLucideIcon("list", __iconNode$7);
+const __iconNode$6 = [["path", { d: "M21 12a9 9 0 1 1-6.219-8.56", key: "13zald" }]];
+const LoaderCircle = createLucideIcon("loader-circle", __iconNode$6);
+const __iconNode$5 = [["path", { d: "M5 12h14", key: "1ays0h" }]];
+const Minus = createLucideIcon("minus", __iconNode$5);
+const __iconNode$4 = [
   ["path", { d: "M5 12h14", key: "1ays0h" }],
   ["path", { d: "M12 5v14", key: "s699le" }]
 ];
-const Plus = createLucideIcon("plus", __iconNode$5);
-const __iconNode$4 = [
+const Plus = createLucideIcon("plus", __iconNode$4);
+const __iconNode$3 = [
   [
     "path",
     {
@@ -7189,20 +7183,7 @@ const __iconNode$4 = [
   ["path", { d: "M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7", key: "1ydtos" }],
   ["path", { d: "M7 3v4a1 1 0 0 0 1 1h7", key: "t51u73" }]
 ];
-const Save = createLucideIcon("save", __iconNode$4);
-const __iconNode$3 = [
-  [
-    "path",
-    {
-      d: "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z",
-      key: "1s2grr"
-    }
-  ],
-  ["path", { d: "M20 2v4", key: "1rf3ol" }],
-  ["path", { d: "M22 4h-4", key: "gwowj6" }],
-  ["circle", { cx: "4", cy: "20", r: "2", key: "6kqj1y" }]
-];
-const Sparkles = createLucideIcon("sparkles", __iconNode$3);
+const Save = createLucideIcon("save", __iconNode$3);
 const __iconNode$2 = [
   ["path", { d: "M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7", key: "1m0v6g" }],
   [
@@ -7826,10 +7807,7 @@ const UsageGuideModal = ({ isOpen, onClose }) => {
       ] })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-indigo-50 border border-indigo-100 text-indigo-900 rounded-lg p-4 space-y-2", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm font-semibold flex items-center gap-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkles, { size: 16 }),
-        " さらに詳しい手順"
-      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold", children: "さらに詳しい手順" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: "より詳細な画面遷移やFAQは別タブのガイドページにまとめています。" }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs(
         "a",
@@ -9195,15 +9173,26 @@ const LedgerApp = () => {
         newCaseName: newCaseName || null,
         mappings: jobPreview.accounts.map((account) => {
           const config = jobImportMappings[account.assetId] || { mode: "new" };
+          const isGroupMode = config.mode === "group";
           if (config.mode === "merge" && !config.targetAccountId) {
             throw new Error(`${account.accountName || "口座"} のマージ先を選択してください。`);
           }
+          if (isGroupMode && !config.mergeGroupKey) {
+            throw new Error(`${account.accountName || "口座"} の統合キーを入力してください。`);
+          }
+          const defaultHolderName = account.ownerName && account.ownerName.filter(Boolean).join(" / ") || void 0;
+          const holderName = config.holderName || defaultHolderName;
           return {
             assetId: account.assetId,
-            mode: config.mode || "new",
-            targetAccountId: config.targetAccountId || null,
+            mode: isGroupMode ? "new" : config.mode || "new",
+            targetAccountId: isGroupMode ? null : config.targetAccountId || null,
             accountName: config.accountName || account.accountName,
-            accountNumber: config.accountNumber || account.accountNumber
+            accountNumber: config.accountNumber || account.accountNumber,
+            holderName,
+            groupKey: isGroupMode ? config.mergeGroupKey : null,
+            groupName: isGroupMode ? config.mergeGroupName || config.accountName || account.accountName : null,
+            groupNumber: isGroupMode ? config.mergeGroupNumber || config.accountNumber || account.accountNumber : null,
+            groupHolderName: isGroupMode ? holderName : null
           };
         })
       };
@@ -9315,84 +9304,40 @@ const LedgerApp = () => {
     );
   };
   const totalTransactionCount = transactions.length;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-h-screen bg-slate-50 font-sans", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { className: "relative overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-900 to-slate-800 text-white", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-from),transparent_60%)]", "aria-hidden": "true" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "relative max-w-7xl mx-auto py-10 lg:py-14 px-4 sm:px-6 lg:px-8", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-10 lg:grid-cols-[2fr,1fr] items-center", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm uppercase tracking-[0.25em] text-indigo-200", children: "SOROBOCR ツール群" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-4xl lg:text-5xl font-extrabold mt-2", children: "入出金検討表" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-4 text-lg text-indigo-100 leading-relaxed", children: "Geminiで正規化した通帳データをRailwayのLedger APIに保存し、ブラウザだけでソート・色付け・PDF化まで完結させます。" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 flex flex-wrap gap-3", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: () => setShowAddAccountModal(true), className: "bg-emerald-500 hover:bg-emerald-600 px-5 py-2.5", children: "新規口座を登録" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "button",
-              {
-                type: "button",
-                onClick: () => setShowGuide(true),
-                className: "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-white/30 bg-white/10 text-white font-semibold hover:bg-white/20",
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 18 }),
-                  " クイックガイド"
-                ]
-              }
-            ),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "a",
-              {
-                href: "./guide.html",
-                target: "_blank",
-                rel: "noopener",
-                className: "inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white text-slate-900 font-semibold hover:bg-slate-100",
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(Sparkles, { size: 18, className: "text-amber-500" }),
-                  " 使い方ページ"
-                ]
-              }
-            )
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-8 grid gap-4 sm:grid-cols-3", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/10 rounded-2xl p-4 border border-white/20", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-widest text-indigo-200", children: "案件" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-3xl font-bold", children: cases.length }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-indigo-100 mt-1", children: "Railway上のLedger DBに保存" })
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/10 rounded-2xl p-4 border border-white/20", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-widest text-indigo-200", children: "登録口座" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-3xl font-bold", children: accounts.length }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-indigo-100 mt-1", children: "名義と口座名を個別管理" })
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/10 rounded-2xl p-4 border border-white/20", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-widest text-indigo-200", children: "取引件数" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-3xl font-bold", children: transactions.length }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-indigo-100 mt-1", children: "統合タブでまとめて検討" })
-            ] })
-          ] })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white/10 border border-white/20 rounded-2xl p-5 backdrop-blur", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm uppercase tracking-[0.2em] text-indigo-200", children: "SOROBOCR 連携" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { className: "text-2xl font-semibold mt-2", children: "Ledger API (Railway)" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-indigo-100 mt-2 leading-relaxed", children: "ブラウザごとに匿名トークンを発行し、OCR結果のJSONをそのまま保存します。案件を跨いだユースケースはJSONエクスポート→別案件へインポートで再現可能です。" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("ul", { className: "mt-4 space-y-2 text-sm text-indigo-100 list-disc list-inside", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "手動並べ替えとPDF書き出しに対応" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "通帳名義・口座名を個別に保持" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: "ブラウザに残る pending import からワンクリック取り込み" })
-          ] })
-        ] })
-      ] }) })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto mt-4 px-4 sm:px-6 lg:px-8", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mb-4 flex items-start gap-3 rounded-2xl border border-indigo-100 bg-white p-4 text-sm text-slate-600 shadow-sm", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(Info, { size: 18, className: "text-indigo-500 flex-shrink-0 mt-0.5" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { children: [
-          "データはRailway上のFastAPI + SQLite (Ledger API) に保存されます。ブラウザごとに匿名IDが割り当てられるため、別端末では",
-          /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "mx-1 rounded bg-slate-100 px-1", children: "エクスポート" }),
-          "したJSONをインポートしてください。 SOROBOCR本体のガイドは ",
-          /* @__PURE__ */ jsxRuntimeExports.jsx("a", { href: "../help.html", target: "_blank", rel: "noopener", className: "text-indigo-600 underline", children: "こちら" }),
-          "。"
-        ] })
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-h-screen bg-gray-50 font-sans", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("header", { className: "bg-white shadow-md", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-between", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("h1", { className: "text-3xl font-extrabold text-blue-800 flex items-center space-x-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(List, { size: 30, className: "text-blue-500" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "入出金検討表作成ツール" })
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-end gap-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm mb-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "button",
+          {
+            type: "button",
+            onClick: () => setShowGuide(true),
+            className: "inline-flex items-center gap-2 rounded-xl border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700 bg-white hover:bg-blue-50",
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
+              " 使い方を見る"
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "a",
+          {
+            href: "./guide.html",
+            target: "_blank",
+            rel: "noopener",
+            className: "inline-flex items-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50",
+            children: "詳細ガイド"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: () => setShowAddAccountModal(true), className: "bg-green-600 hover:bg-green-700 px-4 py-2", children: "新規口座を登録" })
+      ] })
+    ] }) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto mt-4 px-4 sm:px-6 lg:px-8", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-[220px]", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-sm text-gray-600 mb-1 block", children: "案件を選択" }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs(
@@ -9434,7 +9379,8 @@ const LedgerApp = () => {
               " ／ 口座候補 ",
               jobPreview.accounts.length,
               " 件"
-            ] })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-yellow-800 mt-1", children: "同じ統合キーを設定した口座は1口座として登録できます。" })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-2 md:flex-row md:items-center", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col", children: [
@@ -9473,7 +9419,7 @@ const LedgerApp = () => {
           ] })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid gap-4 md:grid-cols-2", children: jobPreview.accounts.map((account) => {
-          var _a2, _b2, _c2, _d2;
+          var _a2, _b2, _c2, _d2, _e, _f, _g, _h, _i;
           const config = jobImportMappings[account.assetId] || { mode: "new" };
           return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white border border-yellow-200 rounded-xl p-4 space-y-3 shadow-sm", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
@@ -9521,6 +9467,49 @@ const LedgerApp = () => {
                     value: (_d2 = (_c2 = config.accountNumber) != null ? _c2 : account.accountNumber) != null ? _d2 : "",
                     onChange: (e) => handleJobMappingChange(account.assetId, { accountNumber: e.target.value }),
                     placeholder: "口座番号",
+                    className: "p-2 border rounded-md"
+                  }
+                )
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "flex items-center space-x-2 text-sm", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "input",
+                  {
+                    type: "radio",
+                    checked: config.mode === "group",
+                    onChange: () => handleJobMappingChange(account.assetId, { mode: "group", mergeGroupKey: config.mergeGroupKey || account.assetId })
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "他の新規口座と統合" })
+              ] }),
+              config.mode === "group" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-1 gap-2 text-sm", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "input",
+                  {
+                    type: "text",
+                    value: config.mergeGroupKey || "",
+                    onChange: (e) => handleJobMappingChange(account.assetId, { mergeGroupKey: e.target.value }),
+                    placeholder: "統合グループキー (同じ値でまとめる)",
+                    className: "p-2 border rounded-md"
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "input",
+                  {
+                    type: "text",
+                    value: (_g = (_f = (_e = config.mergeGroupName) != null ? _e : config.accountName) != null ? _f : account.accountName) != null ? _g : "",
+                    onChange: (e) => handleJobMappingChange(account.assetId, { mergeGroupName: e.target.value }),
+                    placeholder: "統合後の口座名",
+                    className: "p-2 border rounded-md"
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "input",
+                  {
+                    type: "text",
+                    value: (_i = (_h = config.mergeGroupNumber) != null ? _h : config.accountNumber) != null ? _i : "",
+                    onChange: (e) => handleJobMappingChange(account.assetId, { mergeGroupNumber: e.target.value }),
+                    placeholder: "統合後の口座番号",
                     className: "p-2 border rounded-md"
                   }
                 )

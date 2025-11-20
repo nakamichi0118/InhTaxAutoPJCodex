@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
@@ -140,6 +140,7 @@ def create_account(
         case_id=case["id"],
         name=payload.name,
         number=payload.number,
+        holder_name=payload.holder_name,
         order=payload.order,
     )
     return LedgerAccountPayload(**account)
@@ -153,7 +154,14 @@ def update_account(
     store: LedgerStore = Depends(get_ledger_store),
 ) -> LedgerAccountPayload:
     try:
-        account = store.update_account(scope, account_id, name=payload.name, number=payload.number, order=payload.order)
+        account = store.update_account(
+            scope,
+            account_id,
+            name=payload.name,
+            number=payload.number,
+            holder_name=payload.holder_name,
+            order=payload.order,
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="Account not found") from None
     return LedgerAccountPayload(**account)
@@ -406,53 +414,105 @@ def import_job_assets(
     created_account_ids: List[str] = []
     merged_account_ids: List[str] = []
 
+    def serialize_transactions(source: dict) -> List[Tuple[Optional[str], int, int, Optional[str], Optional[str]]]:
+        transactions = source.get("_transactions") or []
+        return [
+            (
+                txn.get("transaction_date"),
+                int(txn.get("withdrawal_amount") or 0),
+                int(txn.get("deposit_amount") or 0),
+                txn.get("description") or txn.get("memo"),
+                txn.get("description"),
+            )
+            for txn in transactions
+        ]
+
+    grouped_map: Dict[str, List[LedgerJobImportMapping]] = {}
+    ordered_entries: List[Tuple[str, object]] = []
+
     for mapping in payload.mappings:
+        group_key = None
+        if getattr(mapping, "group_key", None):
+            group_key = mapping.group_key.strip()
+        if group_key and mapping.mode != "merge":
+            if group_key not in grouped_map:
+                grouped_map[group_key] = []
+                ordered_entries.append(("group", group_key))
+            grouped_map[group_key].append(mapping)
+        else:
+            ordered_entries.append(("single", mapping))
+
+    processed_groups: Set[str] = set()
+
+    for entry_type, entry_value in ordered_entries:
+        if entry_type == "group":
+            group_key = entry_value  # type: ignore[assignment]
+            if group_key in processed_groups:
+                continue
+            processed_groups.add(group_key)
+            group_mappings = grouped_map.get(group_key) or []
+            if not group_mappings:
+                continue
+            combined_transactions: List[Tuple[Optional[str], int, int, Optional[str], Optional[str]]] = []
+            account_name = None
+            account_number = None
+            holder_name = None
+            for group_mapping in group_mappings:
+                source = preview_map.get(group_mapping.asset_id)
+                if not source:
+                    continue
+                if account_name is None:
+                    account_name = (
+                        group_mapping.group_name
+                        or group_mapping.account_name
+                        or source.get("accountName")
+                        or "預金口座"
+                    )
+                if account_number is None:
+                    account_number = group_mapping.group_number or group_mapping.account_number or source.get("accountNumber")
+                if holder_name is None:
+                    holder_name = (
+                        group_mapping.group_holder_name
+                        or group_mapping.holder_name
+                        or (" / ".join(source.get("ownerName") or []) or None)
+                    )
+                combined_transactions.extend(serialize_transactions(source))
+            if not combined_transactions:
+                continue
+            new_account = store.create_account(
+                scope,
+                case_id=case["id"],
+                name=account_name or "預金口座",
+                number=account_number,
+                holder_name=holder_name,
+            )
+            store.bulk_insert_transactions(scope, new_account["id"], combined_transactions)
+            created_account_ids.append(new_account["id"])
+            continue
+
+        mapping = entry_value  # type: ignore[assignment]
         source = preview_map.get(mapping.asset_id)
         if not source:
             continue
-        transactions = source.get("_transactions") or []
+        serialized_transactions = serialize_transactions(source)
         if mapping.mode == "merge":
             target_id = mapping.target_account_id
             if not target_id or target_id not in existing_accounts:
                 raise HTTPException(status_code=400, detail="Invalid target account for merge")
-            store.bulk_insert_transactions(
-                scope,
-                target_id,
-                [
-                    (
-                        txn.get("transaction_date"),
-                        int(txn.get("withdrawal_amount") or 0),
-                        int(txn.get("deposit_amount") or 0),
-                        txn.get("description") or txn.get("memo"),
-                        txn.get("description"),
-                    )
-                    for txn in transactions
-                ],
-            )
+            store.bulk_insert_transactions(scope, target_id, serialized_transactions)
             merged_account_ids.append(target_id)
         else:
             account_name = mapping.account_name or source.get("accountName") or "預金口座"
             account_number = mapping.account_number or source.get("accountNumber")
+            holder_name = mapping.holder_name or (" / ".join(source.get("ownerName") or []) or None)
             new_account = store.create_account(
                 scope,
                 case_id=case["id"],
                 name=account_name,
                 number=account_number,
+                holder_name=holder_name,
             )
-            store.bulk_insert_transactions(
-                scope,
-                new_account["id"],
-                [
-                    (
-                        txn.get("transaction_date"),
-                        int(txn.get("withdrawal_amount") or 0),
-                        int(txn.get("deposit_amount") or 0),
-                        txn.get("description") or txn.get("memo"),
-                        txn.get("description"),
-                    )
-                    for txn in transactions
-                ],
-            )
+            store.bulk_insert_transactions(scope, new_account["id"], serialized_transactions)
             created_account_ids.append(new_account["id"])
 
     return {
