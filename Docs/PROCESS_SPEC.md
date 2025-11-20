@@ -158,4 +158,5 @@
 - 口座/取引の取得は `GET /api/ledger/state?case_id=...`、追加・削除は `/api/ledger/accounts*` / `/api/ledger/transactions*`、順序更新は `/reorder` エンドポイントで完結します。
 - 案件（case）は `/api/ledger/cases` で管理し、UI の案件切替ドロップダウンから既存案件を選択または新規案件を作成できます。
 - OCR完了後は `webapp/index.html` のCTAが `job_id` 付きで `/ledger/?job_id=...` に遷移します。Ledger側では `GET /api/ledger/jobs/{job_id}/preview` で検出口座を取得し、ユーザーが「新規口座として登録」または「既存口座へマージ」を選択→`POST /api/ledger/jobs/{job_id}/import` で取引を案件へ反映します。
+- バージョン0.9では `webapp/index.html` から `POST /api/ledger/jobs/{job_id}/import` を自動実行し、ファイル名を案件名とした新規ケースに口座／取引を登録してから `/ledger/?case_id=...` へリンクします。Ledger画面では必要に応じて別案件への移動や手動マージも可能です。
 - `LEDGER_DB_PATH`（既定: `data/ledger.db`）で指定されたSQLiteに永続化され、Cloudflare Pages + Railway だけで入出金検討表の保存・復元が可能になりました。

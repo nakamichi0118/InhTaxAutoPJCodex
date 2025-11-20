@@ -7,6 +7,7 @@
     <link rel="icon" type="image/png" href="./image/TitleLog.png">
     <script>
         window.__ledger_app_url = window.__ledger_app_url || './ledger/';
+        window.__ledger_api_base = window.__ledger_api_base || 'https://inhtaxautopjcodex-production.up.railway.app/api/ledger';
     </script>
     <style>
         *, *::before, *::after { box-sizing: border-box; }
@@ -610,13 +611,25 @@
         typeof window.__ledger_app_url === 'string' && window.__ledger_app_url.trim()
             ? window.__ledger_app_url
             : './ledger/';
+    const LEDGER_API_BASE =
+        typeof window.__ledger_api_base === 'string' && window.__ledger_api_base.trim()
+            ? window.__ledger_api_base
+            : null;
+    const LEDGER_APP_ID =
+        typeof window.__app_id === 'string' && window.__app_id.trim()
+            ? window.__app_id.trim()
+            : 'ledger-app';
+    const LEDGER_SESSION_KEY = 'ledger_session_token';
 
     function buildLedgerUrl(jobId) {
-        if (!jobId) {
-            return LEDGER_APP_URL;
+        const url = new URL(LEDGER_APP_URL, window.location.origin);
+        if (jobId) {
+            url.searchParams.set('job_id', jobId);
         }
-        const separator = LEDGER_APP_URL.includes('?') ? '&' : '?';
-        return `${LEDGER_APP_URL}${separator}job_id=${encodeURIComponent(jobId)}`;
+        if (state.latestLedgerCaseId) {
+            url.searchParams.set('case_id', state.latestLedgerCaseId);
+        }
+        return url.href || url.toString();
     }
 
     const state = {
@@ -631,7 +644,127 @@
         currentAbortController: null,
         analysisMode: 'gemini_pro',
         latestJobId: null,
+        ledgerToken: null,
+        ledgerImportStatus: 'idle',
+        latestLedgerCaseId: null,
     };
+    state.ledgerToken = getStoredLedgerToken();
+
+    function getStoredLedgerToken() {
+        if (!window?.localStorage) {
+            return null;
+        }
+        try {
+            return window.localStorage.getItem(LEDGER_SESSION_KEY);
+        } catch (error) {
+            console.warn('Failed to read ledger token from storage:', error);
+            return null;
+        }
+    }
+
+    function persistLedgerToken(token) {
+        if (!window?.localStorage) {
+            return;
+        }
+        try {
+            window.localStorage.setItem(LEDGER_SESSION_KEY, token);
+        } catch (error) {
+            console.warn('Failed to persist ledger token:', error);
+        }
+    }
+
+    async function ensureLedgerSessionToken() {
+        if (!LEDGER_API_BASE) {
+            return null;
+        }
+        if (state.ledgerToken) {
+            return state.ledgerToken;
+        }
+        const stored = getStoredLedgerToken();
+        if (stored) {
+            state.ledgerToken = stored;
+            return stored;
+        }
+        const response = await fetch(`${LEDGER_API_BASE}/session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app_id: LEDGER_APP_ID }),
+        });
+        if (!response.ok) {
+            throw new Error('Ledgerセッションの初期化に失敗しました。');
+        }
+        const payload = await response.json();
+        const token = payload.session_token;
+        state.ledgerToken = token;
+        persistLedgerToken(token);
+        return token;
+    }
+
+    function buildLedgerMappingsFromAssets(assets) {
+        if (!Array.isArray(assets)) {
+            return [];
+        }
+        return assets.map((asset, index) => {
+            const identifiers = asset?.identifiers || {};
+            const recordId = asset?.record_id || identifiers.primary || `asset_${index + 1}`;
+            const owner = Array.isArray(asset?.owner_name) && asset.owner_name.length ? `${asset.owner_name[0]}口座` : '預金口座';
+            return {
+                assetId: String(recordId),
+                mode: 'new',
+                accountName: asset?.asset_name || owner,
+                accountNumber: identifiers.primary || '',
+            };
+        });
+    }
+
+    function deriveCaseName(doc) {
+        if (!doc?.name) {
+            return '新規案件';
+        }
+        const stripped = doc.name.replace(/\.[^.]+$/, '');
+        return stripped || doc.name;
+    }
+
+    async function autoImportDocToLedger(doc) {
+        if (!LEDGER_API_BASE || !doc?.jobId || state.ledgerImportStatus === 'running') {
+            return;
+        }
+        const mappings = buildLedgerMappingsFromAssets(doc.assets);
+        if (!mappings.length) {
+            return;
+        }
+        try {
+            state.ledgerImportStatus = 'running';
+            const token = await ensureLedgerSessionToken();
+            if (!token) {
+                throw new Error('Ledgerトークンを取得できませんでした');
+            }
+            const response = await fetch(`${LEDGER_API_BASE}/jobs/${doc.jobId}/import`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Ledger-Token': token,
+                    'X-Ledger-App': LEDGER_APP_ID,
+                },
+                body: JSON.stringify({
+                    newCaseName: deriveCaseName(doc),
+                    mappings,
+                }),
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`Ledgerインポート失敗 (HTTP ${response.status}): ${text}`);
+            }
+            const payload = await response.json();
+            state.latestLedgerCaseId = payload.caseId || state.latestLedgerCaseId;
+            state.ledgerImportStatus = 'success';
+            setStatus('入出金検討表への取り込みが完了しました。', 'success');
+        } catch (error) {
+            state.ledgerImportStatus = 'error';
+            console.warn('Ledger auto import failed', error);
+            setStatus('入出金検討表への取り込みに失敗しました。', 'warning');
+        }
+    }
 
     const TAB_DEFINITIONS = [
         {
@@ -1178,6 +1311,7 @@
                 state.documents.push(doc);
                 state.activeDocId = doc.id;
                 notifyCompletion(doc);
+                await autoImportDocToLedger(doc);
                 setStatus(`(${index + 1}/${files.length}) 「${file.name}」の読み取りが完了しました。`, 'info');
             } catch (error) {
                 if (state.cancelRequested || error?.name === 'AbortError') {

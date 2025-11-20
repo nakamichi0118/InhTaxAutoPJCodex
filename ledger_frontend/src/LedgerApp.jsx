@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { List, Plus, Minus, CreditCard, Save, Trash2, X, Clipboard, ArrowDownUp, Edit, ChevronUp, ChevronDown, FileDown, Loader2, FileUp } from 'lucide-react';
 
 // --- Ledger API & Utility Setup ---
@@ -1366,6 +1366,7 @@ const LedgerApp = () => {
         const params = new URLSearchParams(window.location.search);
         return params.get('job_id');
     }, []);
+    const initialCaseIdRef = useRef(new URLSearchParams(window.location.search).get('case_id'));
 
     const callLedgerApi = useCallback(async (path, options = {}) => {
         if (!sessionToken) {
@@ -1436,7 +1437,7 @@ const LedgerApp = () => {
         const data = await callLedgerApi('/cases');
         const fetchedCases = data.cases || [];
         setCases(fetchedCases);
-        setSelectedCaseId((current) => current || fetchedCases[0]?.id || null);
+        setSelectedCaseId((current) => current || initialCaseIdRef.current || fetchedCases[0]?.id || null);
         return fetchedCases;
     }, [sessionToken, callLedgerApi]);
 
@@ -1483,9 +1484,10 @@ const LedgerApp = () => {
         if (!sessionToken) return;
         (async () => {
             const list = await fetchCases();
-            const targetCaseId = list[0]?.id;
+            const targetCaseId = initialCaseIdRef.current || list[0]?.id;
             if (targetCaseId) {
                 await refreshState(targetCaseId, true);
+                initialCaseIdRef.current = null;
             } else {
                 setLoading(false);
             }
@@ -1640,13 +1642,12 @@ const LedgerApp = () => {
                 body: { name },
             });
             await fetchCases();
-            setSelectedCaseId(created.id);
-            await refreshState(created.id, true);
+            await changeCase(created.id);
         } catch (err) {
             console.error('Failed to create case:', err);
             setError(err);
         }
-    }, [callLedgerApi, fetchCases, refreshState]);
+    }, [callLedgerApi, fetchCases, changeCase, setError]);
 
     const handleApplyJobImport = useCallback(async () => {
         if (!jobPreview || !jobPreview.accounts?.length) return;
