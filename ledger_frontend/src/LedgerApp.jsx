@@ -1843,7 +1843,7 @@ const handleAddAccountClick = useCallback(() => {
             } catch (err) {
                 console.error('Pending import failed:', err);
                 setPendingImportStatus('error');
-                setPendingImportError(err.message);
+                setPendingImportError(err instanceof Error ? err.message : String(err));
             }
         },
         [callLedgerApi, convertAssetsToLedgerPayload, removePendingImportEntry, fetchCases, refreshState, selectedCaseId],

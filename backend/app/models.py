@@ -131,11 +131,11 @@ class LedgerAccountPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
-    case_id: str = Field(alias="caseId")
+    case_id: Optional[str] = Field(default=None, alias="caseId")
     name: str
     number: Optional[str] = None
     order: int = 0
-    user_id: str = Field(alias="userId")
+    user_id: Optional[str] = Field(default=None, alias="userId")
     created_at: Optional[str] = Field(default=None, alias="createdAt")
     updated_at: Optional[str] = Field(default=None, alias="updatedAt")
 
@@ -176,7 +176,7 @@ class LedgerTransactionPayload(BaseModel):
     type: Optional[str] = None
     row_color: Optional[str] = Field(default=None, alias="rowColor")
     user_order: Optional[float] = Field(default=None, alias="userOrder")
-    user_id: str = Field(alias="userId")
+    user_id: Optional[str] = Field(default=None, alias="userId")
     created_at: Optional[str] = Field(default=None, alias="createdAt")
     updated_at: Optional[str] = Field(default=None, alias="updatedAt")
 
