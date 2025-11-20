@@ -9537,7 +9537,7 @@ const LedgerApp = () => {
       const identifiers = (asset == null ? void 0 : asset.identifiers) || {};
       const accountId = String((asset == null ? void 0 : asset.record_id) || identifiers.primary || `${entry.id || "pending"}_${index + 1}`);
       const holderName = Array.isArray(asset == null ? void 0 : asset.owner_name) ? asset.owner_name.filter(Boolean).join(" / ") || void 0 : (asset == null ? void 0 : asset.owner_name) || void 0;
-      const name = (asset == null ? void 0 : asset.asset_name) || holderName || `口座${index + 1}`;
+      const name = (asset == null ? void 0 : asset.asset_name) || (entry == null ? void 0 : entry.name) || holderName || `口座${index + 1}`;
       accounts2.push({
         id: accountId,
         name,
@@ -9974,41 +9974,46 @@ const LedgerApp = () => {
   };
   const totalTransactionCount = transactions.length;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-h-screen bg-[#f1f5f9] font-sans", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("header", { className: "bg-[#0f172a] text-white border-b border-[#1f2937]", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.3em] text-[#94a3b8]", children: "SOROBOCR LEDGER" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("h1", { className: "text-3xl font-extrabold flex items-center gap-2", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(List, { size: 30, className: "text-[#60a5fa]" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "入出金検討表ツール" })
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { className: "relative overflow-hidden text-white border-b border-[#102345]", style: { background: "linear-gradient(135deg, #050d26 0%, #0d2765 55%, #15418f 100%)" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "absolute inset-0 pointer-events-none", style: {
+        background: "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.18), transparent 55%), radial-gradient(circle at 88% 6%, rgba(96,165,250,0.32), transparent 68%)"
+      } }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "relative max-w-7xl mx-auto py-7 px-4 sm:px-6 lg:px-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs uppercase tracking-[0.32em] text-[#c7d2fe]", children: "SOROBOCR LEDGER" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("h1", { className: "text-3xl font-extrabold flex items-center gap-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(List, { size: 30, className: "text-[#93c5fd]" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "入出金検討表ツール" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-[rgba(224,231,255,0.9)] mt-1 max-w-2xl", children: "SOROBOCRで読み取ったCSV/JSONをRailway上のLedger APIに同期し、ブラウザだけで仕分け・比較・出力まで完了できます。" })
         ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-[#cbd5f5] mt-1", children: "CSVで取り込んだ通帳をWeb上で整理し、税務チェックを高速化します。" })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-3", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "button",
-          {
-            type: "button",
-            onClick: () => setShowGuide(true),
-            className: "inline-flex items-center gap-2 rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10",
-            children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
-              " 使い方を見る"
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "a",
-          {
-            href: "./guide.html",
-            target: "_blank",
-            rel: "noopener",
-            className: "inline-flex items-center gap-2 rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10",
-            children: "詳細ガイド"
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: () => setShowAddAccountModal(true), className: "bg-[#22c55e] hover:bg-[#16a34a] px-4 py-2", children: "新規口座を登録" })
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              onClick: () => setShowGuide(true),
+              className: "inline-flex items-center gap-2 rounded-full border border-white/40 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
+                " 使い方を見る"
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "a",
+            {
+              href: "./guide.html",
+              target: "_blank",
+              rel: "noopener",
+              className: "inline-flex items-center gap-2 rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10",
+              children: "詳細ガイド"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: () => setShowAddAccountModal(true), className: "bg-[#22c55e] hover:bg-[#16a34a] px-4 py-2", children: "新規口座を登録" })
+        ] })
       ] })
-    ] }) }),
+    ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-[220px]", children: [
