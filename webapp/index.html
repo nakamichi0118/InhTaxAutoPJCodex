@@ -700,23 +700,6 @@
         return token;
     }
 
-    function buildLedgerMappingsFromAssets(assets) {
-        if (!Array.isArray(assets)) {
-            return [];
-        }
-        return assets.map((asset, index) => {
-            const identifiers = asset?.identifiers || {};
-            const recordId = asset?.record_id || identifiers.primary || `asset_${index + 1}`;
-            const owner = Array.isArray(asset?.owner_name) && asset.owner_name.length ? `${asset.owner_name[0]}口座` : '預金口座';
-            return {
-                assetId: String(recordId),
-                mode: 'new',
-                accountName: asset?.asset_name || owner,
-                accountNumber: identifiers.primary || '',
-            };
-        });
-    }
-
     function deriveCaseName(doc) {
         if (!doc?.name) {
             return '新規案件';
@@ -729,16 +712,33 @@
         if (!LEDGER_API_BASE || !doc?.jobId || state.ledgerImportStatus === 'running') {
             return;
         }
-        const mappings = buildLedgerMappingsFromAssets(doc.assets);
-        if (!mappings.length) {
-            return;
-        }
         try {
             state.ledgerImportStatus = 'running';
             const token = await ensureLedgerSessionToken();
             if (!token) {
                 throw new Error('Ledgerトークンを取得できませんでした');
             }
+            const previewRes = await fetch(`${LEDGER_API_BASE}/jobs/${doc.jobId}/preview`, {
+                headers: {
+                    'X-Ledger-Token': token,
+                    'X-Ledger-App': LEDGER_APP_ID,
+                },
+            });
+            if (!previewRes.ok) {
+                const text = await previewRes.text();
+                throw new Error(`Ledgerプレビュー取得に失敗しました (HTTP ${previewRes.status}): ${text}`);
+            }
+            const preview = await previewRes.json();
+            const accounts = preview.accounts || [];
+            if (!accounts.length) {
+                throw new Error('Ledgerプレビューに口座が含まれていません');
+            }
+            const mappings = accounts.map((account) => ({
+                assetId: account.assetId || account.asset_id,
+                mode: 'new',
+                accountName: account.accountName || deriveCaseName(doc),
+                accountNumber: account.accountNumber || '',
+            }));
             const response = await fetch(`${LEDGER_API_BASE}/jobs/${doc.jobId}/import`, {
                 method: 'POST',
                 headers: {
