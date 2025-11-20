@@ -1624,6 +1624,47 @@ const LedgerApp = () => {
         return () => window.removeEventListener('storage', handler);
     }, []);
 
+    const refreshPendingImports = useCallback(() => {
+        const entries = loadPendingImportEntries();
+        setPendingImports(entries);
+        return entries;
+    }, []);
+
+    const removePendingImportEntry = useCallback((entryId) => {
+        const entries = loadPendingImportEntries().filter((entry) => entry.id !== entryId);
+        savePendingImportEntries(entries);
+        setPendingImports(entries);
+        return entries;
+    }, []);
+
+    const convertAssetsToLedgerPayload = useCallback((entry) => {
+        const accounts = [];
+        const transactions = [];
+        (entry?.assets || []).forEach((asset, index) => {
+            const identifiers = asset?.identifiers || {};
+            const accountId = String(asset?.record_id || identifiers.primary || `${entry.id || 'pending'}_${index + 1}`);
+            const name = asset?.asset_name || (Array.isArray(asset?.owner_name) && asset.owner_name[0]) || `口座${index + 1}`;
+            accounts.push({
+                id: accountId,
+                name,
+                number: identifiers.primary || identifiers.secondary || '',
+                order: (index + 1) * 1000,
+            });
+            (asset?.transactions || []).forEach((txn, txnIndex) => {
+                transactions.push({
+                    id: `${accountId}-${txnIndex + 1}`,
+                    accountId,
+                    date: txn?.transaction_date,
+                    withdrawal: parseInt(txn?.withdrawal_amount || 0, 10),
+                    deposit: parseInt(txn?.deposit_amount || 0, 10),
+                    memo: txn?.correction_note || txn?.memo || txn?.description || '',
+                    type: txn?.description || '',
+                });
+            });
+        });
+        return { accounts, transactions };
+    }, []);
+
     const fetchJobPreview = useCallback(
         async (jobId) => {
             if (!jobId) return;
@@ -1655,12 +1696,12 @@ const LedgerApp = () => {
         [callLedgerApi],
     );
 
-    useEffect(() => {
-        if (!sessionToken || !initialJobId) return;
-        fetchJobPreview(initialJobId);
-    }, [sessionToken, initialJobId, fetchJobPreview]);
+useEffect(() => {
+    if (!sessionToken || !initialJobId) return;
+    fetchJobPreview(initialJobId);
+}, [sessionToken, initialJobId, fetchJobPreview]);
 
-    const handleAddAccountClick = useCallback(() => {
+const handleAddAccountClick = useCallback(() => {
         if (pendingImports.length > 0) {
             setShowPendingImportModal(true);
         } else {
@@ -1839,47 +1880,6 @@ const LedgerApp = () => {
             setError(err);
         }
     }, [callLedgerApi, fetchCases, changeCase, setError]);
-
-    const refreshPendingImports = useCallback(() => {
-        const entries = loadPendingImportsFromStorage();
-        setPendingImports(entries);
-        return entries;
-    }, []);
-
-    const removePendingImportEntry = useCallback((entryId) => {
-        const entries = loadPendingImportsFromStorage().filter((entry) => entry.id !== entryId);
-        savePendingImportsToStorage(entries);
-        setPendingImports(entries);
-        return entries;
-    }, []);
-
-    const convertAssetsToLedgerPayload = useCallback((entry) => {
-        const accounts = [];
-        const transactions = [];
-        (entry?.assets || []).forEach((asset, index) => {
-            const identifiers = asset?.identifiers || {};
-            const accountId = String(asset?.record_id || identifiers.primary || `${entry.id || 'pending'}_${index + 1}`);
-            const name = asset?.asset_name || (Array.isArray(asset?.owner_name) && asset.owner_name[0]) || `口座${index + 1}`;
-            accounts.push({
-                id: accountId,
-                name,
-                number: identifiers.primary || identifiers.secondary || '',
-                order: (index + 1) * 1000,
-            });
-            (asset?.transactions || []).forEach((txn, txnIndex) => {
-                transactions.push({
-                    id: `${accountId}-${txnIndex + 1}`,
-                    accountId,
-                    date: txn?.transaction_date,
-                    withdrawal: parseInt(txn?.withdrawal_amount || 0, 10),
-                    deposit: parseInt(txn?.deposit_amount || 0, 10),
-                    memo: txn?.correction_note || txn?.memo || txn?.description || '',
-                    type: txn?.description || '',
-                });
-            });
-        });
-        return { accounts, transactions };
-    }, []);
 
     const handleApplyJobImport = useCallback(async () => {
         if (!jobPreview || !jobPreview.accounts?.length) return;

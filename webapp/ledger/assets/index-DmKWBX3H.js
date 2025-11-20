@@ -7233,16 +7233,6 @@ const loadPendingImportsFromStorage = () => {
     return [];
   }
 };
-const savePendingImportsToStorage = (entries) => {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-  try {
-    window.localStorage.setItem(PENDING_IMPORT_STORAGE_KEY, JSON.stringify(entries));
-  } catch (error) {
-    console.warn("Failed to store pending ledger imports:", error);
-  }
-};
 const formatCurrency = (value) => {
   if (value === void 0 || value === null || isNaN(value)) return "";
   return new Intl.NumberFormat("ja-JP", { style: "decimal" }).format(value);
@@ -8596,6 +8586,44 @@ const LedgerApp = () => {
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
   }, []);
+  reactExports.useCallback(() => {
+    const entries = loadPendingImportEntries();
+    setPendingImports(entries);
+    return entries;
+  }, []);
+  const removePendingImportEntry = reactExports.useCallback((entryId) => {
+    const entries = loadPendingImportEntries().filter((entry) => entry.id !== entryId);
+    savePendingImportEntries(entries);
+    setPendingImports(entries);
+    return entries;
+  }, []);
+  const convertAssetsToLedgerPayload = reactExports.useCallback((entry) => {
+    const accounts2 = [];
+    const transactions2 = [];
+    ((entry == null ? void 0 : entry.assets) || []).forEach((asset, index) => {
+      const identifiers = (asset == null ? void 0 : asset.identifiers) || {};
+      const accountId = String((asset == null ? void 0 : asset.record_id) || identifiers.primary || `${entry.id || "pending"}_${index + 1}`);
+      const name = (asset == null ? void 0 : asset.asset_name) || Array.isArray(asset == null ? void 0 : asset.owner_name) && asset.owner_name[0] || `口座${index + 1}`;
+      accounts2.push({
+        id: accountId,
+        name,
+        number: identifiers.primary || identifiers.secondary || "",
+        order: (index + 1) * 1e3
+      });
+      ((asset == null ? void 0 : asset.transactions) || []).forEach((txn, txnIndex) => {
+        transactions2.push({
+          id: `${accountId}-${txnIndex + 1}`,
+          accountId,
+          date: txn == null ? void 0 : txn.transaction_date,
+          withdrawal: parseInt((txn == null ? void 0 : txn.withdrawal_amount) || 0, 10),
+          deposit: parseInt((txn == null ? void 0 : txn.deposit_amount) || 0, 10),
+          memo: (txn == null ? void 0 : txn.correction_note) || (txn == null ? void 0 : txn.memo) || (txn == null ? void 0 : txn.description) || "",
+          type: (txn == null ? void 0 : txn.description) || ""
+        });
+      });
+    });
+    return { accounts: accounts2, transactions: transactions2 };
+  }, []);
   const fetchJobPreview = reactExports.useCallback(
     async (jobId) => {
       if (!jobId) return;
@@ -8793,44 +8821,6 @@ const LedgerApp = () => {
       setError(err);
     }
   }, [callLedgerApi, fetchCases, changeCase, setError]);
-  reactExports.useCallback(() => {
-    const entries = loadPendingImportsFromStorage();
-    setPendingImports(entries);
-    return entries;
-  }, []);
-  const removePendingImportEntry = reactExports.useCallback((entryId) => {
-    const entries = loadPendingImportsFromStorage().filter((entry) => entry.id !== entryId);
-    savePendingImportsToStorage(entries);
-    setPendingImports(entries);
-    return entries;
-  }, []);
-  const convertAssetsToLedgerPayload = reactExports.useCallback((entry) => {
-    const accounts2 = [];
-    const transactions2 = [];
-    ((entry == null ? void 0 : entry.assets) || []).forEach((asset, index) => {
-      const identifiers = (asset == null ? void 0 : asset.identifiers) || {};
-      const accountId = String((asset == null ? void 0 : asset.record_id) || identifiers.primary || `${entry.id || "pending"}_${index + 1}`);
-      const name = (asset == null ? void 0 : asset.asset_name) || Array.isArray(asset == null ? void 0 : asset.owner_name) && asset.owner_name[0] || `口座${index + 1}`;
-      accounts2.push({
-        id: accountId,
-        name,
-        number: identifiers.primary || identifiers.secondary || "",
-        order: (index + 1) * 1e3
-      });
-      ((asset == null ? void 0 : asset.transactions) || []).forEach((txn, txnIndex) => {
-        transactions2.push({
-          id: `${accountId}-${txnIndex + 1}`,
-          accountId,
-          date: txn == null ? void 0 : txn.transaction_date,
-          withdrawal: parseInt((txn == null ? void 0 : txn.withdrawal_amount) || 0, 10),
-          deposit: parseInt((txn == null ? void 0 : txn.deposit_amount) || 0, 10),
-          memo: (txn == null ? void 0 : txn.correction_note) || (txn == null ? void 0 : txn.memo) || (txn == null ? void 0 : txn.description) || "",
-          type: (txn == null ? void 0 : txn.description) || ""
-        });
-      });
-    });
-    return { accounts: accounts2, transactions: transactions2 };
-  }, []);
   const handleApplyJobImport = reactExports.useCallback(async () => {
     var _a2;
     if (!jobPreview || !((_a2 = jobPreview.accounts) == null ? void 0 : _a2.length)) return;
