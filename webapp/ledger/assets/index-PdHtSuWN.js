@@ -7431,6 +7431,84 @@ const INITIAL_TRANSACTION_FILTER = {
   maxAmount: "",
   rowColor: "all"
 };
+const INSURANCE_KEYWORDS = [
+  "保険",
+  "生命",
+  "ひまわり生命",
+  "第一生命",
+  "日本生命",
+  "明治安田",
+  "住友生命",
+  "ソニー生命",
+  "かんぽ生命",
+  "アフラック",
+  "JA共済",
+  "共済"
+];
+const isLikelyPersonalMemo = (memo) => {
+  if (!memo) return false;
+  const normalized = memo.trim();
+  if (!normalized) return false;
+  if (/様|さま|さん/.test(normalized)) return true;
+  if (/[(（]/.test(normalized)) return false;
+  const lettersOnly = normalized.replace(/[0-9\s]/g, "");
+  if (!lettersOnly) return false;
+  const pattern = /^[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}A-Za-z]{2,}$/u;
+  return pattern.test(lettersOnly) && lettersOnly.length <= 12;
+};
+const runComplianceAnalysis = (accounts, transactions) => {
+  const result = { generatedAt: (/* @__PURE__ */ new Date()).toISOString(), checks: [] };
+  const insuranceAccounts = (accounts || []).filter((account) => {
+    const target = `${account.name || ""}${account.holder_name || account.holderName || ""}`;
+    return INSURANCE_KEYWORDS.some((keyword) => target.includes(keyword));
+  });
+  if (insuranceAccounts.length > 0) {
+    result.checks.push({
+      category: "保険契約の有無",
+      severity: "info",
+      items: insuranceAccounts.map((account) => `${account.name || account.number || account.id}`),
+      message: `${insuranceAccounts.length}件の口座に保険関連の名称が含まれています。解約返戻金や契約者貸付の有無をご確認ください。`
+    });
+  }
+  const giftMap = /* @__PURE__ */ new Map();
+  (transactions || []).forEach((txn) => {
+    if (!(txn == null ? void 0 : txn.deposit)) return;
+    if (!(txn == null ? void 0 : txn.date)) return;
+    const memo = (txn.memo || txn.type || "").trim();
+    if (!isLikelyPersonalMemo(memo)) return;
+    const year = new Date(txn.date).getFullYear();
+    if (!giftMap.has(memo)) {
+      giftMap.set(memo, /* @__PURE__ */ new Map());
+    }
+    const yearMap = giftMap.get(memo);
+    yearMap.set(year, (yearMap.get(year) || 0) + (txn.deposit || 0));
+  });
+  const giftFindings = [];
+  giftMap.forEach((yearMap, memo) => {
+    yearMap.forEach((amount, year) => {
+      if (amount >= 11e5) {
+        giftFindings.push({ memo, year, amount });
+      }
+    });
+  });
+  if (giftFindings.length > 0) {
+    result.checks.push({
+      category: "贈与税の検討",
+      severity: "warn",
+      items: giftFindings.map((item) => `${item.year}年 ${item.memo}: ${formatCurrency(item.amount)}円`),
+      message: "個人名義への入金で年間110万円を超えるものがあります。贈与税申告の有無を確認してください。"
+    });
+  }
+  if (result.checks.length === 0) {
+    result.checks.push({
+      category: "特記事項",
+      severity: "info",
+      items: [],
+      message: "該当する注意項目は検出されませんでした。"
+    });
+  }
+  return result;
+};
 const StatusMessage = ({ loading, error, userId }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-4 bg-white/90 backdrop-blur-sm shadow-xl rounded-xl", children: [
   loading && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-blue-600 font-semibold flex items-center justify-center", children: "データをロード中..." }),
   error && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-red-600 font-semibold", children: [
@@ -8714,6 +8792,8 @@ const IntegratedTabContent = ({
   onApplyComparisonFilter
 }) => {
   const [message, setMessage] = reactExports.useState("");
+  const [analysisStatus, setAnalysisStatus] = reactExports.useState("idle");
+  const [analysisResult, setAnalysisResult] = reactExports.useState(null);
   const accountMap = reactExports.useMemo(() => {
     return (allAccounts || []).reduce((map, account) => {
       map[account.id] = account;
@@ -8855,6 +8935,14 @@ const IntegratedTabContent = ({
     }
     return accountSummaries.slice(0, Math.min(3, accountSummaries.length));
   }, [accountSummaries, comparisonSelection]);
+  const handleRunAnalysis = reactExports.useCallback(() => {
+    setAnalysisStatus("running");
+    setTimeout(() => {
+      const result = runComplianceAnalysis(allAccounts, allTransactions);
+      setAnalysisResult(result);
+      setAnalysisStatus("done");
+    }, 40);
+  }, [allAccounts, allTransactions]);
   const allowManualReorder = !sorting || sorting.field === "custom";
   const sortOptions = [
     { value: "custom", label: "手動順序（既定）" },
@@ -9013,6 +9101,41 @@ const IntegratedTabContent = ({
         )
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "ソート対象を切り替えると即座に表示が更新されます。手動順序モードのときのみ列内の矢印から微調整できます。" })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white border border-slate-200 rounded-xl p-4 space-y-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center justify-between gap-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-base font-semibold text-slate-800", children: "AI分析 (ヒューリスティック)" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "保険契約の有無や贈与税リスクなど、典型的な論点を自動チェックします。" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+          analysisStatus === "running" && /* @__PURE__ */ jsxRuntimeExports.jsx(LoaderCircle, { size: 18, className: "animate-spin text-slate-500" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              type: "button",
+              onClick: handleRunAnalysis,
+              className: "rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8]",
+              disabled: analysisStatus === "running",
+              children: "AI分析を実行"
+            }
+          )
+        ] })
+      ] }),
+      analysisResult && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-slate-400", children: [
+          "更新: ",
+          new Date(analysisResult.generatedAt).toLocaleString()
+        ] }),
+        analysisResult.checks.map((check, index) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-slate-200 p-3 bg-slate-50", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h4", { className: "text-sm font-semibold text-slate-800", children: check.category }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-semibold px-2 py-0.5 rounded-full ${check.severity === "warn" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-700"}`, children: check.severity === "warn" ? "確認" : "参考" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-slate-600 mt-1", children: check.message }),
+          check.items && check.items.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { className: "mt-2 text-xs text-slate-500 list-disc list-inside space-y-1", children: check.items.map((item, itemIndex) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: item }, `${check.category}-${index}-${itemIndex}`)) })
+        ] }, `${check.category}-${index}`))
+      ] })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white border border-slate-200 rounded-xl p-4 space-y-4", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center justify-between gap-3", children: [

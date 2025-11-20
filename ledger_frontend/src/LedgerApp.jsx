@@ -255,6 +255,89 @@ const INITIAL_TRANSACTION_FILTER = {
     rowColor: 'all',
 };
 
+const INSURANCE_KEYWORDS = [
+    '保険',
+    '生命',
+    'ひまわり生命',
+    '第一生命',
+    '日本生命',
+    '明治安田',
+    '住友生命',
+    'ソニー生命',
+    'かんぽ生命',
+    'アフラック',
+    'JA共済',
+    '共済',
+];
+
+const isLikelyPersonalMemo = (memo) => {
+    if (!memo) return false;
+    const normalized = memo.trim();
+    if (!normalized) return false;
+    if (/様|さま|さん/.test(normalized)) return true;
+    if (/[(（]/.test(normalized)) return false;
+    const lettersOnly = normalized.replace(/[0-9\s]/g, '');
+    if (!lettersOnly) return false;
+    const pattern = /^[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}A-Za-z]{2,}$/u;
+    return pattern.test(lettersOnly) && lettersOnly.length <= 12;
+};
+
+const runComplianceAnalysis = (accounts, transactions) => {
+    const result = { generatedAt: new Date().toISOString(), checks: [] };
+    const insuranceAccounts = (accounts || []).filter((account) => {
+        const target = `${account.name || ''}${account.holder_name || account.holderName || ''}`;
+        return INSURANCE_KEYWORDS.some((keyword) => target.includes(keyword));
+    });
+    if (insuranceAccounts.length > 0) {
+        result.checks.push({
+            category: '保険契約の有無',
+            severity: 'info',
+            items: insuranceAccounts.map((account) => `${account.name || account.number || account.id}`),
+            message: `${insuranceAccounts.length}件の口座に保険関連の名称が含まれています。解約返戻金や契約者貸付の有無をご確認ください。`,
+        });
+    }
+
+    const giftMap = new Map();
+    (transactions || []).forEach((txn) => {
+        if (!txn?.deposit) return;
+        if (!txn?.date) return;
+        const memo = (txn.memo || txn.type || '').trim();
+        if (!isLikelyPersonalMemo(memo)) return;
+        const year = new Date(txn.date).getFullYear();
+        if (!giftMap.has(memo)) {
+            giftMap.set(memo, new Map());
+        }
+        const yearMap = giftMap.get(memo);
+        yearMap.set(year, (yearMap.get(year) || 0) + (txn.deposit || 0));
+    });
+    const giftFindings = [];
+    giftMap.forEach((yearMap, memo) => {
+        yearMap.forEach((amount, year) => {
+            if (amount >= 1100000) {
+                giftFindings.push({ memo, year, amount });
+            }
+        });
+    });
+    if (giftFindings.length > 0) {
+        result.checks.push({
+            category: '贈与税の検討',
+            severity: 'warn',
+            items: giftFindings.map((item) => `${item.year}年 ${item.memo}: ${formatCurrency(item.amount)}円`),
+            message: '個人名義への入金で年間110万円を超えるものがあります。贈与税申告の有無を確認してください。',
+        });
+    }
+
+    if (result.checks.length === 0) {
+        result.checks.push({
+            category: '特記事項',
+            severity: 'info',
+            items: [],
+            message: '該当する注意項目は検出されませんでした。',
+        });
+    }
+    return result;
+};
+
 
 // --- Custom Components ---
 
@@ -1707,6 +1790,8 @@ const IntegratedTabContent = ({
     onApplyComparisonFilter,
 }) => {
     const [message, setMessage] = useState(''); // メッセージ表示用ステートを追加
+    const [analysisStatus, setAnalysisStatus] = useState('idle');
+    const [analysisResult, setAnalysisResult] = useState(null);
     const accountMap = useMemo(() => {
         return (allAccounts || []).reduce((map, account) => {
             map[account.id] = account;
@@ -1858,6 +1943,14 @@ const IntegratedTabContent = ({
         }
         return accountSummaries.slice(0, Math.min(3, accountSummaries.length));
     }, [accountSummaries, comparisonSelection]);
+    const handleRunAnalysis = useCallback(() => {
+        setAnalysisStatus('running');
+        setTimeout(() => {
+            const result = runComplianceAnalysis(allAccounts, allTransactions);
+            setAnalysisResult(result);
+            setAnalysisStatus('done');
+        }, 40);
+    }, [allAccounts, allTransactions]);
     const allowManualReorder = !sorting || sorting.field === 'custom';
     const sortOptions = [
         { value: 'custom', label: '手動順序（既定）' },
@@ -2031,6 +2124,49 @@ const IntegratedTabContent = ({
                 <p className="text-xs text-slate-500">
                     ソート対象を切り替えると即座に表示が更新されます。手動順序モードのときのみ列内の矢印から微調整できます。
                 </p>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <p className="text-base font-semibold text-slate-800">AI分析 (ヒューリスティック)</p>
+                        <p className="text-xs text-slate-500">保険契約の有無や贈与税リスクなど、典型的な論点を自動チェックします。</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {analysisStatus === 'running' && <Loader2 size={18} className="animate-spin text-slate-500" />}
+                        <button
+                            type="button"
+                            onClick={handleRunAnalysis}
+                            className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
+                            disabled={analysisStatus === 'running'}
+                        >
+                            AI分析を実行
+                        </button>
+                    </div>
+                </div>
+                {analysisResult && (
+                    <div className="space-y-3">
+                        <p className="text-xs text-slate-400">更新: {new Date(analysisResult.generatedAt).toLocaleString()}</p>
+                        {analysisResult.checks.map((check, index) => (
+                            <div key={`${check.category}-${index}`} className="rounded-xl border border-slate-200 p-3 bg-slate-50">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-sm font-semibold text-slate-800">{check.category}</h4>
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${check.severity === 'warn' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-700'}`}>
+                                        {check.severity === 'warn' ? '確認' : '参考'}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-slate-600 mt-1">{check.message}</p>
+                                {check.items && check.items.length > 0 && (
+                                    <ul className="mt-2 text-xs text-slate-500 list-disc list-inside space-y-1">
+                                        {check.items.map((item, itemIndex) => (
+                                            <li key={`${check.category}-${index}-${itemIndex}`}>{item}</li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
 
             <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
