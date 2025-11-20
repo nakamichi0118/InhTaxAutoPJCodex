@@ -8,5 +8,7 @@ export default defineConfig({
   build: {
     outDir: '../webapp/ledger',
     emptyOutDir: true,
+    minify: false,
+    target: 'es2019',
   },
 })
