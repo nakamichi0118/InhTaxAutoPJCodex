@@ -622,6 +622,24 @@
             : 'ledger-app';
     const LEDGER_SESSION_KEY = 'ledger_session_token';
 
+    const state = {
+        documents: [],
+        activeDocId: null,
+        activeAssetTabId: null,
+        apiBase: DEFAULT_API,
+        limits: null,
+        notificationsEnabled: false,
+        cancelRequested: false,
+        isProcessing: false,
+        currentAbortController: null,
+        analysisMode: 'gemini_pro',
+        latestJobId: null,
+        ledgerToken: null,
+        pendingImportCount: 0,
+    };
+    state.pendingImportCount = loadPendingImportEntries().length;
+    state.ledgerToken = getStoredLedgerToken();
+
     function buildLedgerUrl(jobId) {
         const url = new URL(LEDGER_APP_URL, window.location.origin);
         if (jobId) {
@@ -640,24 +658,6 @@
             ledgerPendingMessage.textContent = 'CSV を保存した後、ブラウザ上で入出金を並べ替え・色付けできるツールを開けます。';
         }
     }
-
-    const state = {
-        documents: [],
-        activeDocId: null,
-        activeAssetTabId: null,
-        apiBase: DEFAULT_API,
-        limits: null,
-        notificationsEnabled: false,
-        cancelRequested: false,
-        isProcessing: false,
-        currentAbortController: null,
-        analysisMode: 'gemini_pro',
-        latestJobId: null,
-        ledgerToken: null,
-        pendingImportCount: 0,
-    };
-    state.pendingImportCount = loadPendingImportEntries().length;
-    state.ledgerToken = getStoredLedgerToken();
 
     const PENDING_IMPORT_STORAGE_KEY = 'pending_ledger_imports';
 
