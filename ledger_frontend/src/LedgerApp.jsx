@@ -1625,14 +1625,14 @@ const LedgerApp = () => {
     }, []);
 
     const refreshPendingImports = useCallback(() => {
-        const entries = loadPendingImportEntries();
+        const entries = loadPendingImportsFromStorage();
         setPendingImports(entries);
         return entries;
     }, []);
 
     const removePendingImportEntry = useCallback((entryId) => {
-        const entries = loadPendingImportEntries().filter((entry) => entry.id !== entryId);
-        savePendingImportEntries(entries);
+        const entries = loadPendingImportsFromStorage().filter((entry) => entry.id !== entryId);
+        savePendingImportsToStorage(entries);
         setPendingImports(entries);
         return entries;
     }, []);

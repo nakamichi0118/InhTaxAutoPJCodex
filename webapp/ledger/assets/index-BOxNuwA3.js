@@ -7233,6 +7233,16 @@ const loadPendingImportsFromStorage = () => {
     return [];
   }
 };
+const savePendingImportsToStorage = (entries) => {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(PENDING_IMPORT_STORAGE_KEY, JSON.stringify(entries));
+  } catch (error) {
+    console.warn("Failed to store pending ledger imports:", error);
+  }
+};
 const formatCurrency = (value) => {
   if (value === void 0 || value === null || isNaN(value)) return "";
   return new Intl.NumberFormat("ja-JP", { style: "decimal" }).format(value);
@@ -8587,13 +8597,13 @@ const LedgerApp = () => {
     return () => window.removeEventListener("storage", handler);
   }, []);
   reactExports.useCallback(() => {
-    const entries = loadPendingImportEntries();
+    const entries = loadPendingImportsFromStorage();
     setPendingImports(entries);
     return entries;
   }, []);
   const removePendingImportEntry = reactExports.useCallback((entryId) => {
-    const entries = loadPendingImportEntries().filter((entry) => entry.id !== entryId);
-    savePendingImportEntries(entries);
+    const entries = loadPendingImportsFromStorage().filter((entry) => entry.id !== entryId);
+    savePendingImportsToStorage(entries);
     setPendingImports(entries);
     return entries;
   }, []);
