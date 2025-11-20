@@ -12,3 +12,8 @@
 - Job Previewに「統合グループキー」オプションを追加し、同じキーを与えた複数口座を1口座として取り込めるようフロント/バックエンド両方を拡張。
 - `LedgerJobImportMapping` と `/jobs/{id}/import` を改修し、グループ単位でまとめて口座作成＆取引一括投入が可能に。UIにも説明追記。
 - `npm run build` を再実行し、新しいバンドル(`index-bR01U9YX.css` / `index-DbGv-S05.js`)を `webapp/ledger/` に配置。
+
+## 2025-11-20 18:00 JST
+- `/api/ledger/import` 置換問題の対策として、Pending Import時はフロント側で既存口座/取引と読み取り結果をマージしてから送信するよう変更。口座ID競合時はUUIDを自動採番して重複を避ける。
+- 統合タブにフィルターUIを追加（口座/入出金区分/色/金額レンジ/キーワード）。フィルタ結果に対してソート・PDF出力が行われるよう組み合わせ処理も更新。
+- `npm run build` を再実行し、フィルター入りのUIと差し替え済みバンドル (`index-CwhQkWVL.css`, `index-C_GWTxPS.js`) を `webapp/ledger/` へ配置。

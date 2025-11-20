@@ -7347,6 +7347,90 @@ const sortTransactionsByConfig = (transactions, sort, accountMap = {}) => {
     return a.id.localeCompare(b.id);
   });
 };
+const generateClientId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `client_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+};
+const normalizeAccountForImport = (account) => ({
+  id: account.id,
+  name: account.name,
+  number: account.number,
+  holderName: account.holder_name || account.holderName || "",
+  order: typeof account.order === "number" ? account.order : 0
+});
+const normalizeTransactionForImport = (transaction) => {
+  var _a, _b, _c, _d, _e, _f, _g, _h;
+  return {
+    id: transaction.id,
+    accountId: transaction.accountId || transaction.account_id,
+    date: transaction.date,
+    withdrawal: (_b = (_a = transaction.withdrawal) != null ? _a : transaction.withdrawal_amount) != null ? _b : 0,
+    deposit: (_d = (_c = transaction.deposit) != null ? _c : transaction.deposit_amount) != null ? _d : 0,
+    memo: transaction.memo || "",
+    type: transaction.type || "",
+    userOrder: (_f = (_e = transaction.userOrder) != null ? _e : transaction.user_order) != null ? _f : null,
+    rowColor: (_h = (_g = transaction.rowColor) != null ? _g : transaction.row_color) != null ? _h : null
+  };
+};
+const buildMergedImportPayload = ({
+  caseId,
+  existingAccounts,
+  existingTransactions,
+  incomingAccounts,
+  incomingTransactions
+}) => {
+  const mergedAccounts = (existingAccounts || []).map(normalizeAccountForImport);
+  const mergedTransactions = (existingTransactions || []).map(normalizeTransactionForImport);
+  const existingAccountIds = new Set(mergedAccounts.map((account) => account.id));
+  let maxOrder = mergedAccounts.reduce((max, account) => Math.max(max, account.order || 0), 0);
+  const accountIdMap = /* @__PURE__ */ new Map();
+  (incomingAccounts || []).forEach((incoming, index) => {
+    const sourceId = incoming.id || generateClientId();
+    let accountId = sourceId;
+    if (existingAccountIds.has(accountId)) {
+      accountId = generateClientId();
+    }
+    existingAccountIds.add(accountId);
+    accountIdMap.set(sourceId, accountId);
+    mergedAccounts.push({
+      id: accountId,
+      name: incoming.name,
+      number: incoming.number,
+      holderName: incoming.holderName || incoming.holder_name || "",
+      order: maxOrder + (index + 1) * 1e3
+    });
+  });
+  (incomingTransactions || []).forEach((incomingTxn) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    const mappedAccountId = accountIdMap.get(incomingTxn.accountId || incomingTxn.account_id) || (incomingTxn.accountId || incomingTxn.account_id);
+    mergedTransactions.push({
+      id: incomingTxn.id || generateClientId(),
+      accountId: mappedAccountId,
+      date: incomingTxn.date,
+      withdrawal: (_b = (_a = incomingTxn.withdrawal) != null ? _a : incomingTxn.withdrawal_amount) != null ? _b : 0,
+      deposit: (_d = (_c = incomingTxn.deposit) != null ? _c : incomingTxn.deposit_amount) != null ? _d : 0,
+      memo: incomingTxn.memo || incomingTxn.description || "",
+      type: incomingTxn.type || incomingTxn.description || "",
+      userOrder: (_f = (_e = incomingTxn.userOrder) != null ? _e : incomingTxn.user_order) != null ? _f : null,
+      rowColor: (_h = (_g = incomingTxn.rowColor) != null ? _g : incomingTxn.row_color) != null ? _h : null
+    });
+  });
+  return {
+    caseId,
+    accounts: mergedAccounts,
+    transactions: mergedTransactions
+  };
+};
+const INITIAL_TRANSACTION_FILTER = {
+  accountId: "all",
+  direction: "all",
+  keyword: "",
+  minAmount: "",
+  maxAmount: "",
+  rowColor: "all"
+};
 const StatusMessage = ({ loading, error, userId }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-4 bg-white/90 backdrop-blur-sm shadow-xl rounded-xl", children: [
   loading && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-blue-600 font-semibold flex items-center justify-center", children: "データをロード中..." }),
   error && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-red-600 font-semibold", children: [
@@ -8538,7 +8622,10 @@ const IntegratedTabContent = ({
   onDeleteTransaction,
   onUpdateTransactionColor,
   sorting,
-  onSortChange
+  onSortChange,
+  filters,
+  onFilterChange,
+  onFilterReset
 }) => {
   const [message, setMessage] = reactExports.useState("");
   const accountMap = reactExports.useMemo(() => {
@@ -8547,6 +8634,17 @@ const IntegratedTabContent = ({
       return map;
     }, {});
   }, [allAccounts]);
+  const accountFilterOptions = reactExports.useMemo(() => [
+    { value: "all", label: "すべての口座" },
+    ...(allAccounts || []).map((account) => ({ value: account.id, label: account.name || account.number || account.id }))
+  ], [allAccounts]);
+  const colorOptions = [
+    { value: "all", label: "すべて" },
+    { value: "green", label: "緑" },
+    { value: "blue", label: "青" },
+    { value: "yellow", label: "黄" },
+    { value: "pink", label: "ピンク" }
+  ];
   const integratedTransactions = reactExports.useMemo(() => {
     return [...allTransactions].sort((a, b) => {
       var _a, _b;
@@ -8558,7 +8656,55 @@ const IntegratedTabContent = ({
       return a.id.localeCompare(b.id);
     });
   }, [allTransactions]);
-  const displayTransactions = reactExports.useMemo(() => sortTransactionsByConfig(integratedTransactions, sorting, accountMap), [integratedTransactions, sorting, accountMap]);
+  const filteredTransactions = reactExports.useMemo(() => {
+    if (!filters) {
+      return integratedTransactions;
+    }
+    const keyword = (filters.keyword || "").trim().toLowerCase();
+    const minAmount = filters.minAmount ? parseInt(filters.minAmount, 10) : null;
+    const maxAmount = filters.maxAmount ? parseInt(filters.maxAmount, 10) : null;
+    return integratedTransactions.filter((transaction) => {
+      const account = accountMap[transaction.accountId];
+      if (filters.accountId && filters.accountId !== "all" && transaction.accountId !== filters.accountId) {
+        return false;
+      }
+      const isWithdrawal = (transaction.withdrawal || 0) > 0;
+      const isDeposit = (transaction.deposit || 0) > 0;
+      if (filters.direction === "withdrawal" && !isWithdrawal) {
+        return false;
+      }
+      if (filters.direction === "deposit" && !isDeposit) {
+        return false;
+      }
+      const colorValue = transaction.rowColor || transaction.row_color || null;
+      if (filters.rowColor && filters.rowColor !== "all" && colorValue !== filters.rowColor) {
+        return false;
+      }
+      if (keyword) {
+        const targetText = [
+          transaction.memo || "",
+          transaction.type || "",
+          (account == null ? void 0 : account.name) || "",
+          resolveHolderName(account) || ""
+        ].join(" ").toLowerCase();
+        if (!targetText.includes(keyword)) {
+          return false;
+        }
+      }
+      const amountValue = Math.max(transaction.deposit || 0, transaction.withdrawal || 0);
+      if (minAmount !== null && Number.isFinite(minAmount) && amountValue < minAmount) {
+        return false;
+      }
+      if (maxAmount !== null && Number.isFinite(maxAmount) && amountValue > maxAmount) {
+        return false;
+      }
+      return true;
+    });
+  }, [integratedTransactions, filters, accountMap]);
+  const displayTransactions = reactExports.useMemo(
+    () => sortTransactionsByConfig(filteredTransactions, sorting, accountMap),
+    [filteredTransactions, sorting, accountMap]
+  );
   const allowManualReorder = !sorting || sorting.field === "custom";
   const sortOptions = [
     { value: "custom", label: "手動順序（既定）" },
@@ -8718,6 +8864,100 @@ const IntegratedTabContent = ({
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "ソート対象を切り替えると即座に表示が更新されます。手動順序モードのときのみ列内の矢印から微調整できます。" })
     ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white border border-slate-200 rounded-xl p-4 space-y-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 md:grid-cols-3", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-slate-500", children: "口座で絞り込む" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "select",
+            {
+              value: (filters == null ? void 0 : filters.accountId) || "all",
+              onChange: (e) => onFilterChange == null ? void 0 : onFilterChange({ accountId: e.target.value }),
+              className: "mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm",
+              children: accountFilterOptions.map((option) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: option.value, children: option.label }, option.value))
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-slate-500", children: "入出金区分" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "select",
+            {
+              value: (filters == null ? void 0 : filters.direction) || "all",
+              onChange: (e) => onFilterChange == null ? void 0 : onFilterChange({ direction: e.target.value }),
+              className: "mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "all", children: "すべて" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "deposit", children: "入金のみ" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "withdrawal", children: "出金のみ" })
+              ]
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-slate-500", children: "着色フィルター" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "select",
+            {
+              value: (filters == null ? void 0 : filters.rowColor) || "all",
+              onChange: (e) => onFilterChange == null ? void 0 : onFilterChange({ rowColor: e.target.value }),
+              className: "mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm",
+              children: colorOptions.map((option) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: option.value, children: option.label }, option.value))
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-slate-500", children: "最小金額" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              type: "number",
+              inputMode: "numeric",
+              value: (filters == null ? void 0 : filters.minAmount) || "",
+              onChange: (e) => onFilterChange == null ? void 0 : onFilterChange({ minAmount: e.target.value }),
+              className: "mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm",
+              placeholder: "0"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-slate-500", children: "最大金額" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              type: "number",
+              inputMode: "numeric",
+              value: (filters == null ? void 0 : filters.maxAmount) || "",
+              onChange: (e) => onFilterChange == null ? void 0 : onFilterChange({ maxAmount: e.target.value }),
+              className: "mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm",
+              placeholder: "0"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-slate-500", children: "キーワード" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              type: "text",
+              value: (filters == null ? void 0 : filters.keyword) || "",
+              onChange: (e) => onFilterChange == null ? void 0 : onFilterChange({ keyword: e.target.value }),
+              className: "mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm",
+              placeholder: "メモ・摘要で検索"
+            }
+          )
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex justify-end gap-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          type: "button",
+          onClick: onFilterReset,
+          className: "rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50",
+          children: "条件をクリア"
+        }
+      ) })
+    ] }),
     message && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: `p-3 rounded-lg my-3 text-sm flex items-center justify-center ${message.includes("エラー") ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(LoaderCircle, { size: 16, className: "animate-spin mr-2" }),
       " ",
@@ -8769,6 +9009,7 @@ const LedgerApp = () => {
   const [pendingImportError, setPendingImportError] = reactExports.useState("");
   const [showGuide, setShowGuide] = reactExports.useState(false);
   const [transactionSort, setTransactionSort] = reactExports.useState({ field: "custom", direction: "asc" });
+  const [transactionFilter, setTransactionFilter] = reactExports.useState(() => ({ ...INITIAL_TRANSACTION_FILTER }));
   const initialJobId = reactExports.useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("job_id");
@@ -9087,6 +9328,15 @@ const LedgerApp = () => {
       return { field: next.field, direction };
     });
   }, []);
+  const handleTransactionFilterChange = reactExports.useCallback((updates) => {
+    setTransactionFilter((prev) => ({
+      ...prev,
+      ...updates
+    }));
+  }, []);
+  const handleTransactionFilterReset = reactExports.useCallback(() => {
+    setTransactionFilter({ ...INITIAL_TRANSACTION_FILTER });
+  }, []);
   const handleImportPendingEntry = reactExports.useCallback(
     async (entry, { targetCaseId, newCaseName: newCaseName2 } = {}) => {
       if (!entry) return;
@@ -9101,14 +9351,24 @@ const LedgerApp = () => {
       setPendingImportStatus("applying");
       setPendingImportError("");
       try {
+        let requestBody = {
+          caseId: caseIdToUse,
+          newCaseName: newCaseName2 || null,
+          accounts: payload.accounts,
+          transactions: payload.transactions
+        };
+        if (caseIdToUse && !newCaseName2 && selectedCaseId === caseIdToUse) {
+          requestBody = buildMergedImportPayload({
+            caseId: caseIdToUse,
+            existingAccounts: accounts,
+            existingTransactions: transactions,
+            incomingAccounts: payload.accounts,
+            incomingTransactions: payload.transactions
+          });
+        }
         await callLedgerApi("/import", {
           method: "POST",
-          body: {
-            caseId: caseIdToUse,
-            newCaseName: newCaseName2 || null,
-            accounts: payload.accounts,
-            transactions: payload.transactions
-          }
+          body: requestBody
         });
         const remaining = removePendingImportEntry(entry.id);
         if (!remaining.length) {
@@ -9127,7 +9387,16 @@ const LedgerApp = () => {
         setPendingImportError(err instanceof Error ? err.message : String(err));
       }
     },
-    [callLedgerApi, convertAssetsToLedgerPayload, removePendingImportEntry, fetchCases, refreshState, selectedCaseId]
+    [
+      callLedgerApi,
+      convertAssetsToLedgerPayload,
+      removePendingImportEntry,
+      fetchCases,
+      refreshState,
+      selectedCaseId,
+      accounts,
+      transactions
+    ]
   );
   const changeCase = reactExports.useCallback(async (caseId) => {
     if (!caseId) return;
@@ -9251,7 +9520,10 @@ const LedgerApp = () => {
           onDeleteTransaction: handleDeleteTransaction,
           onUpdateTransactionColor: handleUpdateTransactionColor,
           sorting: transactionSort,
-          onSortChange: handleTransactionSortChange
+          onSortChange: handleTransactionSortChange,
+          filters: transactionFilter,
+          onFilterChange: handleTransactionFilterChange,
+          onFilterReset: handleTransactionFilterReset
         }
       );
     }
