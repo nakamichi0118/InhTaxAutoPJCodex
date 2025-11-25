@@ -7867,14 +7867,6 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
         }
       )
     ] }),
-    pendingImports.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mb-4 text-sm bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-amber-900", children: [
-        "未登録の通帳データが ",
-        pendingImports.length,
-        " 件あります。案件に取り込みましょう。"
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { onClick: () => setShowPendingImportModal(true), className: "bg-amber-600 hover:bg-amber-700", children: "取り込みを開始" })
-    ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       CurrencyInput,
       {
@@ -8225,7 +8217,7 @@ const ImportModal = ({ isOpen, onClose, onImport, caseName }) => {
 const PendingImportModal = ({
   isOpen,
   onClose,
-  pendingImports: pendingImports2,
+  pendingImports,
   caseName,
   onApply,
   onManual,
@@ -8241,8 +8233,8 @@ const PendingImportModal = ({
       " 取り込める通帳データがブラウザに保存されています。自動取り込みを実行すると、口座と取引が案件へ追加されます。"
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-4 max-h-[50vh] overflow-y-auto", children: [
-      pendingImports2.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-500", children: "未登録のデータはありません。" }),
-      pendingImports2.map((entry) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "border border-blue-200 rounded-xl p-4 bg-blue-50", children: [
+      pendingImports.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-gray-500", children: "未登録のデータはありません。" }),
+      pendingImports.map((entry) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "border border-blue-200 rounded-xl p-4 bg-blue-50", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-center mb-2", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("h4", { className: "text-lg font-semibold text-blue-900", children: entry.name || "未命名の通帳" }),
@@ -9417,8 +9409,8 @@ const LedgerApp = () => {
   const [jobImportStatus, setJobImportStatus] = reactExports.useState("idle");
   const [jobImportError, setJobImportError] = reactExports.useState("");
   const [newCaseName, setNewCaseName] = reactExports.useState("");
-  const [pendingImports2, setPendingImports] = reactExports.useState([]);
-  const [showPendingImportModal, setShowPendingImportModal2] = reactExports.useState(false);
+  const [pendingImports, setPendingImports] = reactExports.useState([]);
+  const [showPendingImportModal, setShowPendingImportModal] = reactExports.useState(false);
   const [pendingImportStatus, setPendingImportStatus] = reactExports.useState("idle");
   const [pendingImportError, setPendingImportError] = reactExports.useState("");
   const [showGuide, setShowGuide] = reactExports.useState(false);
@@ -9651,14 +9643,14 @@ const LedgerApp = () => {
     fetchJobPreview(initialJobId);
   }, [sessionToken, initialJobId, fetchJobPreview]);
   const handleAddAccountClick = reactExports.useCallback(() => {
-    if (pendingImports2.length > 0) {
-      setShowPendingImportModal2(true);
+    if (pendingImports.length > 0) {
+      setShowPendingImportModal(true);
     } else {
       setShowAddAccountModal(true);
     }
-  }, [pendingImports2]);
+  }, [pendingImports]);
   const handleManualAddAccount = reactExports.useCallback(() => {
-    setShowPendingImportModal2(false);
+    setShowPendingImportModal(false);
     setShowAddAccountModal(true);
   }, []);
   const handleDismissPendingEntry = reactExports.useCallback((entryId) => {
@@ -9820,7 +9812,7 @@ const LedgerApp = () => {
         });
         const remaining = removePendingImportEntry(entry.id);
         if (!remaining.length) {
-          setShowPendingImportModal2(false);
+          setShowPendingImportModal(false);
         }
         await fetchCases();
         const nextCaseId = caseIdToUse || selectedCaseId;
@@ -10373,8 +10365,8 @@ const LedgerApp = () => {
       PendingImportModal,
       {
         isOpen: showPendingImportModal,
-        onClose: () => setShowPendingImportModal2(false),
-        pendingImports: pendingImports2,
+        onClose: () => setShowPendingImportModal(false),
+        pendingImports,
         caseName: (_d = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _d.name,
         onApply: (entry, overrides = {}) => handleImportPendingEntry(entry, { targetCaseId: selectedCaseId, ...overrides }),
         onManual: handleManualAddAccount,

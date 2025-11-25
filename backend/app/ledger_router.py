@@ -428,7 +428,7 @@ def import_job_assets(
     created_account_ids: List[str] = []
     merged_account_ids: List[str] = []
 
-    def serialize_transactions(source: dict) -> List[Tuple[Optional[str], int, int, Optional[str], Optional[str]]]:
+    def serialize_transactions(source: dict) -> List[Tuple[Optional[str], int, int, Optional[str], Optional[str], Optional[str]]]:
         transactions = source.get("_transactions") or []
         return [
             (
@@ -437,6 +437,7 @@ def import_job_assets(
                 int(txn.get("deposit_amount") or 0),
                 txn.get("description") or txn.get("memo"),
                 txn.get("description"),
+                _encode_tags(txn.get("tags")) if txn.get("tags") else "",
             )
             for txn in transactions
         ]

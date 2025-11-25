@@ -1431,7 +1431,7 @@
                 throw new Error(statusPayload.detail || 'ジョブが失敗しました。');
             }
             if (statusPayload.status === 'completed') {
-                const resultRes = await fetchWithAbort(`${base}/jobs/${jobId}/result`);
+                const resultRes = await fetchWithAbort(`${base}/jobs/${jobId}/result?format=csv`);
                 if (!resultRes.ok) {
                     const text = await resultRes.text();
                     throw new Error(`ジョブ結果の取得に失敗しました (HTTP ${resultRes.status}): ${text}`);

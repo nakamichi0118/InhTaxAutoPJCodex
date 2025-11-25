@@ -769,15 +769,6 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
                         required
                     />
                 </div>
-                {pendingImports.length > 0 && (
-                    <div className="mb-4 text-sm bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
-                        <span className="text-amber-900">未登録の通帳データが {pendingImports.length} 件あります。案件に取り込みましょう。</span>
-                        <MainButton onClick={() => setShowPendingImportModal(true)} className="bg-amber-600 hover:bg-amber-700">
-                            取り込みを開始
-                        </MainButton>
-                    </div>
-                )}
-                
                 <CurrencyInput 
                     label="出金額"
                     id="editWithdrawal"

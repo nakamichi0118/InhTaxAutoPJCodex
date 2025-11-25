@@ -40,3 +40,9 @@
 - Ledger DBへ`tags`カラムを追加し、Create/Update/Import/Exportの全経路でタグを保存・復元。既存データは空文字として安全に移行。
 - ヘッダーをSOROBOCR本体のグラデーションに揃えつつ、pending import時の口座名はファイル名を既定とするよう調整。
 - `npm run build`&`pytest`再実行。新バンドル(`index-Czm85cG5.css`/`index-Dn7NBBUK.js`)を`webapp/ledger/`に反映。
+
+## 2025-11-25 16:22 JST
+- EditTransactionModal の pendingImports 依存を削除し、編集ボタンで真っ白になるエラーを解消。
+- ジョブ結果取得を `?format=csv` に固定し、Webアプリ側は従来どおりCSVダウンロードを提示。
+- 取引タグ機能をサーバ・フロント双方に追加。タグ列をDB/モデルに追加し、登録/更新/インポート/一覧表示/フィルタ/編集すべてに対応。タグ検索フィルタも統合タブへ実装。
+- `npm run build` 再実行で新バンドル(`index-Bpek2Hcx.css`, `index-CiJR9S0a.js`)を反映。`pytest` も再確認。
