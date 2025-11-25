@@ -34,3 +34,9 @@
 - LedgerヘッダーをSOROBOCR本体と同じ線形グラデーション/ハイライトへ合わせ、ボタンやコピーもトーンを統一。
 - Pending Import時のデフォルト口座名にファイル名(entry.name)を採用し、無名の通帳でも識別しやすく修正。
 - `npm run build` を再実行し、新しいバンドル(`index-Bzuudqbz.css` / `index-DgToVgW4.js`)を反映。
+
+## 2025-11-25 16:00 JST
+- 取引にタグを付与/編集できるようUIとAPIを拡張。新規・編集フォームにタグ入力(カンマ区切り)を追加し、一覧でもバッジ表示＆タグキーワードでフィルター可能に。
+- Ledger DBへ`tags`カラムを追加し、Create/Update/Import/Exportの全経路でタグを保存・復元。既存データは空文字として安全に移行。
+- ヘッダーをSOROBOCR本体のグラデーションに揃えつつ、pending import時の口座名はファイル名を既定とするよう調整。
+- `npm run build`&`pytest`再実行。新バンドル(`index-Czm85cG5.css`/`index-Dn7NBBUK.js`)を`webapp/ledger/`に反映。

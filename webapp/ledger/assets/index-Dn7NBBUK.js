@@ -7429,7 +7429,12 @@ const INITIAL_TRANSACTION_FILTER = {
   keyword: "",
   minAmount: "",
   maxAmount: "",
-  rowColor: "all"
+  rowColor: "all",
+  tagKeyword: ""
+};
+const parseTagsText = (value) => {
+  if (!value) return [];
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
 };
 const INSURANCE_KEYWORDS = [
   "保険",
@@ -7787,6 +7792,7 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
   const [memo, setMemo] = reactExports.useState("");
   const [type, setType] = reactExports.useState("振込");
   const [message, setMessage] = reactExports.useState("");
+  const [tagsText, setTagsText] = reactExports.useState("");
   reactExports.useEffect(() => {
     if (transaction) {
       setDate(transaction.date || "");
@@ -7794,6 +7800,7 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
       setDeposit(transaction.deposit > 0 ? transaction.deposit : "");
       setMemo(transaction.memo || "");
       setType(transaction.type || "振込");
+      setTagsText((transaction.tags || []).join(", "));
       setMessage("");
     }
   }, [transaction]);
@@ -7821,7 +7828,8 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
         withdrawal: withdrawalValue,
         deposit: depositValue,
         memo,
-        type
+        type,
+        tags: parseTagsText(tagsText)
       });
       setMessage("取引情報が更新されました！");
       setTimeout(onClose, 1500);
@@ -7894,6 +7902,16 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
         value: memo,
         onChange: (e) => setMemo(e.target.value),
         placeholder: "取引内容を簡単にメモ"
+      }
+    ),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      InputField,
+      {
+        label: "タグ (カンマ区切り)",
+        id: "editTags",
+        value: tagsText,
+        onChange: (e) => setTagsText(e.target.value),
+        placeholder: "生活費, 贈与 など"
       }
     ),
     message && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: `p-3 rounded-lg my-3 text-sm ${message.includes("エラー") ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`, children: message }),
@@ -8411,6 +8429,7 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
   const [memo, setMemo] = reactExports.useState("");
   const [type, setType] = reactExports.useState("振込");
   const [message, setMessage] = reactExports.useState("");
+  const [tagsText, setTagsText] = reactExports.useState("");
   const [localSort, setLocalSort] = reactExports.useState({ field: "date", direction: "asc" });
   const accountTransactions = reactExports.useMemo(() => {
     return transactions.filter((t) => t.accountId === account.id);
@@ -8441,13 +8460,15 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
         withdrawal: withdrawalValue,
         deposit: depositValue,
         memo,
-        type
+        type,
+        tags: parseTagsText(tagsText)
       });
       setMessage("取引を登録しました！");
       setWithdrawal("");
       setDeposit("");
       setMemo("");
       setType("振込");
+      setTagsText("");
     } catch (e2) {
       console.error("Error adding transaction:", e2);
       setMessage(`取引登録エラー: ${e2.message}`);
@@ -8471,7 +8492,7 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
       " の取引入力"
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("form", { onSubmit: handleSaveTransaction, className: "bg-white p-6 rounded-xl shadow-md border border-gray-100", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-1 md:grid-cols-5 gap-4", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid grid-cols-1 md:grid-cols-6 gap-4", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           InputField,
           {
@@ -8521,6 +8542,16 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
             value: memo,
             onChange: (e) => setMemo(e.target.value),
             placeholder: "取引内容を簡単にメモ"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          InputField,
+          {
+            label: "タグ (カンマ区切り)",
+            id: "tags",
+            value: tagsText,
+            onChange: (e) => setTagsText(e.target.value),
+            placeholder: "生活費, 贈与 など"
           }
         )
       ] }),
@@ -8654,7 +8685,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
   const totalDeposit = transactions.reduce((sum, t) => sum + (t.deposit || 0), 0);
   const balance = totalDeposit - totalWithdrawal;
   const showReorderColumn = showAccountInfo && typeof onReorder === "function";
-  const totalColumns = 7 + (showAccountInfo ? 2 : 0) + (showReorderColumn ? 1 : 0);
+  const totalColumns = 8 + (showAccountInfo ? 2 : 0) + (showReorderColumn ? 1 : 0);
   const isSortableField = (field) => Array.isArray(sortableFields) && sortableFields.includes(field);
   const renderHeaderCell = (field, label, align = "text-left") => {
     const sortable = typeof onSortField === "function" && isSortableField(field);
@@ -8684,6 +8715,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
       renderHeaderCell("withdrawal", "出金額", "text-right"),
       renderHeaderCell("deposit", "入金額", "text-right"),
       renderHeaderCell("memo", "備考/カテゴリ"),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider", children: "タグ" }),
       showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider", children: "着色" }),
       showReorderColumn && /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-1 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider", children: "順序" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("th", { className: "px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider", colSpan: "2", children: "操作" })
@@ -8722,6 +8754,10 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
         /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-right text-red-600 font-mono", children: (t.withdrawal || 0) > 0 ? formatCurrency(t.withdrawal) : "-" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-right text-green-600 font-mono", children: (t.deposit || 0) > 0 ? formatCurrency(t.deposit) : "-" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-700", children: t.memo || "---" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-sm text-gray-700", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-1", children: [
+          (t.tags || []).length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-gray-400", children: "タグなし" }),
+          (t.tags || []).map((tag) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100", children: tag }, `${t.id}-${tag}`))
+        ] }) }),
         showAccountInfo && /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 whitespace-nowrap text-center text-sm text-gray-500", children: /* @__PURE__ */ jsxRuntimeExports.jsx(ColorPicker, { transactionId: t.id, currentColor: t.rowColor, disabled: typeof onColorChange !== "function" }) }),
         showReorderColumn && /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-1 py-3 whitespace-nowrap text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center", children: [
           index > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -8764,7 +8800,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
       ] }, t.id);
     }) }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("tfoot", { className: "bg-gray-100 font-bold", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("td", { colSpan: showAccountInfo ? 3 : 2, className: "px-3 py-3 text-left text-base text-gray-800", children: "合計" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("td", { colSpan: showAccountInfo ? 4 : 3, className: "px-3 py-3 text-left text-base text-gray-800", children: "合計" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 text-right text-red-600 text-base font-mono", children: formatCurrency(totalWithdrawal) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("td", { className: "px-3 py-3 text-right text-green-600 text-base font-mono", children: formatCurrency(totalDeposit) }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { className: "px-3 py-3 text-right text-base text-gray-800", colSpan: Math.max(1, totalColumns - (showAccountInfo ? 5 : 4)), children: [
@@ -8839,6 +8875,7 @@ const IntegratedTabContent = ({
       return integratedTransactions;
     }
     const keyword = (filters.keyword || "").trim().toLowerCase();
+    const tagKeyword = (filters.tagKeyword || "").trim().toLowerCase();
     const minAmount = filters.minAmount ? parseInt(filters.minAmount, 10) : null;
     const maxAmount = filters.maxAmount ? parseInt(filters.maxAmount, 10) : null;
     return integratedTransactions.filter((transaction) => {
@@ -8870,6 +8907,12 @@ const IntegratedTabContent = ({
           resolveHolderName(account) || ""
         ].join(" ").toLowerCase();
         if (!targetText.includes(keyword)) {
+          return false;
+        }
+      }
+      if (tagKeyword) {
+        const tagsText = (transaction.tags || []).join(" ").toLowerCase();
+        if (!tagsText.includes(tagKeyword)) {
           return false;
         }
       }
@@ -9300,6 +9343,19 @@ const IntegratedTabContent = ({
               onChange: (e) => onFilterChange == null ? void 0 : onFilterChange({ keyword: e.target.value }),
               className: "mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm",
               placeholder: "メモ・摘要で検索"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-slate-500", children: "タグで検索" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              type: "text",
+              value: (filters == null ? void 0 : filters.tagKeyword) || "",
+              onChange: (e) => onFilterChange == null ? void 0 : onFilterChange({ tagKeyword: e.target.value }),
+              className: "mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm",
+              placeholder: "例: 贈与, 保険"
             }
           )
         ] })

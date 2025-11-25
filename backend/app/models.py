@@ -179,6 +179,7 @@ class LedgerTransactionPayload(BaseModel):
     type: Optional[str] = None
     row_color: Optional[str] = Field(default=None, alias="rowColor")
     user_order: Optional[float] = Field(default=None, alias="userOrder")
+    tags: List[str] = Field(default_factory=list)
     user_id: Optional[str] = Field(default=None, alias="userId")
     created_at: Optional[str] = Field(default=None, alias="createdAt")
     updated_at: Optional[str] = Field(default=None, alias="updatedAt")
@@ -195,6 +196,7 @@ class LedgerTransactionCreateRequest(BaseModel):
     type: Optional[str] = None
     user_order: Optional[float] = Field(default=None, alias="userOrder")
     row_color: Optional[str] = Field(default=None, alias="rowColor")
+    tags: Optional[List[str]] = Field(default=None)
 
 
 class LedgerTransactionUpdateRequest(BaseModel):
@@ -208,6 +210,7 @@ class LedgerTransactionUpdateRequest(BaseModel):
     type: Optional[str] = None
     row_color: Optional[str] = Field(default=None, alias="rowColor")
     user_order: Optional[float] = Field(default=None, alias="userOrder")
+    tags: Optional[List[str]] = Field(default=None)
 
 
 class LedgerTransactionOrderItem(BaseModel):

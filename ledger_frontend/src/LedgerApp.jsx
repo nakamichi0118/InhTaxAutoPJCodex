@@ -253,6 +253,15 @@ const INITIAL_TRANSACTION_FILTER = {
     minAmount: '',
     maxAmount: '',
     rowColor: 'all',
+    tagKeyword: '',
+};
+
+const parseTagsText = (value) => {
+    if (!value) return [];
+    return value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
 };
 
 const INSURANCE_KEYWORDS = [
@@ -682,6 +691,7 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
     const [memo, setMemo] = useState('');
     const [type, setType] = useState('振込'); // 新しい取引種別
     const [message, setMessage] = useState('');
+    const [tagsText, setTagsText] = useState('');
 
     useEffect(() => {
         if (transaction) {
@@ -690,6 +700,7 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
             setDeposit(transaction.deposit > 0 ? transaction.deposit : '');
             setMemo(transaction.memo || '');
             setType(transaction.type || '振込');
+            setTagsText((transaction.tags || []).join(', '));
             setMessage('');
         }
     }, [transaction]);
@@ -725,6 +736,7 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
                 deposit: depositValue,
                 memo,
                 type,
+                tags: parseTagsText(tagsText),
             });
             setMessage('取引情報が更新されました！');
             setTimeout(onClose, 1500);
@@ -786,6 +798,14 @@ const EditTransactionModal = ({ isOpen, onClose, transaction, onUpdateTransactio
                     value={memo}
                     onChange={(e) => setMemo(e.target.value)}
                     placeholder="取引内容を簡単にメモ"
+                />
+
+                <InputField
+                    label="タグ (カンマ区切り)"
+                    id="editTags"
+                    value={tagsText}
+                    onChange={(e) => setTagsText(e.target.value)}
+                    placeholder="生活費, 贈与 など"
                 />
 
                 {message && <p className={`p-3 rounded-lg my-3 text-sm ${message.includes('エラー') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{message}</p>}
@@ -1360,6 +1380,7 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
     const [memo, setMemo] = useState('');
     const [type, setType] = useState('振込'); // 新しい取引種別
     const [message, setMessage] = useState('');
+    const [tagsText, setTagsText] = useState('');
     const [localSort, setLocalSort] = useState({ field: 'date', direction: 'asc' });
 
     const accountTransactions = useMemo(() => {
@@ -1399,12 +1420,14 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
                 deposit: depositValue,
                 memo,
                 type,
+                tags: parseTagsText(tagsText),
             });
             setMessage('取引を登録しました！');
             setWithdrawal('');
             setDeposit('');
             setMemo('');
             setType('振込');
+            setTagsText('');
         } catch (e) {
             console.error('Error adding transaction:', e);
             setMessage(`取引登録エラー: ${e.message}`);
@@ -1433,7 +1456,7 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
 
             {/* 取引入力フォーム */}
             <form onSubmit={handleSaveTransaction} className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                     <InputField
                         label="日付"
                         id="transactionDate"
@@ -1469,6 +1492,13 @@ const TransactionTabContent = ({ account, transactions, onCreateTransaction, onD
                         value={memo}
                         onChange={(e) => setMemo(e.target.value)}
                         placeholder="取引内容を簡単にメモ"
+                    />
+                    <InputField
+                        label="タグ (カンマ区切り)"
+                        id="tags"
+                        value={tagsText}
+                        onChange={(e) => setTagsText(e.target.value)}
+                        placeholder="生活費, 贈与 など"
                     />
                 </div>
                 
@@ -1596,7 +1626,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
     const totalDeposit = transactions.reduce((sum, t) => sum + (t.deposit || 0), 0);
     const balance = totalDeposit - totalWithdrawal;
     const showReorderColumn = showAccountInfo && typeof onReorder === 'function';
-    const totalColumns = 7 + (showAccountInfo ? 2 : 0) + (showReorderColumn ? 1 : 0);
+    const totalColumns = 8 + (showAccountInfo ? 2 : 0) + (showReorderColumn ? 1 : 0);
     const isSortableField = (field) => Array.isArray(sortableFields) && sortableFields.includes(field);
 
     const renderHeaderCell = (field, label, align = 'text-left') => {
@@ -1641,6 +1671,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
                         {renderHeaderCell('withdrawal', '出金額', 'text-right')}
                         {renderHeaderCell('deposit', '入金額', 'text-right')}
                         {renderHeaderCell('memo', '備考/カテゴリ')}
+                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">タグ</th>
                         {showAccountInfo && (
                             <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">着色</th>
                         )}
@@ -1697,6 +1728,16 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
                                     </td>
                                     <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700">
                                         {t.memo || '---'}
+                                    </td>
+                                    <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-700">
+                                        <div className="flex flex-wrap gap-1">
+                                            {(t.tags || []).length === 0 && <span className="text-xs text-gray-400">タグなし</span>}
+                                            {(t.tags || []).map((tag) => (
+                                                <span key={`${t.id}-${tag}`} className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                                                    {tag}
+                                                </span>
+                                            ))}
+                                        </div>
                                     </td>
                                     {showAccountInfo && (
                                         <td className="px-3 py-3 whitespace-nowrap text-center text-sm text-gray-500">
@@ -1756,7 +1797,7 @@ const TransactionTable = ({ transactions, accounts, onDelete, onEdit, onColorCha
                 </tbody>
                 <tfoot className="bg-gray-100 font-bold">
                     <tr>
-                        <td colSpan={showAccountInfo ? 3 : 2} className="px-3 py-3 text-left text-base text-gray-800">合計</td>
+                        <td colSpan={showAccountInfo ? 4 : 3} className="px-3 py-3 text-left text-base text-gray-800">合計</td>
                         <td className="px-3 py-3 text-right text-red-600 text-base font-mono">{formatCurrency(totalWithdrawal)}</td>
                         <td className="px-3 py-3 text-right text-green-600 text-base font-mono">{formatCurrency(totalDeposit)}</td>
                         <td className="px-3 py-3 text-right text-base text-gray-800" colSpan={Math.max(1, totalColumns - (showAccountInfo ? 5 : 4))}>
@@ -1844,6 +1885,7 @@ const IntegratedTabContent = ({
             return integratedTransactions;
         }
         const keyword = (filters.keyword || '').trim().toLowerCase();
+        const tagKeyword = (filters.tagKeyword || '').trim().toLowerCase();
         const minAmount = filters.minAmount ? parseInt(filters.minAmount, 10) : null;
         const maxAmount = filters.maxAmount ? parseInt(filters.maxAmount, 10) : null;
         return integratedTransactions.filter((transaction) => {
@@ -1877,6 +1919,12 @@ const IntegratedTabContent = ({
                     .join(' ')
                     .toLowerCase();
                 if (!targetText.includes(keyword)) {
+                    return false;
+                }
+            }
+            if (tagKeyword) {
+                const tagsText = (transaction.tags || []).join(' ').toLowerCase();
+                if (!tagsText.includes(tagKeyword)) {
                     return false;
                 }
             }
@@ -2318,6 +2366,16 @@ const IntegratedTabContent = ({
                             onChange={(e) => onFilterChange?.({ keyword: e.target.value })}
                             className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
                             placeholder="メモ・摘要で検索"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-xs text-slate-500">タグで検索</label>
+                        <input
+                            type="text"
+                            value={filters?.tagKeyword || ''}
+                            onChange={(e) => onFilterChange?.({ tagKeyword: e.target.value })}
+                            className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"
+                            placeholder="例: 贈与, 保険"
                         />
                     </div>
                 </div>

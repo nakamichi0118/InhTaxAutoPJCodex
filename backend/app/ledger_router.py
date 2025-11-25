@@ -78,6 +78,18 @@ def _serialize_cases(cases: List[dict]) -> List[LedgerCasePayload]:
     return [LedgerCasePayload(**case) for case in cases]
 
 
+def _encode_tags(tags: Optional[List[str]]) -> str:
+    if not tags:
+        return ""
+    return ",".join([tag.strip() for tag in tags if tag and tag.strip()])
+
+
+def _decode_tags(raw: Optional[str]) -> List[str]:
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
 @router.post("/session", response_model=LedgerSessionResponse)
 def create_session(payload: LedgerSessionRequest) -> LedgerSessionResponse:
     app_id = (payload.app_id or "ledger-app").strip()
@@ -216,6 +228,7 @@ def create_transaction(
             txn_type=payload.type,
             user_order=payload.user_order,
             row_color=payload.row_color,
+            tags=_encode_tags(payload.tags),
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="Account not found") from None
@@ -251,6 +264,7 @@ def update_transaction(
             row_color=payload.row_color,
             user_order=payload.user_order,
             account_id=payload.account_id,
+            tags=_encode_tags(payload.tags) if payload.tags is not None else None,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="Transaction not found") from None

@@ -53,6 +53,7 @@ class LedgerStore:
                     case_id TEXT NOT NULL,
                     name TEXT NOT NULL,
                     number TEXT,
+                    holder_name TEXT,
                     display_order REAL NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -69,6 +70,7 @@ class LedgerStore:
                     memo TEXT,
                     type TEXT,
                     row_color TEXT,
+                    tags TEXT,
                     user_order REAL,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -80,14 +82,24 @@ class LedgerStore:
                 CREATE INDEX IF NOT EXISTS idx_transactions_account ON ledger_transactions(account_id);
                 """
             )
-            self._ensure_case_column(conn)
+            self._ensure_account_columns(conn)
+            self._ensure_transaction_columns(conn)
 
-    def _ensure_case_column(self, conn: sqlite3.Connection) -> None:
+    def _ensure_account_columns(self, conn: sqlite3.Connection) -> None:
         cursor = conn.execute("PRAGMA table_info(ledger_accounts)")
         columns = {row[1] for row in cursor.fetchall()}
         if "case_id" not in columns:
             conn.execute("ALTER TABLE ledger_accounts ADD COLUMN case_id TEXT")
             conn.execute("UPDATE ledger_accounts SET case_id = '' WHERE case_id IS NULL")
+        if "holder_name" not in columns:
+            conn.execute("ALTER TABLE ledger_accounts ADD COLUMN holder_name TEXT")
+
+    def _ensure_transaction_columns(self, conn: sqlite3.Connection) -> None:
+        cursor = conn.execute("PRAGMA table_info(ledger_transactions)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "tags" not in columns:
+            conn.execute("ALTER TABLE ledger_transactions ADD COLUMN tags TEXT")
+            conn.execute("UPDATE ledger_transactions SET tags = '' WHERE tags IS NULL")
 
     # ------------------------------------------------------------------
     # Case operations
@@ -156,7 +168,7 @@ class LedgerStore:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, name, number, case_id, display_order, created_at, updated_at
+                SELECT id, name, number, holder_name, case_id, display_order, created_at, updated_at
                 FROM ledger_accounts
                 WHERE app_id = ? AND user_id = ? AND case_id = ?
                 ORDER BY display_order ASC, created_at ASC
@@ -184,6 +196,7 @@ class LedgerStore:
         case_id: str,
         name: str,
         number: Optional[str],
+        holder_name: Optional[str] = None,
         order: Optional[float] = None,
     ) -> dict:
         account_id = uuid.uuid4().hex
@@ -192,10 +205,19 @@ class LedgerStore:
             resolved_order = order if order is not None else self._next_account_order(conn, scope, case_id)
             conn.execute(
                 """
-                INSERT INTO ledger_accounts (id, app_id, user_id, case_id, name, number, display_order)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO ledger_accounts (id, app_id, user_id, case_id, name, number, holder_name, display_order)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (account_id, scope.app_id, scope.user_id, case_id, name.strip(), (number or "").strip(), resolved_order),
+                (
+                    account_id,
+                    scope.app_id,
+                    scope.user_id,
+                    case_id,
+                    name.strip(),
+                    (number or "").strip(),
+                    (holder_name or "").strip() or None,
+                    resolved_order,
+                ),
             )
             conn.commit()
         return self.get_account(scope, account_id)
@@ -222,6 +244,7 @@ class LedgerStore:
         *,
         name: Optional[str] = None,
         number: Optional[str] = None,
+        holder_name: Optional[str] = None,
         order: Optional[float] = None,
     ) -> dict:
         updates = []
@@ -232,6 +255,9 @@ class LedgerStore:
         if number is not None:
             updates.append("number = ?")
             params.append(number.strip())
+        if holder_name is not None:
+            updates.append("holder_name = ?")
+            params.append(holder_name.strip() or None)
         if order is not None:
             updates.append("display_order = ?")
             params.append(order)
@@ -278,7 +304,7 @@ class LedgerStore:
             cursor = conn.execute(
                 """
                 SELECT t.id, t.account_id, t.date, t.withdrawal, t.deposit, t.memo, t.type,
-                       t.row_color, t.user_order, t.created_at, t.updated_at
+                       t.row_color, t.user_order, t.tags, t.created_at, t.updated_at
                 FROM ledger_transactions AS t
                 INNER JOIN ledger_accounts AS a ON t.account_id = a.id
                 WHERE t.app_id = ? AND t.user_id = ? AND a.case_id = ?
@@ -318,6 +344,7 @@ class LedgerStore:
         txn_type: Optional[str],
         user_order: Optional[float] = None,
         row_color: Optional[str] = None,
+        tags: Optional[str] = None,
     ) -> dict:
         if withdrawal and deposit:
             raise ValueError("withdrawal_and_deposit_conflict")
@@ -331,8 +358,8 @@ class LedgerStore:
                 resolved_order = self._max_user_order_for_account(conn, scope, account_id) + 1000.0
             conn.execute(
                 """
-                INSERT INTO ledger_transactions (id, app_id, user_id, account_id, date, withdrawal, deposit, memo, type, user_order, row_color)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO ledger_transactions (id, app_id, user_id, account_id, date, withdrawal, deposit, memo, type, user_order, row_color, tags)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     txn_id,
@@ -346,6 +373,7 @@ class LedgerStore:
                     (txn_type or "").strip(),
                     resolved_order,
                     (row_color or None),
+                    tags or "",
                 ),
             )
             conn.commit()
@@ -355,7 +383,7 @@ class LedgerStore:
         self,
         scope: LedgerScope,
         account_id: str,
-        records: Sequence[Tuple[str, int, int, Optional[str], Optional[str]]],
+        records: Sequence[Tuple[str, int, int, Optional[str], Optional[str], Optional[str]]],
     ) -> None:
         if not records:
             return
@@ -364,12 +392,12 @@ class LedgerStore:
             if not self._account_exists(conn, scope, account_id):
                 raise KeyError("account_not_found")
             base_order = self._max_user_order_for_account(conn, scope, account_id) + 1000.0
-            for index, (date, withdrawal, deposit, memo, txn_type) in enumerate(records, start=1):
+            for index, (date, withdrawal, deposit, memo, txn_type, tags) in enumerate(records, start=1):
                 txn_id = uuid.uuid4().hex
                 conn.execute(
                     """
-                    INSERT INTO ledger_transactions (id, app_id, user_id, account_id, date, withdrawal, deposit, memo, type, user_order)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO ledger_transactions (id, app_id, user_id, account_id, date, withdrawal, deposit, memo, type, user_order, tags)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         txn_id,
@@ -382,6 +410,7 @@ class LedgerStore:
                         (memo or "").strip(),
                         (txn_type or "").strip(),
                         base_order + index,
+                        tags or "",
                     ),
                 )
             conn.commit()
@@ -390,7 +419,7 @@ class LedgerStore:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, account_id, date, withdrawal, deposit, memo, type, row_color, user_order, created_at, updated_at
+                SELECT id, account_id, date, withdrawal, deposit, memo, type, row_color, user_order, tags, created_at, updated_at
                 FROM ledger_transactions
                 WHERE app_id = ? AND user_id = ? AND id = ?
                 """,
@@ -414,6 +443,7 @@ class LedgerStore:
         row_color: Optional[str] = None,
         user_order: Optional[float] = None,
         account_id: Optional[str] = None,
+        tags: Optional[str] = None,
     ) -> dict:
         updates = []
         params: List[object] = []
@@ -441,6 +471,9 @@ class LedgerStore:
         if user_order is not None:
             updates.append("user_order = ?")
             params.append(user_order)
+        if tags is not None:
+            updates.append("tags = ?")
+            params.append(tags)
         if not updates:
             return self.get_transaction(scope, transaction_id)
         updates.append("updated_at = CURRENT_TIMESTAMP")
@@ -493,8 +526,8 @@ class LedgerStore:
             for account in accounts:
                 conn.execute(
                     """
-                    INSERT INTO ledger_accounts (id, app_id, user_id, case_id, name, number, display_order)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO ledger_accounts (id, app_id, user_id, case_id, name, number, holder_name, display_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         account.get("id") or uuid.uuid4().hex,
@@ -503,6 +536,7 @@ class LedgerStore:
                         case_id,
                         (account.get("name") or "").strip(),
                         (account.get("number") or "").strip(),
+                        (account.get("holderName") or account.get("holder_name") or "").strip() or None,
                         float(account.get("order") or 0),
                     ),
                 )
@@ -512,8 +546,8 @@ class LedgerStore:
                     continue
                 conn.execute(
                     """
-                    INSERT INTO ledger_transactions (id, app_id, user_id, account_id, date, withdrawal, deposit, memo, type, user_order, row_color)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO ledger_transactions (id, app_id, user_id, account_id, date, withdrawal, deposit, memo, type, user_order, row_color, tags)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         txn.get("id") or uuid.uuid4().hex,
@@ -527,6 +561,7 @@ class LedgerStore:
                         (txn.get("type") or "").strip(),
                         txn.get("userOrder") or txn.get("user_order"),
                         txn.get("rowColor") or txn.get("row_color"),
+                        ",".join(txn.get("tags") or []) if isinstance(txn.get("tags"), list) else (txn.get("tags") or ""),
                     ),
                 )
             conn.commit()
@@ -547,6 +582,7 @@ class LedgerStore:
             "case_id": row["case_id"],
             "name": row["name"],
             "number": row["number"],
+            "holder_name": row["holder_name"],
             "order": int(row["display_order"] or 0),
             "user_id": scope.user_id,
             "created_at": row["created_at"],
@@ -554,6 +590,10 @@ class LedgerStore:
         }
 
     def _serialize_transaction(self, row: sqlite3.Row, scope: LedgerScope) -> dict:
+        tags_value = row["tags"] if "tags" in row.keys() else None
+        tags = []
+        if isinstance(tags_value, str) and tags_value:
+            tags = [part.strip() for part in tags_value.split(",") if part.strip()]
         return {
             "id": row["id"],
             "account_id": row["account_id"],
@@ -564,6 +604,7 @@ class LedgerStore:
             "type": row["type"],
             "rowColor": row["row_color"],
             "userOrder": row["user_order"],
+            "tags": tags,
             "user_id": scope.user_id,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
