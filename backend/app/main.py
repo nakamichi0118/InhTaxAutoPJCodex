@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from description_utils import normalize_description
 
+from .auth_router import router as auth_router
 from .azure_analyzer import (
     AzureAnalysisError,
     AzureAnalysisResult,
@@ -46,9 +47,11 @@ from .parser import build_assets, detect_document_type
 from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 
 logger = logging.getLogger("uvicorn.error")
+settings = get_settings()
 
 app = FastAPI(title="InhTaxAutoPJ Backend", version="0.8.0")
 app.include_router(ledger_router)
+app.include_router(auth_router)
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
 SUPPORTED_GEMINI_MODELS = {"gemini-2.5-flash", "gemini-2.5-pro"}
@@ -200,7 +203,7 @@ def _filter_files_by_suffix(file_map: Optional[Dict[str, str]], suffix: str) -> 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=list(settings.cors_allow_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

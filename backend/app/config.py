@@ -24,6 +24,13 @@ class Settings:
     azure_form_recognizer_endpoint: Optional[str]
     azure_form_recognizer_key: Optional[str]
     ledger_db_path: Path
+    cors_allow_origins: tuple[str, ...]
+    smtp_host: Optional[str]
+    smtp_port: Optional[int]
+    smtp_user: Optional[str]
+    smtp_password: Optional[str]
+    smtp_from: Optional[str]
+    smtp_use_tls: bool
 
 
 @lru_cache()
@@ -62,6 +69,23 @@ def get_settings() -> Settings:
     else:
         ledger_db_path = Path(__file__).resolve().parents[2] / "data" / "ledger.db"
 
+    cors_env = os.getenv("CORS_ALLOW_ORIGINS", "")
+    if cors_env.strip():
+        cors_allow_origins = tuple([origin.strip() for origin in cors_env.split(",") if origin.strip()])
+    else:
+        cors_allow_origins = (
+            "https://www.sorobocr.taxlawyer328.jp",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        )
+
+    smtp_host = os.getenv("SMTP_HOST") or None
+    smtp_port = int(os.getenv("SMTP_PORT", "587")) if os.getenv("SMTP_HOST") else None
+    smtp_user = os.getenv("SMTP_USER") or None
+    smtp_password = os.getenv("SMTP_PASSWORD") or None
+    smtp_from = os.getenv("SMTP_FROM") or smtp_user or None
+    smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes", "on")
+
     return Settings(
         gemini_api_key=gemini_api_key,
         gemini_api_keys=gemini_api_keys,
@@ -72,4 +96,11 @@ def get_settings() -> Settings:
         azure_form_recognizer_endpoint=os.getenv("AZURE_FORM_RECOGNIZER_ENDPOINT"),
         azure_form_recognizer_key=os.getenv("AZURE_FORM_RECOGNIZER_KEY"),
         ledger_db_path=ledger_db_path,
+        cors_allow_origins=cors_allow_origins,
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
+        smtp_user=smtp_user,
+        smtp_password=smtp_password,
+        smtp_from=smtp_from,
+        smtp_use_tls=smtp_use_tls,
     )
