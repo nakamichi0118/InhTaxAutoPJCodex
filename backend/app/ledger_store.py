@@ -226,7 +226,7 @@ class LedgerStore:
         with self._connect() as conn:
             cursor = conn.execute(
                 """
-                SELECT id, name, number, case_id, display_order, created_at, updated_at
+                SELECT id, name, number, holder_name, case_id, display_order, created_at, updated_at
                 FROM ledger_accounts
                 WHERE app_id = ? AND user_id = ? AND id = ?
                 """,
