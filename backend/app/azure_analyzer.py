@@ -4,12 +4,15 @@ import logging
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
 from azure.core.exceptions import HttpResponseError
+
+from description_utils import normalize_description
 
 from .models import AssetRecord, TransactionLine
 
@@ -72,10 +75,6 @@ BALANCE_ONLY_KEYWORDS = (
     "繰越",
     "繰り越し",
     "前日残高",
-)
-
-DESCRIPTION_CLEANUPS = (
-    (":selected:", ""),
 )
 
 BALANCE_TOLERANCE = 1.0
@@ -265,6 +264,10 @@ def _extract_transactions_from_lines(lines: Iterable[str], *, date_format: str) 
         if len(numeric_values) >= 3 and classification == "unknown":
             withdrawal = numeric_values[-3]
             deposit = numeric_values[-2]
+
+        # 出金・入金両方がnullの行はスキップ（繰越行など）
+        if withdrawal is None and deposit is None:
+            continue
 
         transactions.append(
             TransactionLine(
@@ -922,7 +925,10 @@ def _impute_missing_values(txn: TransactionLine, last_balance: Optional[float]) 
     deposit = data.get("deposit_amount")
     balance = data.get("balance")
 
-    if balance is not None and last_balance is not None and withdrawal is None and deposit is None:
+    # 元々の出入金が両方nullの場合の処理
+    original_both_null = withdrawal is None and deposit is None
+
+    if balance is not None and last_balance is not None and original_both_null:
         delta = round(balance - last_balance, 2)
         if abs(delta) >= 0.01:
             if delta > 0:
@@ -939,7 +945,9 @@ def _impute_missing_values(txn: TransactionLine, last_balance: Optional[float]) 
         if abs(projected - last_balance) >= 0.01:
             balance = projected
 
-    if withdrawal is None and deposit is None and balance is None:
+    # 出入金両方がnullのままの場合はスキップ（繰越行など）
+    # 残高差分から推論できなかった場合も含む
+    if withdrawal is None and deposit is None:
         return None
 
     data.update(
@@ -1033,7 +1041,8 @@ def _build_transaction(values: Dict[str, List[Optional[str]]], *, date_format: s
     if not any([date_text, description, withdrawal, deposit, balance]):
         return None
 
-    if withdrawal is None and deposit is None and balance is None:
+    # 出金・入金両方がnullの行はスキップ（繰越行など）
+    if withdrawal is None and deposit is None:
         return None
 
     transaction_date = _parse_date(date_text, date_format=date_format)
@@ -1053,12 +1062,7 @@ def _clean_text(text: Optional[str]) -> str:
 
 
 def _clean_description(text: Optional[str]) -> str:
-    cleaned = _clean_text(text)
-    if not cleaned:
-        return ""
-    for target, replacement in DESCRIPTION_CLEANUPS:
-        cleaned = cleaned.replace(target, replacement)
-    return cleaned.strip()
+    return normalize_description(text)
 
 
 def _looks_like_annotation(text: Optional[str]) -> bool:
@@ -1142,8 +1146,13 @@ def _parse_amount(text: Optional[str]) -> Optional[float]:
     return normalized if normalized is not None else float(value)
 
 
-WAREKI_BOUNDARIES = [
-    (5, 2018),   # Reiwa 1-5 -> 2019-2023
+def _get_current_reiwa_year() -> int:
+    """現在の令和年を取得"""
+    return datetime.now().year - 2018
+
+
+# 令和の境界は動的に計算するため、_resolve_two_digit_year内で処理
+WAREKI_STATIC_BOUNDARIES = [
     (31, 1988),  # Heisei 1-31 -> 1989-2019
     (64, 1925),  # Showa 1-64 -> 1926-1989
 ]
@@ -1203,10 +1212,31 @@ def _parse_date(text: Optional[str], *, date_format: str) -> Optional[str]:
 
 
 def _resolve_two_digit_year(two_digit: int, date_format: str) -> int:
+    """2桁年号から西暦4桁を推論する（相続税案件向けスマート推論）
+
+    推論ロジック:
+    - 1-現在の令和年 → 令和（例: 令和7年なら1-7は2019-2025年）
+    - 8-31 → 平成（H8-H31 = 1996-2019年）
+    - 32-64 → 昭和（S32-S64 = 1957-1989年）
+    - 65-99 → 1900年代後半（1965-1999年）
+    """
     if date_format == "western":
         return 2000 + two_digit if two_digit < 50 else 1900 + two_digit
-    # default or wareki
-    for boundary, offset in WAREKI_BOUNDARIES:
+
+    # 相続税案件向けスマート推論（令和優先）
+    current_reiwa = _get_current_reiwa_year()
+
+    # 1-現在の令和年なら令和と推定
+    if 1 <= two_digit <= current_reiwa:
+        return 2018 + two_digit
+
+    # 平成・昭和の境界をチェック
+    for boundary, offset in WAREKI_STATIC_BOUNDARIES:
         if two_digit <= boundary:
             return offset + two_digit
+
+    # 65-99: 1900年代後半として解釈
+    if two_digit >= 65:
+        return 1900 + two_digit
+
     return 2000 + two_digit

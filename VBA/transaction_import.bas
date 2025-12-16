@@ -25,17 +25,17 @@ Sub CSV取込ボタン_Click()
     Dim callerName As String
     Dim shp As Shape
     Dim retryCount As Integer
+    Dim dummy As Long
 
     ' ブック開直後の初期化待ち（シェイプコレクション準備）
     DoEvents
-    Application.Wait Now + TimeValue("00:00:00.1")
+    Sleep 100
     DoEvents
 
     Set ws = ActiveSheet
 
     ' シェイプコレクションを事前にアクセスして初期化を促す
     On Error Resume Next
-    Dim dummy As Long
     dummy = ws.Shapes.Count
     Err.Clear
     On Error GoTo 0
@@ -56,12 +56,13 @@ Sub CSV取込ボタン_Click()
 
         ' リトライ前に少し待つ
         DoEvents
-        Application.Wait Now + TimeValue("00:00:00.2")
+        Sleep 200
         DoEvents
     Next retryCount
 
     If shp Is Nothing Then
-        MsgBox "ボタンから実行してください。", vbExclamation
+        MsgBox "初回セットアップが完了しました。" & vbCrLf & vbCrLf & _
+               "再度ボタンを押して実行してください。", vbInformation
         Exit Sub
     End If
 
@@ -145,6 +146,7 @@ Function GetMinimumAmount() As Long
 End Function
 
 '日付形式を変換（YYYY-MM-DD → 和暦形式）
+'2桁年号の場合はスマート推論を適用（相続税案件向け）
 Function ConvertDateFormat(dateStr As String) As String
     Dim dateParts() As String
     Dim year As Integer
@@ -163,6 +165,11 @@ Function ConvertDateFormat(dateStr As String) As String
     month = CInt(dateParts(1))
     day = CInt(dateParts(2))
 
+    '2桁年号のスマート推論（相続税案件では直近の日付が多い）
+    If year < 100 Then
+        year = InferFullYear(year)
+    End If
+
     '和暦変換
     If year >= 2019 Then
         gengo = "R"
@@ -176,6 +183,37 @@ Function ConvertDateFormat(dateStr As String) As String
     End If
 
     ConvertDateFormat = gengo & warekiYear & "(" & year & ")/" & Format(month, "00") & "/" & Format(day, "00")
+End Function
+
+'2桁年号から西暦4桁を推論する
+'相続税案件では直近数年の取引が多いため、1桁年号は令和と推定
+Private Function InferFullYear(shortYear As Integer) As Integer
+    Dim currentReiwaYear As Integer
+    Dim currentYear As Integer
+
+    currentYear = VBA.year(Now)
+    currentReiwaYear = currentYear - 2018  ' 令和何年か（2025年なら令和7年）
+
+    '推論ロジック:
+    ' 1-現在の令和年 → 令和（例: 1-7なら令和1-7年 = 2019-2025年）
+    ' 8-31 → 平成（H8-H31 = 1996-2019年、令和8年以降は未来なので平成）
+    ' 32-64 → 昭和（S32-S64 = 1957-1989年）
+    ' 65-99 → 1900年代後半（1965-1999年）として扱う
+
+    If shortYear >= 1 And shortYear <= currentReiwaYear Then
+        ' 令和の範囲内（今日が令和7年なら1-7は令和）
+        InferFullYear = shortYear + 2018
+    ElseIf shortYear <= 31 Then
+        ' 平成の範囲（H1-H31 = 1989-2019年）
+        ' ただし1-7は上で令和として処理済み
+        InferFullYear = shortYear + 1988
+    ElseIf shortYear <= 64 Then
+        ' 昭和の範囲（S32-S64 = 1957-1989年）
+        InferFullYear = shortYear + 1925
+    Else
+        ' 65-99: 1900年代後半として解釈
+        InferFullYear = 1900 + shortYear
+    End If
 End Function
 
 'データをExcelに反映
@@ -192,6 +230,7 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
     Dim FoundCell As Range
     Dim insertRow As Long
     Dim emptyFound As Boolean
+    Dim summarySource As Variant
 
     Set ws = Worksheets("預金推移")
 
@@ -281,7 +320,6 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
     Call UpdateBorders
 
     '用途サマリをボタン行の1つ上へ表示
-    Dim summarySource As Variant
     If IsEmpty(usageData) Then
         summarySource = csvData
     Else
@@ -604,19 +642,67 @@ End Function
 
 Private Function NormalizeSummaryKey(rawText As String) As String
     Dim cleaned As String
+    Dim lastChar As String
+
     cleaned = CleanDescriptionText(rawText)
+
+    ' 特定パターンの正規化（決算利息、受取利子など日付・番号付きの項目をまとめる）
+    cleaned = NormalizeCommonPatterns(cleaned)
+
+    ' 末尾の数字を除去
     Do While Len(cleaned) > 0 And IsNumericCharacter(Right$(cleaned, 1))
         cleaned = Left$(cleaned, Len(cleaned) - 1)
         cleaned = Trim$(cleaned)
     Loop
+    ' 先頭の数字を除去
     Do While Len(cleaned) > 0 And IsNumericCharacter(Left$(cleaned, 1))
         cleaned = Mid$(cleaned, 2)
         cleaned = Trim$(cleaned)
     Loop
+    ' 末尾の記号を除去
+    Do While Len(cleaned) > 0
+        lastChar = Right$(cleaned, 1)
+        If lastChar = "-" Or lastChar = "ー" Or lastChar = "/" Or lastChar = " " Then
+            cleaned = Left$(cleaned, Len(cleaned) - 1)
+            cleaned = Trim$(cleaned)
+        Else
+            Exit Do
+        End If
+    Loop
+
     If Len(cleaned) = 0 Then
         cleaned = "(摘要なし)"
     End If
     NormalizeSummaryKey = cleaned
+End Function
+
+' 共通パターンを正規化（日付や番号付きの摘要をベース名にまとめる）
+Private Function NormalizeCommonPatterns(rawText As String) As String
+    Dim result As String
+    result = rawText
+
+    ' 決算利息 XX-YYマデ/マテ → 決算利息
+    If InStr(1, result, "決算利息", vbTextCompare) > 0 Then
+        result = "決算利息"
+        NormalizeCommonPatterns = result
+        Exit Function
+    End If
+
+    ' 受取利子 (利子 XX, 税金 YY) → 受取利子
+    If InStr(1, result, "受取利子", vbTextCompare) > 0 Then
+        result = "受取利子"
+        NormalizeCommonPatterns = result
+        Exit Function
+    End If
+
+    ' 利息 XX → 利息
+    If Left$(result, 2) = "利息" Then
+        result = "利息"
+        NormalizeCommonPatterns = result
+        Exit Function
+    End If
+
+    NormalizeCommonPatterns = result
 End Function
 
 Private Function IsNumericCharacter(ch As String) As Boolean
@@ -701,6 +787,12 @@ Public Function ParseTransactionCsvContent(csvContent As String, minAmount As Lo
     Dim description As String
     Dim withdrawAmount As Long
     Dim depositAmount As Long
+    Dim dateAliases As Variant
+    Dim descAliases As Variant
+    Dim withdrawAliases As Variant
+    Dim depositAliases As Variant
+    Dim rawWithdraw As String
+    Dim rawDeposit As String
 
     normalized = Replace(csvContent, vbCr, "")
     normalized = RemoveUtf8Bom(normalized)
@@ -714,10 +806,6 @@ Public Function ParseTransactionCsvContent(csvContent As String, minAmount As Lo
         ParseTransactionCsvContent = Empty
         Exit Function
     End If
-    Dim dateAliases As Variant
-    Dim descAliases As Variant
-    Dim withdrawAliases As Variant
-    Dim depositAliases As Variant
 
     dateAliases = Array("transaction_date", "date", "取引日", "年月日", "日付")
     descAliases = Array("description", "摘要", "内容", "備考")
@@ -738,9 +826,15 @@ Public Function ParseTransactionCsvContent(csvContent As String, minAmount As Lo
             If UBound(lineFields) >= idxDeposit Then
                 transDate = GetArrayValue(lineFields, idxDate)
                 description = CleanDescriptionText(GetArrayValue(lineFields, idxDesc))
-                withdrawAmount = ToLongValue(GetArrayValue(lineFields, idxWithdraw))
-                depositAmount = ToLongValue(GetArrayValue(lineFields, idxDeposit))
-                If Abs(withdrawAmount) >= minAmount Or Abs(depositAmount) >= minAmount Then
+                rawWithdraw = Trim$(GetArrayValue(lineFields, idxWithdraw))
+                rawDeposit = Trim$(GetArrayValue(lineFields, idxDeposit))
+                withdrawAmount = ToLongValue(rawWithdraw)
+                depositAmount = ToLongValue(rawDeposit)
+
+                ' 出金・入金両方が空の行はスキップ（繰越行など）
+                If Len(rawWithdraw) = 0 And Len(rawDeposit) = 0 Then
+                    ' Skip this row
+                ElseIf Abs(withdrawAmount) >= minAmount Or Abs(depositAmount) >= minAmount Then
                     dataCount = dataCount + 1
                     resultData(dataCount, 1) = ConvertDateFormat(transDate)
                     resultData(dataCount, 2) = withdrawAmount
@@ -791,19 +885,19 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim callerName As String
     Dim shp As Shape
     Dim retryCount As Integer
+    Dim dummy As Long
 
     Call InitPdfDebugLog(targetDocType)
 
     ' ブック開直後の初期化待ち（シェイプコレクション準備）
     DoEvents
-    Application.Wait Now + TimeValue("00:00:00.1")
+    Sleep 100
     DoEvents
 
     Set ws = ActiveSheet
 
     ' シェイプコレクションを事前にアクセスして初期化を促す
     On Error Resume Next
-    Dim dummy As Long
     dummy = ws.Shapes.Count
     Err.Clear
     On Error GoTo 0
@@ -824,12 +918,13 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
 
         ' リトライ前に少し待つ
         DoEvents
-        Application.Wait Now + TimeValue("00:00:00.2")
+        Sleep 200
         DoEvents
     Next retryCount
 
     If shp Is Nothing Then
-        MsgBox "ボタンから実行してください。", vbExclamation
+        MsgBox "初回セットアップが完了しました。" & vbCrLf & vbCrLf & _
+               "再度ボタンを押して実行してください。", vbInformation
         Exit Sub
     End If
 
@@ -1480,11 +1575,18 @@ Private Function ParseCsvText(csvContent As String, minAmount As Long) As Varian
             If UBound(lineData) >= 3 Then
                 transDate = lineData(0)
                 description = CleanDescriptionText(lineData(1))
-                rawWithdraw = lineData(2)
-                rawDeposit = lineData(3)
+                rawWithdraw = Trim$(lineData(2))
+                rawDeposit = Trim$(lineData(3))
                 withdrawAmount = PdfToLong(rawWithdraw)
                 depositAmount = PdfToLong(rawDeposit)
-                passed = (Abs(withdrawAmount) >= minAmount Or Abs(depositAmount) >= minAmount)
+
+                ' 出金・入金両方が空の行はスキップ（繰越行など）
+                If Len(rawWithdraw) = 0 And Len(rawDeposit) = 0 Then
+                    passed = False
+                Else
+                    passed = (Abs(withdrawAmount) >= minAmount Or Abs(depositAmount) >= minAmount)
+                End If
+
                 Call LogPdfParseRow( _
                     "ParseCsvText", _
                     i, _
@@ -1617,6 +1719,7 @@ Private Function ExtractTransactionsArray(jsonText As String) As String
     Dim keyName As String
     Dim arrayStart As Long
     Dim ch As String
+    Dim skipped As Variant
 
     pos = 1
     JsonSkipWhitespace jsonText, pos
@@ -1641,7 +1744,6 @@ Private Function ExtractTransactionsArray(jsonText As String) As String
                 Exit Function
             End If
         End If
-        Dim skipped As Variant
         skipped = JsonParseValue(jsonText, pos)
         JsonSkipWhitespace jsonText, pos
         ch = JsonPeek(jsonText, pos)
@@ -1669,6 +1771,10 @@ Private Function ParseTransactionJsonContent(jsonText As String, minAmount As Lo
     Dim value As Variant
     Dim key As String
     Dim balanceValue As Variant
+    Dim hasWithdraw As Boolean
+    Dim hasDeposit As Boolean
+    Dim finalData() As Variant
+    Dim i As Long
 
     pos = 1
     capacity = 64
@@ -1704,6 +1810,8 @@ ContinueArrayLoop:
         withdrawAmount = 0
         depositAmount = 0
         balanceValue = Null
+        hasWithdraw = False
+        hasDeposit = False
 
         Do
 ContinueObjectLoop:
@@ -1727,9 +1835,15 @@ ContinueObjectLoop:
                 Case "memo"
                     If Len(description) = 0 And Not IsNull(value) Then description = CStr(value)
                 Case "withdrawal_amount", "withdrawal"
-                    If Not IsNull(value) Then withdrawAmount = CLng(value)
+                    If Not IsNull(value) Then
+                        withdrawAmount = CLng(value)
+                        hasWithdraw = True
+                    End If
                 Case "deposit_amount", "deposit"
-                    If Not IsNull(value) Then depositAmount = CLng(value)
+                    If Not IsNull(value) Then
+                        depositAmount = CLng(value)
+                        hasDeposit = True
+                    End If
                 Case "balance"
                     If Not IsNull(value) Then balanceValue = CLng(value)
                 Case "correction_note", "correctionnote"
@@ -1746,7 +1860,12 @@ ContinueObjectLoop:
             End If
         Loop
 
-        passed = (Abs(withdrawAmount) >= minAmount Or Abs(depositAmount) >= minAmount)
+        ' 出金・入金両方がnullの行はスキップ（繰越行など）
+        If Not hasWithdraw And Not hasDeposit Then
+            passed = False
+        Else
+            passed = (Abs(withdrawAmount) >= minAmount Or Abs(depositAmount) >= minAmount)
+        End If
         rawLine = txnDate & "," & description
         LogPdfParseRow "ParseJson", objectIndex, rawLine, CStr(withdrawAmount), CStr(depositAmount), _
             withdrawAmount, depositAmount, minAmount, passed, ""
@@ -1769,8 +1888,6 @@ ContinueObjectLoop:
     If count = 0 Then
         ParseTransactionJsonContent = Empty
     Else
-        Dim finalData() As Variant
-        Dim i As Long
         ReDim finalData(1 To count, 1 To 4)
         For i = 1 To count
             finalData(i, 1) = temp(i, 1)
@@ -1785,6 +1902,8 @@ End Function
 Private Function ParseTransactionPayload(rawText As String, minAmount As Long) As Variant
     Dim trimmed As String
     Dim firstChar As String
+    Dim transactionsJson As String
+
     trimmed = LTrim$(rawText)
     If Len(trimmed) = 0 Then
         ParseTransactionPayload = Empty
@@ -1794,7 +1913,6 @@ Private Function ParseTransactionPayload(rawText As String, minAmount As Long) A
     If firstChar = "[" Then
         ParseTransactionPayload = ParseTransactionJsonContent(trimmed, minAmount)
     ElseIf firstChar = "{" Then
-        Dim transactionsJson As String
         transactionsJson = ExtractTransactionsArray(trimmed)
         If Len(transactionsJson) = 0 Then
             ParseTransactionPayload = Empty
