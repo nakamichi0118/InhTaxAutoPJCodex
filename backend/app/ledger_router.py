@@ -365,11 +365,13 @@ def _build_preview_accounts(assets_payload: List[dict]) -> List[dict]:
         )
         # Use source_document filename (without extension) as default account name
         source_doc = asset.get("source_document") or ""
-        if source_doc:
+        if source_doc and source_doc != "uploaded.pdf":
             # Remove file extension from filename
-            account_name = source_doc.rsplit(".", 1)[0] if "." in source_doc else source_doc
+            base_name = source_doc.rsplit("/", 1)[-1]  # Remove path if any
+            account_name = base_name.rsplit(".", 1)[0] if "." in base_name else base_name
         else:
-            account_name = asset.get("asset_name") or "預金口座"
+            # Fallback: avoid using "預金取引推移表" as account name
+            account_name = "預金口座"
         preview_accounts.append(
             {
                 "assetId": str(asset_id),
@@ -570,7 +572,10 @@ def analyze_transactions(
     # Build account lookup
     account_map = {acc["id"]: acc for acc in accounts}
 
-    # Format transactions for analysis
+    # Notes added by web app that should be ignored in analysis
+    WEBAPP_NOTES = {"残高差から再算出", "入出金を入れ替え", "残高から逆算", "方向修正"}
+
+    # Format transactions for analysis (exclude web app notes from memo)
     txn_lines = []
     for txn in transactions:
         acc = account_map.get(txn.get("account_id"), {})
@@ -579,7 +584,12 @@ def analyze_transactions(
         date = txn.get("date") or "不明"
         withdrawal = txn.get("withdrawal") or 0
         deposit = txn.get("deposit") or 0
+        # Get description, filtering out web app notes
         memo = txn.get("memo") or txn.get("type") or ""
+        # Remove web app notes from memo
+        for note in WEBAPP_NOTES:
+            memo = memo.replace(note, "").strip()
+        memo = memo.strip("()（）ー- ")
         if withdrawal > 0:
             txn_lines.append(f"{date} | {holder} | {acc_name} | 出金 {withdrawal:,}円 | {memo}")
         if deposit > 0:
@@ -589,31 +599,48 @@ def analyze_transactions(
 
     prompt = f"""あなたは相続税申告の専門家です。以下の銀行取引履歴を分析し、相続税申告において注意すべき点を指摘してください。
 
-## 分析観点
-1. **贈与税の検討**: 個人名義への入金で年間110万円を超えるものがあれば指摘
-2. **保険関連**: 保険料の支払いや保険金の受取があれば指摘（生命保険契約に関する権利として申告が必要な可能性）
-3. **不動産関連**: 固定資産税、管理費、賃料収入などがあれば不動産の有無を確認
-4. **有価証券**: 配当金、株式売買などがあれば有価証券の有無を確認
-5. **定期的な大口入出金**: パターンのある大口取引があれば背景を確認
-6. **死亡直前の出金**: 被相続人の死亡直前の大口出金は手許現金として申告が必要
+## 重要な分析観点（優先順位順）
+
+### 1. 大口取引で内容が不明なもの（最重要）
+- 50万円以上の入出金で、摘要が不明確または空欄のものをピックアップ
+- 特に100万円以上の取引は必ず確認対象として指摘
+
+### 2. 保険会社関連の取引（重要）
+- 保険料の支払い（「○○生命」「○○損保」など）があれば指摘
+- 生命保険契約に関する権利が相続財産から漏れていないか確認が必要
+- 保険金の受取があれば、みなし相続財産として申告対象か確認
+
+### 3. 個人間取引・贈与税リスク（重要）
+- 個人名義への振込（「○○様」「カ）○○」でない個人名宛）を検出
+- 年間110万円超の贈与があれば贈与税申告漏れの可能性
+- 定期的な個人宛送金パターンがあれば名義預金の疑い
+
+### 4. その他の確認事項
+- 不動産関連: 固定資産税、管理費、賃料収入
+- 有価証券関連: 配当金、証券会社への入出金
+- 死亡直前の大口出金: 手許現金として申告が必要な可能性
 
 ## 取引データ
 {txn_text}
 
+## 注意事項
+- 備考欄の「残高差から再算出」「入出金を入れ替え」等はシステムが付与したメモなので無視してください
+- 重要度は実務上の影響を考慮して判定してください（申告漏れリスク→high、確認推奨→medium、参考情報→low）
+
 ## 出力形式
-以下のJSON形式で回答してください。findingsは最大10件まで。
+以下のJSON形式で回答してください。findingsは最大10件まで、重要度の高いものを優先してください。
 ```json
 {{
   "findings": [
     {{
-      "category": "カテゴリ名（贈与税の検討/保険関連/不動産関連/有価証券/定期的取引/その他）",
+      "category": "カテゴリ名（大口不明取引/保険関連/贈与税リスク/不動産関連/有価証券/その他）",
       "severity": "重要度（high/medium/low）",
       "title": "タイトル（20文字以内）",
-      "description": "詳細説明（100文字以内）",
+      "description": "詳細説明（具体的な確認アクションを含めて100文字以内）",
       "relatedTransactions": ["関連する取引の日付と内容（最大3件）"]
     }}
   ],
-  "summary": "総評（200文字以内）"
+  "summary": "総評（全体的なリスク評価と優先的に確認すべき事項を200文字以内で）"
 }}
 ```
 """
