@@ -24,37 +24,46 @@ Sub CSV取込ボタン_Click()
     Dim ws As Worksheet
     Dim callerName As String
     Dim shp As Shape
+    Dim retryCount As Integer
+
+    ' ブック開直後の初期化待ち（シェイプコレクション準備）
+    DoEvents
+    Application.Wait Now + TimeValue("00:00:00.1")
+    DoEvents
 
     Set ws = ActiveSheet
 
-    '1. ボタン位置の取得（エラーハンドリング付き）
+    ' シェイプコレクションを事前にアクセスして初期化を促す
     On Error Resume Next
-    callerName = Application.Caller
-    If Err.Number <> 0 Or Len(callerName) = 0 Then
+    Dim dummy As Long
+    dummy = ws.Shapes.Count
+    Err.Clear
+    On Error GoTo 0
+
+    '1. ボタン位置の取得（リトライ付き）
+    For retryCount = 1 To 3
+        On Error Resume Next
+        callerName = Application.Caller
+        If Err.Number = 0 And Len(callerName) > 0 Then
+            Set shp = ws.Shapes(callerName)
+            If Err.Number = 0 And Not shp Is Nothing Then
+                On Error GoTo 0
+                Exit For
+            End If
+        End If
         Err.Clear
         On Error GoTo 0
+
+        ' リトライ前に少し待つ
+        DoEvents
+        Application.Wait Now + TimeValue("00:00:00.2")
+        DoEvents
+    Next retryCount
+
+    If shp Is Nothing Then
         MsgBox "ボタンから実行してください。", vbExclamation
         Exit Sub
     End If
-
-    Set shp = ws.Shapes(callerName)
-    If Err.Number <> 0 Or shp Is Nothing Then
-        Err.Clear
-        On Error GoTo 0
-        ' シェイプが見つからない場合、少し待ってリトライ
-        DoEvents
-        Application.Wait Now + TimeValue("00:00:01")
-        DoEvents
-        On Error Resume Next
-        Set shp = ws.Shapes(callerName)
-        If Err.Number <> 0 Or shp Is Nothing Then
-            Err.Clear
-            On Error GoTo 0
-            MsgBox "ボタンの情報を取得できませんでした。もう一度お試しください。", vbExclamation
-            Exit Sub
-        End If
-    End If
-    On Error GoTo 0
 
     buttonCol = shp.TopLeftCell.Column
     buttonRow = shp.TopLeftCell.Row
@@ -781,39 +790,48 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim usageData As Variant
     Dim callerName As String
     Dim shp As Shape
+    Dim retryCount As Integer
 
     Call InitPdfDebugLog(targetDocType)
 
+    ' ブック開直後の初期化待ち（シェイプコレクション準備）
+    DoEvents
+    Application.Wait Now + TimeValue("00:00:00.1")
+    DoEvents
+
     Set ws = ActiveSheet
 
-    ' Application.Callerが正しく取得できない場合のエラーハンドリング
+    ' シェイプコレクションを事前にアクセスして初期化を促す
     On Error Resume Next
-    callerName = Application.Caller
-    If Err.Number <> 0 Or Len(callerName) = 0 Then
+    Dim dummy As Long
+    dummy = ws.Shapes.Count
+    Err.Clear
+    On Error GoTo 0
+
+    ' Application.Callerからボタン情報を取得（リトライ付き）
+    For retryCount = 1 To 3
+        On Error Resume Next
+        callerName = Application.Caller
+        If Err.Number = 0 And Len(callerName) > 0 Then
+            Set shp = ws.Shapes(callerName)
+            If Err.Number = 0 And Not shp Is Nothing Then
+                On Error GoTo 0
+                Exit For
+            End If
+        End If
         Err.Clear
         On Error GoTo 0
+
+        ' リトライ前に少し待つ
+        DoEvents
+        Application.Wait Now + TimeValue("00:00:00.2")
+        DoEvents
+    Next retryCount
+
+    If shp Is Nothing Then
         MsgBox "ボタンから実行してください。", vbExclamation
         Exit Sub
     End If
-
-    Set shp = ws.Shapes(callerName)
-    If Err.Number <> 0 Or shp Is Nothing Then
-        Err.Clear
-        On Error GoTo 0
-        ' シェイプが見つからない場合、少し待ってリトライ
-        DoEvents
-        Application.Wait Now + TimeValue("00:00:01")
-        DoEvents
-        On Error Resume Next
-        Set shp = ws.Shapes(callerName)
-        If Err.Number <> 0 Or shp Is Nothing Then
-            Err.Clear
-            On Error GoTo 0
-            MsgBox "ボタンの情報を取得できませんでした。もう一度お試しください。", vbExclamation
-            Exit Sub
-        End If
-    End If
-    On Error GoTo 0
 
     buttonCol = shp.TopLeftCell.Column
     buttonRow = shp.TopLeftCell.Row
