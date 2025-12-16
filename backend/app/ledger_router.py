@@ -363,10 +363,17 @@ def _build_preview_accounts(assets_payload: List[dict]) -> List[dict]:
             or (asset.get("identifiers") or {}).get("primary")
             or f"asset_{index:04d}"
         )
+        # Use source_document filename (without extension) as default account name
+        source_doc = asset.get("source_document") or ""
+        if source_doc:
+            # Remove file extension from filename
+            account_name = source_doc.rsplit(".", 1)[0] if "." in source_doc else source_doc
+        else:
+            account_name = asset.get("asset_name") or "預金口座"
         preview_accounts.append(
             {
                 "assetId": str(asset_id),
-                "accountName": asset.get("asset_name") or "預金口座",
+                "accountName": account_name,
                 "accountNumber": (asset.get("identifiers") or {}).get("primary"),
                 "ownerName": asset.get("owner_name") or [],
                 "transactionCount": len(transactions),
@@ -536,6 +543,116 @@ def import_job_assets(
         "createdAccountIds": created_account_ids,
         "mergedAccountIds": merged_account_ids,
     }
+
+
+@router.post("/analyze")
+def analyze_transactions(
+    case_id: Optional[str] = Query(None, alias="case_id"),
+    scope: LedgerScope = Depends(get_scope),
+    store: LedgerStore = Depends(get_ledger_store),
+) -> dict:
+    """Analyze transactions using Gemini AI for inheritance tax insights."""
+    from .gemini import GeminiClient
+    from .config import get_settings
+
+    case = _resolve_case_id(scope, store, case_id)
+    snapshot = store.snapshot(scope, case["id"])
+    accounts = snapshot["accounts"]
+    transactions = snapshot["transactions"]
+
+    if not transactions:
+        return {
+            "status": "ok",
+            "findings": [],
+            "summary": "取引データがありません。",
+        }
+
+    # Build account lookup
+    account_map = {acc["id"]: acc for acc in accounts}
+
+    # Format transactions for analysis
+    txn_lines = []
+    for txn in transactions:
+        acc = account_map.get(txn.get("account_id"), {})
+        holder = acc.get("holder_name") or "不明"
+        acc_name = acc.get("name") or "不明"
+        date = txn.get("date") or "不明"
+        withdrawal = txn.get("withdrawal") or 0
+        deposit = txn.get("deposit") or 0
+        memo = txn.get("memo") or txn.get("type") or ""
+        if withdrawal > 0:
+            txn_lines.append(f"{date} | {holder} | {acc_name} | 出金 {withdrawal:,}円 | {memo}")
+        if deposit > 0:
+            txn_lines.append(f"{date} | {holder} | {acc_name} | 入金 {deposit:,}円 | {memo}")
+
+    txn_text = "\n".join(txn_lines[:500])  # Limit to 500 transactions
+
+    prompt = f"""あなたは相続税申告の専門家です。以下の銀行取引履歴を分析し、相続税申告において注意すべき点を指摘してください。
+
+## 分析観点
+1. **贈与税の検討**: 個人名義への入金で年間110万円を超えるものがあれば指摘
+2. **保険関連**: 保険料の支払いや保険金の受取があれば指摘（生命保険契約に関する権利として申告が必要な可能性）
+3. **不動産関連**: 固定資産税、管理費、賃料収入などがあれば不動産の有無を確認
+4. **有価証券**: 配当金、株式売買などがあれば有価証券の有無を確認
+5. **定期的な大口入出金**: パターンのある大口取引があれば背景を確認
+6. **死亡直前の出金**: 被相続人の死亡直前の大口出金は手許現金として申告が必要
+
+## 取引データ
+{txn_text}
+
+## 出力形式
+以下のJSON形式で回答してください。findingsは最大10件まで。
+```json
+{{
+  "findings": [
+    {{
+      "category": "カテゴリ名（贈与税の検討/保険関連/不動産関連/有価証券/定期的取引/その他）",
+      "severity": "重要度（high/medium/low）",
+      "title": "タイトル（20文字以内）",
+      "description": "詳細説明（100文字以内）",
+      "relatedTransactions": ["関連する取引の日付と内容（最大3件）"]
+    }}
+  ],
+  "summary": "総評（200文字以内）"
+}}
+```
+"""
+
+    settings = get_settings()
+    if not settings.gemini_api_key:
+        return {
+            "status": "error",
+            "message": "Gemini APIキーが設定されていません。",
+            "findings": [],
+            "summary": "",
+        }
+
+    try:
+        client = GeminiClient(api_keys=settings.gemini_api_key, model=settings.gemini_model)
+        response_text = client.analyze_text(prompt)
+
+        # Extract JSON from response
+        import json
+        import re
+        json_match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
+        if json_match:
+            result = json.loads(json_match.group(1))
+        else:
+            # Try parsing the whole response as JSON
+            result = json.loads(response_text)
+
+        return {
+            "status": "ok",
+            "findings": result.get("findings", []),
+            "summary": result.get("summary", ""),
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"分析中にエラーが発生しました: {str(e)}",
+            "findings": [],
+            "summary": "",
+        }
 
 
 __all__ = ["router", "get_ledger_store"]

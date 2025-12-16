@@ -7436,84 +7436,6 @@ const parseTagsText = (value) => {
   if (!value) return [];
   return value.split(",").map((item) => item.trim()).filter(Boolean);
 };
-const INSURANCE_KEYWORDS = [
-  "保険",
-  "生命",
-  "ひまわり生命",
-  "第一生命",
-  "日本生命",
-  "明治安田",
-  "住友生命",
-  "ソニー生命",
-  "かんぽ生命",
-  "アフラック",
-  "JA共済",
-  "共済"
-];
-const isLikelyPersonalMemo = (memo) => {
-  if (!memo) return false;
-  const normalized = memo.trim();
-  if (!normalized) return false;
-  if (/様|さま|さん/.test(normalized)) return true;
-  if (/[(（]/.test(normalized)) return false;
-  const lettersOnly = normalized.replace(/[0-9\s]/g, "");
-  if (!lettersOnly) return false;
-  const pattern = /^[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}A-Za-z]{2,}$/u;
-  return pattern.test(lettersOnly) && lettersOnly.length <= 12;
-};
-const runComplianceAnalysis = (accounts, transactions) => {
-  const result = { generatedAt: (/* @__PURE__ */ new Date()).toISOString(), checks: [] };
-  const insuranceAccounts = (accounts || []).filter((account) => {
-    const target = `${account.name || ""}${account.holder_name || account.holderName || ""}`;
-    return INSURANCE_KEYWORDS.some((keyword) => target.includes(keyword));
-  });
-  if (insuranceAccounts.length > 0) {
-    result.checks.push({
-      category: "保険契約の有無",
-      severity: "info",
-      items: insuranceAccounts.map((account) => `${account.name || account.number || account.id}`),
-      message: `${insuranceAccounts.length}件の口座に保険関連の名称が含まれています。解約返戻金や契約者貸付の有無をご確認ください。`
-    });
-  }
-  const giftMap = /* @__PURE__ */ new Map();
-  (transactions || []).forEach((txn) => {
-    if (!(txn == null ? void 0 : txn.deposit)) return;
-    if (!(txn == null ? void 0 : txn.date)) return;
-    const memo = (txn.memo || txn.type || "").trim();
-    if (!isLikelyPersonalMemo(memo)) return;
-    const year = new Date(txn.date).getFullYear();
-    if (!giftMap.has(memo)) {
-      giftMap.set(memo, /* @__PURE__ */ new Map());
-    }
-    const yearMap = giftMap.get(memo);
-    yearMap.set(year, (yearMap.get(year) || 0) + (txn.deposit || 0));
-  });
-  const giftFindings = [];
-  giftMap.forEach((yearMap, memo) => {
-    yearMap.forEach((amount, year) => {
-      if (amount >= 11e5) {
-        giftFindings.push({ memo, year, amount });
-      }
-    });
-  });
-  if (giftFindings.length > 0) {
-    result.checks.push({
-      category: "贈与税の検討",
-      severity: "warn",
-      items: giftFindings.map((item) => `${item.year}年 ${item.memo}: ${formatCurrency(item.amount)}円`),
-      message: "個人名義への入金で年間110万円を超えるものがあります。贈与税申告の有無を確認してください。"
-    });
-  }
-  if (result.checks.length === 0) {
-    result.checks.push({
-      category: "特記事項",
-      severity: "info",
-      items: [],
-      message: "該当する注意項目は検出されませんでした。"
-    });
-  }
-  return result;
-};
 const StatusMessage = ({ loading, error, userId }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "p-4 bg-white/90 backdrop-blur-sm shadow-xl rounded-xl", children: [
   loading && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-blue-600 font-semibold flex items-center justify-center", children: "データをロード中..." }),
   error && /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-red-600 font-semibold", children: [
@@ -7657,16 +7579,16 @@ const ExportPDFButton = ({ elementId, fileName, title = "PDFに出力" }) => {
       });
       if (totalRows === 0) {
         const canvas = await window.html2canvas(input, {
-          scale: 2,
+          scale: 1.5,
           useCORS: true,
           backgroundColor: "#ffffff"
         });
-        const imgData = canvas.toDataURL("image/png");
+        const imgData = canvas.toDataURL("image/jpeg", 0.85);
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const imgProps = pdf.getImageProperties(imgData);
         const ratio = pdfWidth / imgProps.width;
         const imgHeight = imgProps.height * ratio;
-        pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, imgHeight);
+        pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, imgHeight);
       } else {
         const rowsPerPageFirst = 14;
         const rowsPerPageNext = 17;
@@ -7721,12 +7643,12 @@ const ExportPDFButton = ({ elementId, fileName, title = "PDFに出力" }) => {
           pageClone.style.zIndex = "-1";
           pageClone.style.width = `${input.offsetWidth}px`;
           const canvas = await html2canvas(pageClone, {
-            scale: 2,
+            scale: 1.5,
             useCORS: true,
             backgroundColor: "#ffffff"
           });
           document.body.removeChild(pageClone);
-          const imgData = canvas.toDataURL("image/png");
+          const imgData = canvas.toDataURL("image/jpeg", 0.85);
           const pdfWidth = pdf.internal.pageSize.getWidth();
           const pdfHeight = pdf.internal.pageSize.getHeight();
           const imgProps = pdf.getImageProperties(imgData);
@@ -7736,7 +7658,7 @@ const ExportPDFButton = ({ elementId, fileName, title = "PDFに出力" }) => {
           if (!isFirstPage) {
             pdf.addPage();
           }
-          pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, finalHeight);
+          pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, finalHeight);
           rowsProcessed = endIndex;
         }
       }
@@ -8817,11 +8739,13 @@ const IntegratedTabContent = ({
   comparisonSelection,
   onToggleComparisonAccount,
   onClearComparisonSelection,
-  onApplyComparisonFilter
+  onApplyComparisonFilter,
+  callLedgerApi
 }) => {
   const [message, setMessage] = reactExports.useState("");
   const [analysisStatus, setAnalysisStatus] = reactExports.useState("idle");
   const [analysisResult, setAnalysisResult] = reactExports.useState(null);
+  const [analysisError, setAnalysisError] = reactExports.useState(null);
   const accountMap = reactExports.useMemo(() => {
     return (allAccounts || []).reduce((map, account) => {
       map[account.id] = account;
@@ -8970,14 +8894,31 @@ const IntegratedTabContent = ({
     }
     return accountSummaries.slice(0, Math.min(3, accountSummaries.length));
   }, [accountSummaries, comparisonSelection]);
-  const handleRunAnalysis = reactExports.useCallback(() => {
+  const handleRunAnalysis = reactExports.useCallback(async () => {
+    if (!callLedgerApi) {
+      setAnalysisError("API接続が初期化されていません。");
+      return;
+    }
     setAnalysisStatus("running");
-    setTimeout(() => {
-      const result = runComplianceAnalysis(allAccounts, allTransactions);
-      setAnalysisResult(result);
+    setAnalysisError(null);
+    try {
+      const result = await callLedgerApi("/analyze", { method: "POST" });
+      if (result.status === "error") {
+        setAnalysisError(result.message || "分析中にエラーが発生しました。");
+        setAnalysisResult(null);
+      } else {
+        setAnalysisResult({
+          generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          findings: result.findings || [],
+          summary: result.summary || ""
+        });
+      }
       setAnalysisStatus("done");
-    }, 40);
-  }, [allAccounts, allTransactions]);
+    } catch (err) {
+      setAnalysisError(err.message || "分析中にエラーが発生しました。");
+      setAnalysisStatus("done");
+    }
+  }, [callLedgerApi]);
   const allowManualReorder = !sorting || sorting.field === "custom";
   const sortOptions = [
     { value: "custom", label: "手動順序（既定）" },
@@ -9140,8 +9081,8 @@ const IntegratedTabContent = ({
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white border border-slate-200 rounded-xl p-4 space-y-3", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center justify-between gap-3", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-base font-semibold text-slate-800", children: "AI分析 (ヒューリスティック)" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "保険契約の有無や贈与税リスクなど、典型的な論点を自動チェックします。" })
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-base font-semibold text-slate-800", children: "AI分析 (Gemini)" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "取引履歴をGemini AIで分析し、相続税申告における注意点を抽出します。" })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
           analysisStatus === "running" && /* @__PURE__ */ jsxRuntimeExports.jsx(LoaderCircle, { size: 18, className: "animate-spin text-slate-500" }),
@@ -9152,24 +9093,31 @@ const IntegratedTabContent = ({
               onClick: handleRunAnalysis,
               className: "rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8]",
               disabled: analysisStatus === "running",
-              children: "AI分析を実行"
+              children: analysisStatus === "running" ? "分析中..." : "AI分析を実行"
             }
           )
         ] })
       ] }),
+      analysisError && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "rounded-lg bg-red-50 border border-red-200 p-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-red-700", children: analysisError }) }),
       analysisResult && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "space-y-3", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs text-slate-400", children: [
           "更新: ",
           new Date(analysisResult.generatedAt).toLocaleString()
         ] }),
-        analysisResult.checks.map((check, index) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-slate-200 p-3 bg-slate-50", children: [
+        analysisResult.summary && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-blue-200 p-3 bg-blue-50", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h4", { className: "text-sm font-semibold text-blue-800 mb-1", children: "総評" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-blue-700", children: analysisResult.summary })
+        ] }),
+        (analysisResult.findings || []).map((finding, index) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-slate-200 p-3 bg-slate-50", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("h4", { className: "text-sm font-semibold text-slate-800", children: check.category }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-semibold px-2 py-0.5 rounded-full ${check.severity === "warn" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-700"}`, children: check.severity === "warn" ? "確認" : "参考" })
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h4", { className: "text-sm font-semibold text-slate-800", children: finding.title || finding.category }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: `text-xs font-semibold px-2 py-0.5 rounded-full ${finding.severity === "high" ? "bg-red-100 text-red-800" : finding.severity === "medium" ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-700"}`, children: finding.severity === "high" ? "重要" : finding.severity === "medium" ? "確認" : "参考" })
           ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-slate-600 mt-1", children: check.message }),
-          check.items && check.items.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { className: "mt-2 text-xs text-slate-500 list-disc list-inside space-y-1", children: check.items.map((item, itemIndex) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: item }, `${check.category}-${index}-${itemIndex}`)) })
-        ] }, `${check.category}-${index}`))
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500 mt-0.5", children: finding.category }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-slate-600 mt-1", children: finding.description }),
+          finding.relatedTransactions && finding.relatedTransactions.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { className: "mt-2 text-xs text-slate-500 list-disc list-inside space-y-1", children: finding.relatedTransactions.map((item, itemIndex) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: item }, `${finding.category}-${index}-${itemIndex}`)) })
+        ] }, `${finding.category}-${index}`)),
+        (!analysisResult.findings || analysisResult.findings.length === 0) && !analysisResult.summary && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-slate-500", children: "特に注意すべき点は見つかりませんでした。" })
       ] })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white border border-slate-200 rounded-xl p-4 space-y-4", children: [
@@ -9389,7 +9337,7 @@ const IntegratedTabContent = ({
   ] });
 };
 const LedgerApp = () => {
-  var _a, _b, _c, _d;
+  var _a, _b, _c;
   const [sessionToken, setSessionToken] = reactExports.useState(null);
   const [userId, setUserId] = reactExports.useState(null);
   const [cases, setCases] = reactExports.useState([]);
@@ -9843,14 +9791,14 @@ const LedgerApp = () => {
     setSelectedCaseId(caseId);
     await refreshState(caseId, true);
   }, [refreshState]);
-  const handleCaseSelectChange = reactExports.useCallback(
+  reactExports.useCallback(
     async (eventOrValue) => {
       const nextCaseId = typeof eventOrValue === "string" ? eventOrValue : eventOrValue.target.value;
       await changeCase(nextCaseId);
     },
     [changeCase]
   );
-  const handleCreateCaseClick = reactExports.useCallback(async () => {
+  reactExports.useCallback(async () => {
     const name = window.prompt("新しい案件名を入力してください", "案件");
     if (!name) {
       return;
@@ -9968,7 +9916,8 @@ const LedgerApp = () => {
           comparisonSelection,
           onToggleComparisonAccount: toggleComparisonAccount,
           onClearComparisonSelection: clearComparisonSelection,
-          onApplyComparisonFilter: applyComparisonFilter
+          onApplyComparisonFilter: applyComparisonFilter,
+          callLedgerApi
         }
       );
     }
@@ -10057,35 +10006,12 @@ const LedgerApp = () => {
               className: "inline-flex items-center gap-2 rounded-full border border-white/25 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10",
               children: "詳細ガイド"
             }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: () => setShowAddAccountModal(true), className: "bg-[#22c55e] hover:bg-[#16a34a] px-4 py-2", children: "新規口座を登録" })
+          )
         ] })
       ] })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-[220px]", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-sm text-gray-600 mb-1 block", children: "案件を選択" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "select",
-            {
-              value: selectedCaseId || "",
-              onChange: handleCaseSelectChange,
-              className: "p-2.5 border border-slate-300 rounded-lg w-full bg-white",
-              children: [
-                cases.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "案件がありません" }),
-                cases.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: item.id, children: item.name }, item.id))
-              ]
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(MainButton, { Icon: Plus, onClick: handleCreateCaseClick, className: "bg-indigo-600 hover:bg-indigo-700", children: "案件を追加" }) })
-      ] }),
-      selectedCaseId && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 sm:grid-cols-3 mb-6", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-slate-200 bg-white p-4 shadow-sm", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "案件名" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-lg font-semibold text-slate-900", children: ((_a = cases.find((c) => c.id === selectedCaseId)) == null ? void 0 : _a.name) || "---" })
-        ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "grid gap-3 sm:grid-cols-2 mb-6", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "rounded-xl border border-slate-200 bg-white p-4 shadow-sm", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-500", children: "登録口座数" }),
           /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-2xl font-bold text-slate-900", children: accounts.length })
@@ -10096,56 +10022,17 @@ const LedgerApp = () => {
         ] })
       ] }),
       jobPreview && /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "bg-yellow-50 border border-yellow-200 rounded-2xl p-5 mb-5 space-y-4", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col md:flex-row md:items-center md:justify-between gap-3", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-xl font-semibold text-yellow-900", children: "OCR結果を案件へ取り込み" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-yellow-800", children: [
-              "ジョブID: ",
-              jobPreview.jobId,
-              " ／ 口座候補 ",
-              jobPreview.accounts.length,
-              " 件"
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-yellow-800 mt-1", children: "同じ統合キーを設定した口座は1口座として登録できます。" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-col md:flex-row md:items-center md:justify-between gap-3", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-xl font-semibold text-yellow-900", children: "OCR結果を取り込み" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-yellow-800", children: [
+            "口座候補 ",
+            jobPreview.accounts.length,
+            " 件"
           ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-2 md:flex-row md:items-center", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-yellow-900", children: "既存案件を選択" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "select",
-                {
-                  value: newCaseName ? "" : selectedCaseId || "",
-                  onChange: (e) => {
-                    setNewCaseName("");
-                    handleCaseSelectChange(e);
-                  },
-                  className: "p-2 border rounded-md text-sm",
-                  disabled: jobImportStatus === "applying",
-                  children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "", children: "案件を選択" }),
-                    cases.map((item) => /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: item.id, children: item.name }, item.id))
-                  ]
-                }
-              )
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("label", { className: "text-xs text-yellow-900", children: "新しい案件名（任意）" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "input",
-                {
-                  type: "text",
-                  value: newCaseName,
-                  onChange: (e) => setNewCaseName(e.target.value),
-                  placeholder: "例: 佐藤家_2025",
-                  className: "p-2 border rounded-md text-sm",
-                  disabled: jobImportStatus === "applying"
-                }
-              )
-            ] })
-          ] })
-        ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-yellow-800 mt-1", children: "同じ統合キーを設定した口座は1口座として登録できます。" })
+        ] }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid gap-4 md:grid-cols-2", children: jobPreview.accounts.map((account) => {
-          var _a2, _b2, _c2, _d2, _e, _f, _g, _h, _i;
+          var _a2, _b2, _c2, _d, _e, _f, _g, _h, _i;
           const config = jobImportMappings[account.assetId] || { mode: "new" };
           return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "bg-white border border-yellow-200 rounded-xl p-4 space-y-3 shadow-sm", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
@@ -10190,7 +10077,7 @@ const LedgerApp = () => {
                   "input",
                   {
                     type: "text",
-                    value: (_d2 = (_c2 = config.accountNumber) != null ? _c2 : account.accountNumber) != null ? _d2 : "",
+                    value: (_d = (_c2 = config.accountNumber) != null ? _c2 : account.accountNumber) != null ? _d : "",
                     onChange: (e) => handleJobMappingChange(account.assetId, { accountNumber: e.target.value }),
                     placeholder: "口座番号",
                     className: "p-2 border rounded-md"
@@ -10278,7 +10165,7 @@ const LedgerApp = () => {
             Icon: jobImportStatus === "applying" ? LoaderCircle : Save,
             className: "bg-yellow-600 hover:bg-yellow-700",
             disabled: jobImportStatus === "applying",
-            children: jobImportStatus === "applying" ? "取り込み中…" : "この内容で案件に反映"
+            children: jobImportStatus === "applying" ? "取り込み中…" : "取り込みを実行"
           }
         ) })
       ] }),
@@ -10321,7 +10208,7 @@ const LedgerApp = () => {
         isOpen: showAddAccountModal,
         onClose: () => setShowAddAccountModal(false),
         onCreateAccount: handleCreateAccount,
-        caseName: (_b = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _b.name
+        caseName: (_a = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _a.name
       }
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -10357,7 +10244,7 @@ const LedgerApp = () => {
         isOpen: showImportModal,
         onClose: () => setShowImportModal(false),
         onImport: handleImportData,
-        caseName: (_c = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _c.name
+        caseName: (_b = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _b.name
       }
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsx(UsageGuideModal, { isOpen: showGuide, onClose: () => setShowGuide(false) }),
@@ -10367,7 +10254,7 @@ const LedgerApp = () => {
         isOpen: showPendingImportModal,
         onClose: () => setShowPendingImportModal(false),
         pendingImports,
-        caseName: (_d = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _d.name,
+        caseName: (_c = cases.find((item) => item.id === selectedCaseId)) == null ? void 0 : _c.name,
         onApply: (entry, overrides = {}) => handleImportPendingEntry(entry, { targetCaseId: selectedCaseId, ...overrides }),
         onManual: handleManualAddAccount,
         onDismiss: handleDismissPendingEntry,

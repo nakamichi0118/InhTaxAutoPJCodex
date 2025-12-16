@@ -528,16 +528,16 @@ const ExportPDFButton = ({ elementId, fileName, title = 'PDFに出力' }) => {
             // If there are no rows, just print the current view as a single page
             if (totalRows === 0) {
                 const canvas = await window.html2canvas(input, {
-                    scale: 2,
+                    scale: 1.5,
                     useCORS: true,
                     backgroundColor: '#ffffff'
                 });
-                const imgData = canvas.toDataURL('image/png');
+                const imgData = canvas.toDataURL('image/jpeg', 0.85);
                 const pdfWidth = pdf.internal.pageSize.getWidth();
                 const imgProps = pdf.getImageProperties(imgData);
                 const ratio = pdfWidth / imgProps.width;
                 const imgHeight = imgProps.height * ratio;
-                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, imgHeight);
 
             } else {
                 // Logic for paginated export based on row count
@@ -616,7 +616,7 @@ const ExportPDFButton = ({ elementId, fileName, title = 'PDFに出力' }) => {
                     pageClone.style.width = `${input.offsetWidth}px`;
                     
                     const canvas = await html2canvas(pageClone, {
-                        scale: 2,
+                        scale: 1.5,
                         useCORS: true,
                         backgroundColor: '#ffffff',
                     });
@@ -624,10 +624,10 @@ const ExportPDFButton = ({ elementId, fileName, title = 'PDFに出力' }) => {
                     document.body.removeChild(pageClone);
 
                     // Add the rendered canvas to the PDF
-                    const imgData = canvas.toDataURL('image/png');
+                    const imgData = canvas.toDataURL('image/jpeg', 0.85);
                     const pdfWidth = pdf.internal.pageSize.getWidth();
                     const pdfHeight = pdf.internal.pageSize.getHeight();
-                    
+
                     const imgProps = pdf.getImageProperties(imgData);
                     const ratio = pdfWidth / imgProps.width;
                     const imgHeight = imgProps.height * ratio;
@@ -638,7 +638,7 @@ const ExportPDFButton = ({ elementId, fileName, title = 'PDFに出力' }) => {
                     if (!isFirstPage) {
                         pdf.addPage();
                     }
-                    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, finalHeight);
+                    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, finalHeight);
 
                     rowsProcessed = endIndex;
                 }
@@ -1820,10 +1820,12 @@ const IntegratedTabContent = ({
     onToggleComparisonAccount,
     onClearComparisonSelection,
     onApplyComparisonFilter,
+    callLedgerApi,
 }) => {
     const [message, setMessage] = useState(''); // メッセージ表示用ステートを追加
     const [analysisStatus, setAnalysisStatus] = useState('idle');
     const [analysisResult, setAnalysisResult] = useState(null);
+    const [analysisError, setAnalysisError] = useState(null);
     const accountMap = useMemo(() => {
         return (allAccounts || []).reduce((map, account) => {
             map[account.id] = account;
@@ -1982,14 +1984,31 @@ const IntegratedTabContent = ({
         }
         return accountSummaries.slice(0, Math.min(3, accountSummaries.length));
     }, [accountSummaries, comparisonSelection]);
-    const handleRunAnalysis = useCallback(() => {
+    const handleRunAnalysis = useCallback(async () => {
+        if (!callLedgerApi) {
+            setAnalysisError('API接続が初期化されていません。');
+            return;
+        }
         setAnalysisStatus('running');
-        setTimeout(() => {
-            const result = runComplianceAnalysis(allAccounts, allTransactions);
-            setAnalysisResult(result);
+        setAnalysisError(null);
+        try {
+            const result = await callLedgerApi('/analyze', { method: 'POST' });
+            if (result.status === 'error') {
+                setAnalysisError(result.message || '分析中にエラーが発生しました。');
+                setAnalysisResult(null);
+            } else {
+                setAnalysisResult({
+                    generatedAt: new Date().toISOString(),
+                    findings: result.findings || [],
+                    summary: result.summary || '',
+                });
+            }
             setAnalysisStatus('done');
-        }, 40);
-    }, [allAccounts, allTransactions]);
+        } catch (err) {
+            setAnalysisError(err.message || '分析中にエラーが発生しました。');
+            setAnalysisStatus('done');
+        }
+    }, [callLedgerApi]);
     const allowManualReorder = !sorting || sorting.field === 'custom';
     const sortOptions = [
         { value: 'custom', label: '手動順序（既定）' },
@@ -2168,8 +2187,8 @@ const IntegratedTabContent = ({
             <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <p className="text-base font-semibold text-slate-800">AI分析 (ヒューリスティック)</p>
-                        <p className="text-xs text-slate-500">保険契約の有無や贈与税リスクなど、典型的な論点を自動チェックします。</p>
+                        <p className="text-base font-semibold text-slate-800">AI分析 (Gemini)</p>
+                        <p className="text-xs text-slate-500">取引履歴をGemini AIで分析し、相続税申告における注意点を抽出します。</p>
                     </div>
                     <div className="flex items-center gap-2">
                         {analysisStatus === 'running' && <Loader2 size={18} className="animate-spin text-slate-500" />}
@@ -2179,31 +2198,50 @@ const IntegratedTabContent = ({
                             className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4ed8]"
                             disabled={analysisStatus === 'running'}
                         >
-                            AI分析を実行
+                            {analysisStatus === 'running' ? '分析中...' : 'AI分析を実行'}
                         </button>
                     </div>
                 </div>
+                {analysisError && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                        <p className="text-sm text-red-700">{analysisError}</p>
+                    </div>
+                )}
                 {analysisResult && (
                     <div className="space-y-3">
                         <p className="text-xs text-slate-400">更新: {new Date(analysisResult.generatedAt).toLocaleString()}</p>
-                        {analysisResult.checks.map((check, index) => (
-                            <div key={`${check.category}-${index}`} className="rounded-xl border border-slate-200 p-3 bg-slate-50">
+                        {analysisResult.summary && (
+                            <div className="rounded-xl border border-blue-200 p-3 bg-blue-50">
+                                <h4 className="text-sm font-semibold text-blue-800 mb-1">総評</h4>
+                                <p className="text-sm text-blue-700">{analysisResult.summary}</p>
+                            </div>
+                        )}
+                        {(analysisResult.findings || []).map((finding, index) => (
+                            <div key={`${finding.category}-${index}`} className="rounded-xl border border-slate-200 p-3 bg-slate-50">
                                 <div className="flex items-center justify-between">
-                                    <h4 className="text-sm font-semibold text-slate-800">{check.category}</h4>
-                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${check.severity === 'warn' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-700'}`}>
-                                        {check.severity === 'warn' ? '確認' : '参考'}
+                                    <h4 className="text-sm font-semibold text-slate-800">{finding.title || finding.category}</h4>
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                        finding.severity === 'high' ? 'bg-red-100 text-red-800' :
+                                        finding.severity === 'medium' ? 'bg-amber-100 text-amber-800' :
+                                        'bg-blue-100 text-blue-700'
+                                    }`}>
+                                        {finding.severity === 'high' ? '重要' : finding.severity === 'medium' ? '確認' : '参考'}
                                     </span>
                                 </div>
-                                <p className="text-sm text-slate-600 mt-1">{check.message}</p>
-                                {check.items && check.items.length > 0 && (
+                                <p className="text-xs text-slate-500 mt-0.5">{finding.category}</p>
+                                <p className="text-sm text-slate-600 mt-1">{finding.description}</p>
+                                {finding.relatedTransactions && finding.relatedTransactions.length > 0 && (
                                     <ul className="mt-2 text-xs text-slate-500 list-disc list-inside space-y-1">
-                                        {check.items.map((item, itemIndex) => (
-                                            <li key={`${check.category}-${index}-${itemIndex}`}>{item}</li>
+                                        {finding.relatedTransactions.map((item, itemIndex) => (
+                                            <li key={`${finding.category}-${index}-${itemIndex}`}>{item}</li>
                                         ))}
                                     </ul>
                                 )}
                             </div>
                         ))}
+                        {(!analysisResult.findings || analysisResult.findings.length === 0) && !analysisResult.summary && (
+                            <p className="text-sm text-slate-500">特に注意すべき点は見つかりませんでした。</p>
+                        )}
                     </div>
                 )}
             </div>
@@ -3022,6 +3060,7 @@ const handleAddAccountClick = useCallback(() => {
                     onToggleComparisonAccount={toggleComparisonAccount}
                     onClearComparisonSelection={clearComparisonSelection}
                     onApplyComparisonFilter={applyComparisonFilter}
+                    callLedgerApi={callLedgerApi}
                 />
             );
         }
@@ -3114,89 +3153,29 @@ const handleAddAccountClick = useCallback(() => {
                         >
                             詳細ガイド
                         </a>
-                        <MainButton Icon={Plus} onClick={() => setShowAddAccountModal(true)} className="bg-[#22c55e] hover:bg-[#16a34a] px-4 py-2">
-                            新規口座を登録
-                        </MainButton>
                     </div>
                 </div>
             </header>
 
             <div className="max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8">
-                <div className="flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-4">
-                    <div className="flex-1 min-w-[220px]">
-                        <label className="text-sm text-gray-600 mb-1 block">案件を選択</label>
-                        <select
-                            value={selectedCaseId || ''}
-                            onChange={handleCaseSelectChange}
-                            className="p-2.5 border border-slate-300 rounded-lg w-full bg-white"
-                        >
-                            {cases.length === 0 && <option value="">案件がありません</option>}
-                            {cases.map((item) => (
-                                <option key={item.id} value={item.id}>{item.name}</option>
-                            ))}
-                        </select>
+                <div className="grid gap-3 sm:grid-cols-2 mb-6">
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs text-slate-500">登録口座数</p>
+                        <p className="text-2xl font-bold text-slate-900">{accounts.length}</p>
                     </div>
-                    <div>
-                        <MainButton Icon={Plus} onClick={handleCreateCaseClick} className="bg-indigo-600 hover:bg-indigo-700">
-                            案件を追加
-                        </MainButton>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs text-slate-500">取引件数</p>
+                        <p className="text-2xl font-bold text-slate-900">{transactions.length}</p>
                     </div>
                 </div>
-
-                {selectedCaseId && (
-                    <div className="grid gap-3 sm:grid-cols-3 mb-6">
-                        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                            <p className="text-xs text-slate-500">案件名</p>
-                            <p className="text-lg font-semibold text-slate-900">{cases.find((c) => c.id === selectedCaseId)?.name || '---'}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                            <p className="text-xs text-slate-500">登録口座数</p>
-                            <p className="text-2xl font-bold text-slate-900">{accounts.length}</p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                            <p className="text-xs text-slate-500">取引件数</p>
-                            <p className="text-2xl font-bold text-slate-900">{transactions.length}</p>
-                        </div>
-                    </div>
-                )}
 
                 {jobPreview && (
                     <section className="bg-yellow-50 border border-yellow-200 rounded-2xl p-5 mb-5 space-y-4">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                             <div>
-                                <h3 className="text-xl font-semibold text-yellow-900">OCR結果を案件へ取り込み</h3>
-                                <p className="text-sm text-yellow-800">ジョブID: {jobPreview.jobId} ／ 口座候補 {jobPreview.accounts.length} 件</p>
+                                <h3 className="text-xl font-semibold text-yellow-900">OCR結果を取り込み</h3>
+                                <p className="text-sm text-yellow-800">口座候補 {jobPreview.accounts.length} 件</p>
                                 <p className="text-xs text-yellow-800 mt-1">同じ統合キーを設定した口座は1口座として登録できます。</p>
-                            </div>
-                            <div className="flex flex-col gap-2 md:flex-row md:items-center">
-                                <div className="flex flex-col">
-                                    <label className="text-xs text-yellow-900">既存案件を選択</label>
-                                    <select
-                                        value={newCaseName ? '' : (selectedCaseId || '')}
-                                        onChange={(e) => {
-                                            setNewCaseName('');
-                                            handleCaseSelectChange(e);
-                                        }}
-                                        className="p-2 border rounded-md text-sm"
-                                        disabled={jobImportStatus === 'applying'}
-                                    >
-                                        <option value="">案件を選択</option>
-                                        {cases.map((item) => (
-                                            <option key={item.id} value={item.id}>{item.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="flex flex-col">
-                                    <label className="text-xs text-yellow-900">新しい案件名（任意）</label>
-                                    <input
-                                        type="text"
-                                        value={newCaseName}
-                                        onChange={(e) => setNewCaseName(e.target.value)}
-                                        placeholder="例: 佐藤家_2025"
-                                        className="p-2 border rounded-md text-sm"
-                                        disabled={jobImportStatus === 'applying'}
-                                    />
-                                </div>
                             </div>
                         </div>
 
@@ -3303,7 +3282,7 @@ const handleAddAccountClick = useCallback(() => {
                                 className="bg-yellow-600 hover:bg-yellow-700"
                                 disabled={jobImportStatus === 'applying'}
                             >
-                                {jobImportStatus === 'applying' ? '取り込み中…' : 'この内容で案件に反映'}
+                                {jobImportStatus === 'applying' ? '取り込み中…' : '取り込みを実行'}
                             </MainButton>
                         </div>
                     </section>

@@ -259,3 +259,37 @@ class GeminiClient:
             return GeminiExtraction(lines=[str(line) for line in lines], transactions=transactions)
         logger.warning("Gemini response lacked JSON payload; falling back to raw text split")
         return GeminiExtraction(lines=[line for line in text.splitlines() if line], transactions=[])
+
+    def analyze_text(self, prompt: str) -> str:
+        """Send a text prompt to Gemini and return the response text."""
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": prompt}],
+                }
+            ]
+        }
+        last_error: GeminiError | None = None
+        for index, api_key in enumerate(self.api_keys):
+            try:
+                data = self._invoke_generate(payload, api_key)
+                candidates = data.get("candidates") or []
+                if not candidates:
+                    raise GeminiError("No candidates returned from Gemini API")
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if not parts:
+                    raise GeminiError("Candidate contains no parts")
+                text = parts[0].get("text", "").strip()
+                if not text:
+                    raise GeminiError("Gemini response did not contain text")
+                return text
+            except GeminiError as exc:
+                last_error = exc
+                if exc.can_retry_key and index < len(self.api_keys) - 1:
+                    logger.warning("Gemini API key rejected (reason: %s); trying next key", exc)
+                    continue
+                raise
+        if last_error:
+            raise last_error
+        raise GeminiError("Gemini API key configuration is empty")
