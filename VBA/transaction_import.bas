@@ -22,12 +22,42 @@ Sub CSV取込ボタン_Click()
     Dim usageData As Variant
     Dim rawText As String
     Dim ws As Worksheet
+    Dim callerName As String
+    Dim shp As Shape
 
     Set ws = ActiveSheet
 
-    '1. ボタン位置の取得
-    buttonCol = ws.Shapes(Application.Caller).TopLeftCell.Column
-    buttonRow = ws.Shapes(Application.Caller).TopLeftCell.row
+    '1. ボタン位置の取得（エラーハンドリング付き）
+    On Error Resume Next
+    callerName = Application.Caller
+    If Err.Number <> 0 Or Len(callerName) = 0 Then
+        Err.Clear
+        On Error GoTo 0
+        MsgBox "ボタンから実行してください。", vbExclamation
+        Exit Sub
+    End If
+
+    Set shp = ws.Shapes(callerName)
+    If Err.Number <> 0 Or shp Is Nothing Then
+        Err.Clear
+        On Error GoTo 0
+        ' シェイプが見つからない場合、少し待ってリトライ
+        DoEvents
+        Application.Wait Now + TimeValue("00:00:01")
+        DoEvents
+        On Error Resume Next
+        Set shp = ws.Shapes(callerName)
+        If Err.Number <> 0 Or shp Is Nothing Then
+            Err.Clear
+            On Error GoTo 0
+            MsgBox "ボタンの情報を取得できませんでした。もう一度お試しください。", vbExclamation
+            Exit Sub
+        End If
+    End If
+    On Error GoTo 0
+
+    buttonCol = shp.TopLeftCell.Column
+    buttonRow = shp.TopLeftCell.Row
 
     '2. ファイルダイアログを開いてCSVファイルを選択
     filePath = SelectCSVFile()
@@ -749,12 +779,44 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim payloadText As String
     Dim filteredData As Variant
     Dim usageData As Variant
+    Dim callerName As String
+    Dim shp As Shape
 
     Call InitPdfDebugLog(targetDocType)
 
     Set ws = ActiveSheet
-    buttonCol = ws.Shapes(Application.Caller).TopLeftCell.Column
-    buttonRow = ws.Shapes(Application.Caller).TopLeftCell.row
+
+    ' Application.Callerが正しく取得できない場合のエラーハンドリング
+    On Error Resume Next
+    callerName = Application.Caller
+    If Err.Number <> 0 Or Len(callerName) = 0 Then
+        Err.Clear
+        On Error GoTo 0
+        MsgBox "ボタンから実行してください。", vbExclamation
+        Exit Sub
+    End If
+
+    Set shp = ws.Shapes(callerName)
+    If Err.Number <> 0 Or shp Is Nothing Then
+        Err.Clear
+        On Error GoTo 0
+        ' シェイプが見つからない場合、少し待ってリトライ
+        DoEvents
+        Application.Wait Now + TimeValue("00:00:01")
+        DoEvents
+        On Error Resume Next
+        Set shp = ws.Shapes(callerName)
+        If Err.Number <> 0 Or shp Is Nothing Then
+            Err.Clear
+            On Error GoTo 0
+            MsgBox "ボタンの情報を取得できませんでした。もう一度お試しください。", vbExclamation
+            Exit Sub
+        End If
+    End If
+    On Error GoTo 0
+
+    buttonCol = shp.TopLeftCell.Column
+    buttonRow = shp.TopLeftCell.Row
 
     pdfPath = SelectPdfFile()
     If pdfPath = "" Then Exit Sub

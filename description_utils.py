@@ -6,7 +6,11 @@ import unicodedata
 from typing import Any
 
 DESCRIPTION_CLEANUPS = (":selected:",)
-CARD_PREFIX_PATTERN = re.compile(r"^(?:取扱店|取扱店番号|店番|店舗番号)[:：]?\s*\d+\s*", re.IGNORECASE)
+# Pattern to remove branch info prefix (supports both half-width and full-width)
+CARD_PREFIX_PATTERN = re.compile(
+    r"^(?:取扱店|取扱店番号|店番|店舗番号|取扱局)[\s:：]*[0-9０-９]+[\s　]*",
+    re.IGNORECASE
+)
 NUMERIC_BRACKETS_PATTERN = re.compile(r"[（(]\s*[0-9０-９]+\s*[）)]")
 PAYPAY_PATTERN = re.compile(r"RT.*ペイペイ")
 CARD_EXACT_PATTERN = re.compile(r"^カード(?:\s.*)?$")
