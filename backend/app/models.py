@@ -120,21 +120,6 @@ class LedgerSessionRequest(BaseModel):
     session_token: Optional[str] = None
 
 
-class AuthRequestCode(BaseModel):
-    email: str
-
-
-class AuthVerifyRequest(BaseModel):
-    email: str
-    code: str
-
-
-class AuthVerifyResponse(BaseModel):
-    status: Literal["ok"]
-    verified: bool
-    email: str
-
-
 class LedgerSessionResponse(BaseModel):
     status: Literal["ok"]
     app_id: str

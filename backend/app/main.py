@@ -16,7 +16,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from description_utils import normalize_description
 
-from .auth_router import router as auth_router
 from .azure_analyzer import (
     AzureAnalysisError,
     AzureAnalysisResult,
@@ -51,7 +50,6 @@ settings = get_settings()
 
 app = FastAPI(title="InhTaxAutoPJ Backend", version="0.8.0")
 app.include_router(ledger_router)
-app.include_router(auth_router)
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
 SUPPORTED_GEMINI_MODELS = {"gemini-2.5-flash", "gemini-2.5-pro"}

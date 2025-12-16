@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import hashlib
-import secrets
 import sqlite3
 import threading
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
 
@@ -83,22 +80,10 @@ class LedgerStore:
                 CREATE INDEX IF NOT EXISTS idx_accounts_scope_case ON ledger_accounts(app_id, user_id, case_id);
                 CREATE INDEX IF NOT EXISTS idx_transactions_scope ON ledger_transactions(app_id, user_id);
                 CREATE INDEX IF NOT EXISTS idx_transactions_account ON ledger_transactions(account_id);
-                CREATE TABLE IF NOT EXISTS auth_codes (
-                    id TEXT PRIMARY KEY,
-                    email TEXT NOT NULL,
-                    code_hash TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    consumed INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                );
-                CREATE INDEX IF NOT EXISTS idx_auth_email ON auth_codes(email);
-                CREATE INDEX IF NOT EXISTS idx_auth_expires ON auth_codes(expires_at);
                 """
             )
             self._ensure_account_columns(conn)
             self._ensure_transaction_columns(conn)
-            self._ensure_auth_columns(conn)
 
     def _ensure_account_columns(self, conn: sqlite3.Connection) -> None:
         cursor = conn.execute("PRAGMA table_info(ledger_accounts)")
@@ -115,14 +100,6 @@ class LedgerStore:
         if "tags" not in columns:
             conn.execute("ALTER TABLE ledger_transactions ADD COLUMN tags TEXT")
             conn.execute("UPDATE ledger_transactions SET tags = '' WHERE tags IS NULL")
-
-    def _ensure_auth_columns(self, conn: sqlite3.Connection) -> None:
-        cursor = conn.execute("PRAGMA table_info(auth_codes)")
-        columns = {row[1] for row in cursor.fetchall()}
-        if "consumed" not in columns:
-            conn.execute("ALTER TABLE auth_codes ADD COLUMN consumed INTEGER NOT NULL DEFAULT 0")
-        if "updated_at" not in columns:
-            conn.execute("ALTER TABLE auth_codes ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")
 
     # ------------------------------------------------------------------
     # Case operations
@@ -182,66 +159,6 @@ class LedgerStore:
         if cases:
             return cases[0]
         return self.create_case(scope, "案件")
-
-    # ------------------------------------------------------------------
-    # Auth code operations
-    # ------------------------------------------------------------------
-
-    def issue_auth_code(self, email: str, code: str, ttl_seconds: int = 900) -> dict:
-        """Store a hashed one-time code for email verification."""
-        now = datetime.now(timezone.utc)
-        expires_at = now + timedelta(seconds=ttl_seconds)
-        code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
-        with self._connect() as conn:
-            conn.execute("DELETE FROM auth_codes WHERE expires_at < ?", (now.isoformat(),))
-            conn.execute(
-                """
-                INSERT INTO auth_codes (id, email, code_hash, expires_at, consumed, created_at)
-                VALUES (?, ?, ?, ?, 0, ?)
-                """,
-                (
-                    uuid.uuid4().hex,
-                    email.strip(),
-                    code_hash,
-                    expires_at.isoformat(),
-                    now.isoformat(),
-                ),
-            )
-        return {"email": email, "expires_at": expires_at.isoformat()}
-
-    def verify_auth_code(self, email: str, code: str) -> bool:
-        """Verify and consume the latest valid code."""
-        now = datetime.now(timezone.utc)
-        code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
-        with self._connect() as conn:
-            conn.execute("DELETE FROM auth_codes WHERE expires_at < ?", (now.isoformat(),))
-            cursor = conn.execute(
-                """
-                SELECT id, code_hash, expires_at, consumed
-                FROM auth_codes
-                WHERE email = ?
-                ORDER BY created_at DESC
-                LIMIT 5
-                """,
-                (email.strip(),),
-            )
-            rows = cursor.fetchall()
-            for row in rows:
-                if row["consumed"]:
-                    continue
-                try:
-                    expires_at = datetime.fromisoformat(row["expires_at"])
-                except ValueError:
-                    continue
-                if expires_at < now:
-                    continue
-                if secrets.compare_digest(row["code_hash"], code_hash):
-                    conn.execute(
-                        "UPDATE auth_codes SET consumed = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                        (row["id"],),
-                    )
-                    return True
-        return False
 
     # ------------------------------------------------------------------
     # Account operations
