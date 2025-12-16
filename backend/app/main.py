@@ -886,12 +886,7 @@ def _normalize_gemini_date(value: Any) -> Optional[str]:
     for candidate in candidates:
         normalized = candidate.replace(" ", "-")
         try:
-            parsed = datetime.fromisoformat(normalized).date()
-            # Geminiが2桁年を20XX形式で解釈した場合の補正
-            year = parsed.year
-            if 2000 <= year <= 2007:
-                year = _correct_misinterpreted_reiwa_year(year)
-            return datetime(year, parsed.month, parsed.day).date().isoformat()
+            return datetime.fromisoformat(normalized).date().isoformat()
         except ValueError:
             pass
         parts = normalized.split("-")
@@ -900,33 +895,11 @@ def _normalize_gemini_date(value: Any) -> Optional[str]:
             # 2桁年号のスマート推論（相続税案件向け）
             if year < 100:
                 year = _infer_full_year(year)
-            # Geminiが2桁年を20XX形式で解釈した場合の補正
-            elif 2000 <= year <= 2007:
-                year = _correct_misinterpreted_reiwa_year(year)
             try:
                 return datetime(year, month, day).date().isoformat()
             except ValueError:
                 continue
     return None
-
-
-def _correct_misinterpreted_reiwa_year(year: int) -> int:
-    """Geminiが2桁年を20XX形式で誤解釈した場合の補正
-
-    通帳の「01-12-06」を Gemini が「2001-12-06」と解釈した場合、
-    これは実際には令和1年（2019年）の可能性が高い。
-
-    変換ロジック:
-    - 2001 → 令和1年 → 2019年 (+18)
-    - 2002 → 令和2年 → 2020年 (+18)
-    - ...
-    - 2007 → 令和7年 → 2025年 (+18)
-
-    注意: この補正は相続税案件で最近の通帳を処理する場合を想定。
-    2000-2007年のデータが実際に必要な場合は別途対応が必要。
-    """
-    # 2000-2007年は令和1-7年の誤解釈として補正（+18年）
-    return year + 18
 
 
 def _infer_full_year(short_year: int) -> int:
