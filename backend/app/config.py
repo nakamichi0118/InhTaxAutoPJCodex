@@ -68,6 +68,7 @@ def get_settings() -> Settings:
         cors_allow_origins = tuple([origin.strip() for origin in cors_env.split(",") if origin.strip()])
     else:
         cors_allow_origins = (
+            "https://inhtaxautopjcodex.pages.dev",
             "https://www.sorobocr.taxlawyer328.jp",
             "http://localhost:5173",
             "http://127.0.0.1:5173",
