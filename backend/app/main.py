@@ -4,6 +4,7 @@ import base64
 import csv
 import json
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -882,6 +883,11 @@ def _normalize_gemini_date(value: Any) -> Optional[str]:
     text = str(value).strip()
     if not text:
         return None
+
+    # Geminiが「D26-01-29」のようにプレフィックス付きで返す場合の処理
+    # D=Date, H=Heisei, R=Reiwa, S=Showa などのプレフィックスを除去
+    text = re.sub(r'^[DHRS]\s*', '', text, flags=re.IGNORECASE)
+
     candidates = [text, text.replace("/", "-"), text.replace(".", "-")]
     for candidate in candidates:
         normalized = candidate.replace(" ", "-")
