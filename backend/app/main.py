@@ -45,9 +45,13 @@ from .models import (
 )
 from .parser import build_assets, detect_document_type
 from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
+from .date_inference import DateInferenceEngine, DateInferenceContext
 
 logger = logging.getLogger("uvicorn.error")
 settings = get_settings()
+
+# 日付推論エンジン（2桁年号のスマート推論用）
+date_inference_engine = DateInferenceEngine()
 
 app = FastAPI(title="InhTaxAutoPJ Backend", version="0.8.0")
 app.include_router(ledger_router)
@@ -898,9 +902,9 @@ def _normalize_gemini_date(value: Any) -> Optional[str]:
         parts = normalized.split("-")
         if len(parts) == 3 and all(part.isdigit() for part in parts):
             year, month, day = map(int, parts)
-            # 2桁年号のスマート推論（相続税案件向け）
+            # 2桁年号のスマート推論（DateInferenceEngine使用）
             if year < 100:
-                year = _infer_full_year(year)
+                year = _infer_full_year(year, month, day)
             try:
                 return datetime(year, month, day).date().isoformat()
             except ValueError:
@@ -908,29 +912,27 @@ def _normalize_gemini_date(value: Any) -> Optional[str]:
     return None
 
 
-def _infer_full_year(short_year: int) -> int:
-    """2桁年号から西暦4桁を推論する（相続税案件向けスマート推論）
+def _infer_full_year(short_year: int, month: int = 1, day: int = 1, bank_code: Optional[str] = None) -> int:
+    """2桁年号から西暦4桁を推論する（DateInferenceEngine使用）
 
-    推論ロジック:
-    - 1-現在の令和年 → 令和（例: 令和7年なら1-7は2019-2025年）
-    - 8-31 → 平成（H8-H31 = 1996-2019年）
-    - 32-64 → 昭和（S32-S64 = 1957-1989年）
-    - 65-99 → 1900年代後半（1965-1999年）
+    推論ロジック（優先順位）:
+    1. 32以上 → 確実に西暦2桁（2032年以降）
+    2. 金融機関コードから判定（既知の西暦/和暦銀行）
+    3. 8-31 → 高確率で平成（H8-H31 = 1996-2019年）
+    4. 1-7 → 曖昧ゾーン（コンテキストとデフォルトルールで判断）
+
+    Args:
+        short_year: 2桁の年号（0-99）
+        month: 月（デフォルト1、日付検証用）
+        day: 日（デフォルト1、日付検証用）
+        bank_code: 金融機関コード（4桁、オプション）
+
+    Returns:
+        西暦4桁年
     """
-    current_reiwa = datetime.now().year - 2018
-
-    # 1-現在の令和年なら令和と推定
-    if 1 <= short_year <= current_reiwa:
-        return 2018 + short_year  # 令和
-
-    if short_year <= 31:
-        return 1988 + short_year  # 平成
-    if short_year <= 64:
-        return 1925 + short_year  # 昭和
-    if short_year >= 65:
-        return 1900 + short_year  # 1900年代後半
-
-    return 2000 + short_year
+    context = DateInferenceContext(bank_code=bank_code) if bank_code else None
+    result = date_inference_engine.infer_date(short_year, month, day, context)
+    return result.year
 
 
 def _parse_gemini_amount(value: Any) -> Optional[float]:
