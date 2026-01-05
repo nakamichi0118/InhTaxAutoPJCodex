@@ -850,7 +850,7 @@ def _convert_gemini_structured_transactions(
         if not isinstance(item, dict):
             continue
         date_value = item.get("date") or item.get("transaction_date")
-        transaction_date = _normalize_gemini_date(date_value)
+        transaction_date = _normalize_gemini_date(date_value, date_format=date_format)
         description = str(item.get("description") or item.get("memo") or "").strip() or None
         withdrawal = _parse_gemini_amount(
             item.get("withdrawal")
@@ -881,7 +881,16 @@ def _convert_gemini_structured_transactions(
     return transactions
 
 
-def _normalize_gemini_date(value: Any) -> Optional[str]:
+def _normalize_gemini_date(value: Any, date_format: str = "auto") -> Optional[str]:
+    """Geminiから返された日付文字列を正規化する。
+
+    Args:
+        value: 日付値（文字列、数値など）
+        date_format: 日付形式 ("auto", "western", "wareki")
+            - "western": 西暦2桁として解釈（20 → 2020年）
+            - "wareki": 和暦として解釈（推論エンジン使用）
+            - "auto": 自動判定（推論エンジン使用）
+    """
     if not value:
         return None
     text = str(value).strip()
@@ -902,9 +911,9 @@ def _normalize_gemini_date(value: Any) -> Optional[str]:
         parts = normalized.split("-")
         if len(parts) == 3 and all(part.isdigit() for part in parts):
             year, month, day = map(int, parts)
-            # 2桁年号のスマート推論（DateInferenceEngine使用）
+            # 2桁年号の変換
             if year < 100:
-                year = _infer_full_year(year, month, day)
+                year = _infer_full_year(year, month, day, date_format=date_format)
             try:
                 return datetime(year, month, day).date().isoformat()
             except ValueError:
@@ -912,24 +921,38 @@ def _normalize_gemini_date(value: Any) -> Optional[str]:
     return None
 
 
-def _infer_full_year(short_year: int, month: int = 1, day: int = 1, bank_code: Optional[str] = None) -> int:
-    """2桁年号から西暦4桁を推論する（DateInferenceEngine使用）
-
-    推論ロジック（優先順位）:
-    1. 32以上 → 確実に西暦2桁（2032年以降）
-    2. 金融機関コードから判定（既知の西暦/和暦銀行）
-    3. 8-31 → 高確率で平成（H8-H31 = 1996-2019年）
-    4. 1-7 → 曖昧ゾーン（コンテキストとデフォルトルールで判断）
+def _infer_full_year(
+    short_year: int,
+    month: int = 1,
+    day: int = 1,
+    bank_code: Optional[str] = None,
+    date_format: str = "auto",
+) -> int:
+    """2桁年号から西暦4桁を推論する。
 
     Args:
         short_year: 2桁の年号（0-99）
         month: 月（デフォルト1、日付検証用）
         day: 日（デフォルト1、日付検証用）
         bank_code: 金融機関コード（4桁、オプション）
+        date_format: 日付形式 ("auto", "western", "wareki")
 
     Returns:
         西暦4桁年
+
+    推論ロジック:
+    - date_format="western" → 常に西暦2桁として解釈（20 → 2020年）
+    - date_format="wareki" or "auto" → DateInferenceEngine使用
+        1. 32以上 → 確実に西暦2桁（2032年以降）
+        2. 金融機関コードから判定（既知の西暦/和暦銀行）
+        3. 8-31 → 高確率で平成（H8-H31 = 1996-2019年）
+        4. 1-7 → 曖昧ゾーン（コンテキストとデフォルトルールで判断）
     """
+    # 西暦フォーマット指定時は単純に2000年代として解釈
+    if date_format == "western":
+        return 2000 + short_year
+
+    # auto または wareki の場合は推論エンジンを使用
     context = DateInferenceContext(bank_code=bank_code) if bank_code else None
     result = date_inference_engine.infer_date(short_year, month, day, context)
     return result.year

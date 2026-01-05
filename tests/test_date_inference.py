@@ -195,3 +195,44 @@ class TestRealWorldScenarios:
         """26-01-29 → H26/01/29 = 2014-01-29（平成26年）"""
         result = engine.infer_date(26, 1, 29)
         assert result.year == 2014, f"Expected 2014 (H26), got {result.year}"
+
+
+class TestDateFormatParameter:
+    """date_format パラメータのテスト（main.py の関数）"""
+
+    def test_western_format_20(self):
+        """西暦フォーマット: 20 → 2020年"""
+        from backend.app.main import _infer_full_year
+        result = _infer_full_year(20, 2, 14, date_format="western")
+        assert result == 2020
+
+    def test_western_format_21(self):
+        """西暦フォーマット: 21 → 2021年"""
+        from backend.app.main import _infer_full_year
+        result = _infer_full_year(21, 6, 21, date_format="western")
+        assert result == 2021
+
+    def test_western_format_08(self):
+        """西暦フォーマット: 08 → 2008年"""
+        from backend.app.main import _infer_full_year
+        result = _infer_full_year(8, 3, 15, date_format="western")
+        assert result == 2008
+
+    def test_auto_format_uses_engine(self):
+        """autoフォーマット: 推論エンジンを使用"""
+        from backend.app.main import _infer_full_year
+        # 17 → H17 = 2005年（平成として推論）
+        result = _infer_full_year(17, 11, 24, date_format="auto")
+        assert result == 2005
+
+    def test_normalize_gemini_date_western(self):
+        """_normalize_gemini_date with western format"""
+        from backend.app.main import _normalize_gemini_date
+        assert _normalize_gemini_date("20-2-14", date_format="western") == "2020-02-14"
+        assert _normalize_gemini_date("21-06-21", date_format="western") == "2021-06-21"
+
+    def test_normalize_gemini_date_auto(self):
+        """_normalize_gemini_date with auto format"""
+        from backend.app.main import _normalize_gemini_date
+        assert _normalize_gemini_date("01-12-06", date_format="auto") == "2019-12-06"
+        assert _normalize_gemini_date("17-11-24", date_format="auto") == "2005-11-24"
