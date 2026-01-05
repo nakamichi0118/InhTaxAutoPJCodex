@@ -886,6 +886,7 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim shp As Shape
     Dim retryCount As Integer
     Dim dummy As Long
+    Dim dateFmt As String
 
     Call InitPdfDebugLog(targetDocType)
 
@@ -937,7 +938,11 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     minAmount = PromptPdfMinimumAmount()
     If minAmount = -1 Then Exit Sub
 
-    payloadText = FetchTransactionsJsonText(pdfPath, targetDocType)
+    ' 日付形式の選択
+    dateFmt = PromptDateFormatSelection()
+    If Len(dateFmt) = 0 Then Exit Sub
+
+    payloadText = FetchTransactionsJsonText(pdfPath, targetDocType, dateFmt)
     If Len(payloadText) = 0 Then
         MsgBox "PDF の読み取りに失敗しました。設定値とネットワークを確認してください。", vbExclamation
         Exit Sub
@@ -1082,7 +1087,7 @@ Private Function SelectPdfFile() As String
     Set fd = Nothing
 End Function
 
-Private Function FetchTransactionsJsonText(pdfPath As String, overrideDocType As String) As String
+Private Function FetchTransactionsJsonText(pdfPath As String, overrideDocType As String, dateFormat As String) As String
     On Error GoTo ErrHandler
     Dim baseUrl As String
     Dim apiKey As String
@@ -1108,7 +1113,12 @@ Private Function FetchTransactionsJsonText(pdfPath As String, overrideDocType As
     apiKey = GetConfigValue("API_KEY")
     docType = ResolveDocumentType(overrideDocType)
     If Len(docType) = 0 Then GoTo Cleanup
-    dateFmt = GetOptionalConfigValue("DATE_FORMAT", "auto")
+    ' 引数で渡された日付形式を使用（空の場合は設定シートから取得）
+    If Len(dateFormat) > 0 Then
+        dateFmt = dateFormat
+    Else
+        dateFmt = GetOptionalConfigValue("DATE_FORMAT", "auto")
+    End If
     maxWaitSeconds = CLng(GetOptionalConfigValue("JOB_MAX_WAIT_SECONDS", "900"))
     pollIntervalMs = CLng(GetOptionalConfigValue("JOB_POLL_INTERVAL_MS", "4000"))
     If pollIntervalMs < 500 Then pollIntervalMs = 500
@@ -2170,6 +2180,29 @@ Private Function PromptDocTypeSelection(defaultType As String) As String
                 Exit Function
         End Select
     Loop
+End Function
+
+Private Function PromptDateFormatSelection() As String
+    Dim prompt As String
+    Dim choice As VbMsgBoxResult
+
+    prompt = "通帳の日付表記を選択してください：" & vbCrLf & vbCrLf & _
+             "【はい】西暦（みずほ銀行など）" & vbCrLf & _
+             "　例: 20-02-14 → 2020年2月14日" & vbCrLf & vbCrLf & _
+             "【いいえ】和暦（三菱UFJ、ゆうちょなど）" & vbCrLf & _
+             "　例: 01-12-06 → 令和1年12月6日" & vbCrLf & _
+             "　例: 17-11-24 → 平成17年11月24日" & vbCrLf & vbCrLf & _
+             "※ 不明な場合は「いいえ」を選択（自動判定）"
+
+    choice = MsgBox(prompt, vbQuestion + vbYesNoCancel, "日付形式の選択")
+    Select Case choice
+        Case vbYes
+            PromptDateFormatSelection = "western"
+        Case vbNo
+            PromptDateFormatSelection = "auto"
+        Case vbCancel
+            PromptDateFormatSelection = ""
+    End Select
 End Function
 
 
