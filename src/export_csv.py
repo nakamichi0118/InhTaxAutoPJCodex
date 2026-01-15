@@ -12,6 +12,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
+from description_utils import normalize_description
+
 ASSET_EXPORT_COLUMNS: Sequence[Tuple[str, str]] = (
     ("source_document", "書類名"),
     ("asset_category", "カテゴリ"),
@@ -31,6 +33,31 @@ TRANSACTION_EXPORT_COLUMNS: Sequence[Tuple[str, str]] = (
     ("deposit_amount", "入金"),
     ("balance", "残高"),
     ("correction_note", "補正メモ"),
+)
+
+# 土地用エクスポートカラム（名寄帳から抽出、持分・登記地目は手入力用に空欄）
+LAND_EXPORT_COLUMNS: Sequence[Tuple[str, str]] = (
+    ("location_municipality", "市区町村"),
+    ("location_detail", "所在地・地番"),
+    ("land_category_tax", "地目（課税）"),
+    ("land_category_registry", "地目（登記）"),  # 手入力欄
+    ("area", "地積（㎡）"),
+    ("valuation_amount", "評価額"),
+    ("ownership_share", "持分"),  # 手入力欄
+    ("notes", "備考"),
+)
+
+# 家屋用エクスポートカラム（名寄帳から抽出、持分は手入力用に空欄）
+BUILDING_EXPORT_COLUMNS: Sequence[Tuple[str, str]] = (
+    ("location_municipality", "市区町村"),
+    ("location_detail", "所在地・家屋番号"),
+    ("structure", "構造"),
+    ("floors", "階数"),
+    ("area", "床面積（㎡）"),
+    ("built_year", "建築年"),
+    ("valuation_amount", "評価額"),
+    ("ownership_share", "持分"),  # 手入力欄
+    ("notes", "備考"),
 )
 
 JAPANESE_ERA_BASE_YEAR = {
@@ -113,12 +140,14 @@ class AssetRecord:
                 if not isinstance(txn, dict):
                     continue
                 transaction_id = f"{self.record_id}-{index:04d}"
+                raw_description = txn.get("description")
+                normalized_description = normalize_description(raw_description)
                 yield {
                     "record_id": self.record_id,
                     "transaction_id": transaction_id,
                     "transaction_date": normalize_date(txn.get("transaction_date")),
                     "value_date": normalize_date(txn.get("value_date")),
-                    "description": clean_text(txn.get("description")),
+                    "description": normalized_description,
                     "withdrawal_amount": normalize_decimal(txn.get("withdrawal_amount")),
                     "deposit_amount": normalize_decimal(txn.get("deposit_amount")),
                     "balance": normalize_decimal(txn.get("balance")),

@@ -235,8 +235,8 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
     Set ws = Worksheets("預金推移")
 
     '範囲を取得
-    gyouhajime = ws.Range("A1:A1000").Find("資金移動始").row
-    gyousaigo = ws.Range("A1:A1000").Find("資金移動終").row
+    gyouhajime = ws.Range("A1:A10000").Find("資金移動始").row
+    gyousaigo = ws.Range("A1:A10000").Find("資金移動終").row
     retuhajime = ws.Range("C1:BZ1").Find("資金移動始").Column
     retusaigo = ws.Range("C1:DZ1").Find("資金移動終").Column
 
@@ -307,8 +307,8 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
     Next i
 
     '範囲を再取得してソート
-    gyouhajime = ws.Range("A1:A1000").Find("資金移動始").row
-    gyousaigo = ws.Range("A1:A1000").Find("資金移動終").row
+    gyouhajime = ws.Range("A1:A10000").Find("資金移動始").row
+    gyousaigo = ws.Range("A1:A10000").Find("資金移動終").row
     retuhajime = ws.Range("C1:BZ1").Find("資金移動始").Column
     retusaigo = ws.Range("C1:DZ1").Find("資金移動終").Column
 
@@ -392,8 +392,8 @@ Sub UpdateBorders()
 
     Set ws = Worksheets("預金推移")
 
-    gyouhajime = ws.Range("A1:A1000").Find("資金移動始").row
-    gyousaigo = ws.Range("A1:A1000").Find("資金移動終").row
+    gyouhajime = ws.Range("A1:A10000").Find("資金移動始").row
+    gyousaigo = ws.Range("A1:A10000").Find("資金移動終").row
     retuhajime = ws.Range("C1:BZ1").Find("資金移動始").Column
     retusaigo = ws.Range("C1:DZ1").Find("資金移動終").Column
 

@@ -47,7 +47,12 @@ def detect_document_type(lines: Iterable[str]) -> DocumentType:
     bank_keywords = ("普通預金", "通帳", "預金", "入出金", "通常貯金", "預払状況調書", "ゆうちょ")
     if any(keyword in joined for keyword in bank_keywords):
         return "bank_deposit"
-    if any(keyword in joined for keyword in ("固定資産税", "地番", "家屋")):
+    # 名寄帳・固定資産評価証明書・納税通知書（課税明細）
+    nayose_keywords = ("名寄帳", "固定資産評価", "課税明細", "納税通知書", "固定資産税", "評価証明書")
+    if any(keyword in joined for keyword in nayose_keywords):
+        return "nayose"
+    # 登記簿（個別の土地・家屋）- 名寄帳以外の不動産書類
+    if any(keyword in joined for keyword in ("地番", "家屋番号", "登記簿")):
         return "land"
     return "unknown"
 
@@ -284,14 +289,33 @@ def convert_to_iso(groups: Tuple[str, str, str]) -> Optional[str]:
 
 
 def convert_year(value: int) -> int:
+    """2桁年号から西暦4桁を推論する（相続税案件向けスマート推論）
+
+    推論ロジック:
+    - 1-現在の令和年 → 令和（例: 令和7年なら1-7は2019-2025年）
+    - 8-31 → 平成（H8-H31 = 1996-2019年）
+    - 32-64 → 昭和（S32-S64 = 1957-1989年）
+    - 65-99 → 1900年代後半（1965-1999年）
+    """
     if value >= 2000:
         return value
-    if 32 <= value <= 64:
-        return 1925 + value  # 昭和
-    if 6 <= value <= 31:
-        return 1988 + value  # 平成
-    if 1 <= value <= 5:
+    if value >= 100:
+        return value  # Already a full year
+
+    # 現在の令和年を動的に計算
+    current_reiwa = datetime.now().year - 2018
+
+    # 1-現在の令和年なら令和と推定
+    if 1 <= value <= current_reiwa:
         return 2018 + value  # 令和
+
+    if value <= 31:
+        return 1988 + value  # 平成
+    if value <= 64:
+        return 1925 + value  # 昭和
+    if value >= 65:
+        return 1900 + value  # 1900年代後半
+
     return 2000 + value
 
 
@@ -607,6 +631,8 @@ def normalize_owner_candidate(candidate: Optional[str]) -> Optional[str]:
 def build_assets(document_type: DocumentType, lines: List[str], source_name: str) -> List[AssetRecord]:
     if document_type == "bank_deposit":
         return parse_bankbook(lines, source_name)
+    # nayose documents are handled separately in main.py with Gemini extraction
+    # This fallback returns a placeholder asset with raw lines
     asset = AssetRecord(
         category=document_type,
         source_document=source_name,

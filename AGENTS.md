@@ -12,6 +12,9 @@ Target Python 3.11+, use four-space indentation, and prefer explicit type hints.
 ## Testing Guidelines
 No automated suite exists yet, so rely on fixtures inside `examples/` and PDFs under `test/`. After parser or exporter changes, regenerate CSVs into `dist/` and confirm headers, row counts, and BOM preservation. For API updates, post a sample payload to `/api/export`, verify the response writes valid CSV files, and attach representative snippets to reviews.
 
+## Communication
+Always deliver status reports and final responses to the user in Japanese.
+
 ## Commit & Pull Request Guidelines
 Write imperative, present-tense commit messages (e.g., `Adjust bankbook parser for multi-page statements`). Pull requests should explain motivation, summarize behavioral changes, reference related tickets, and list manual checks performed. Include CSV diffs or API response samples whenever behavior shifts, exclude `.env` or credentials, and clean temporary files before pushing.
 

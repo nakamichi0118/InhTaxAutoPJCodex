@@ -44,6 +44,7 @@ from .models import (
     TransactionLine,
 )
 from .parser import build_assets, detect_document_type
+from .parsers.nayose_parser import parse_nayose_response
 from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
 from .date_inference import DateInferenceEngine, DateInferenceContext
 
@@ -53,7 +54,7 @@ settings = get_settings()
 # 日付推論エンジン（2桁年号のスマート推論用）
 date_inference_engine = DateInferenceEngine()
 
-app = FastAPI(title="InhTaxAutoPJ Backend", version="0.8.0")
+app = FastAPI(title="InhTaxAutoPJ Backend", version="0.9.0")
 app.include_router(ledger_router)
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
@@ -254,6 +255,21 @@ def _with_pdf_chunks(
                 max_bytes=current_plan.max_bytes,
                 max_pages=max(1, current_plan.max_pages // 2),
             )
+
+
+def _analyze_nayose_with_gemini(
+    contents: bytes,
+    settings,
+    source_name: str,
+    *,
+    model_override: Optional[str] = None,
+) -> List[AssetRecord]:
+    """Analyze a 名寄帳/固定資産評価証明書 PDF and extract property records."""
+    model = model_override or settings.gemini_model
+    client = GeminiClient(api_keys=settings.gemini_api_keys, model=model)
+    response_text = client.extract_nayose_from_pdf(contents)
+    assets = parse_nayose_response(response_text, source_name)
+    return assets
 
 
 def _analyze_with_gemini(
@@ -1024,6 +1040,16 @@ def _resolve_document_assets(
             progress_reporter=progress_reporter,
         )
         return detected_type, azure_result.assets, azure_result.raw_lines
+
+    # 名寄帳・固定資産評価証明書の場合は専用のGemini抽出を使用
+    if detected_type == "nayose":
+        try:
+            assets = _analyze_nayose_with_gemini(contents, settings, source_name)
+            return "nayose", assets, lines
+        except GeminiError as exc:
+            logger.error("Nayose Gemini extraction failed: %s", exc)
+            # フォールバック: 通常の処理を継続
+            pass
 
     assets = build_assets(detected_type, lines, source_name=source_name)
     return detected_type, assets, lines
