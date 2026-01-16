@@ -529,7 +529,7 @@
             <span class="hero-subtitle">相続書類 AI オートメーション</span>
             <h1>SOROBOCR</h1>
                     <p class="tagline">相続財産に関わる PDF・スキャンデータをまとめて解析し、分類から CSV 出力までをワンストップで支援します。</p>
-                <p class="version">バージョン 0.8.0</p>
+                <p class="version">バージョン 0.9.0</p>
             <div class="header-links">
                 <a href="./help.html" target="_blank" rel="noopener">使い方・FAQ</a>
                 <a href="./ledger/" target="_blank" rel="noopener" class="secondary-link">入出金検討表ツール（FastAPI保存）</a>
@@ -761,16 +761,16 @@
         {
             id: 'land',
             label: '土地',
-            description: '土地に関する評価・登記簿は現在準備中です。',
-            docType: 'land',
-            allowUpload: false,
+            description: '名寄帳・固定資産評価証明書・課税明細書などをアップロードしてください。土地の所在地・地番・地目・地積・評価額を読み取ります。',
+            docType: 'nayose',
+            allowUpload: true,
         },
         {
             id: 'building',
             label: '家屋',
-            description: '家屋の書類アップロードは近日対応予定です。',
-            docType: 'building',
-            allowUpload: false,
+            description: '名寄帳・固定資産評価証明書・課税明細書などをアップロードしてください。家屋の所在地・家屋番号・構造・床面積・評価額を読み取ります。',
+            docType: 'nayose',
+            allowUpload: true,
         },
         {
             id: 'securities',
@@ -818,6 +818,7 @@
         '': '自動判定',
         bank_deposit: '通帳（預貯金）',
         transaction_history: '取引履歴',
+        nayose: '名寄帳・固定資産評価証明書',
         land: '土地',
         building: '家屋',
         securities: '有価証券',

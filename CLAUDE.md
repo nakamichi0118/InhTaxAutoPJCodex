@@ -80,6 +80,39 @@ Run unit tests with `pytest tests/`. Manual validation:
 2. Test API endpoints via `POST /api/analyze/pdf`
 3. Use sample PDFs in `test/` directory
 
+## デプロイ後の検証手順（Claude Code向け）
+
+フロントエンドやバックエンドの変更をデプロイした後は、以下の手順で動作確認を行うこと。
+
+### フロントエンド検証
+
+1. サーバー起動: `uvicorn backend.app.main:app --reload`
+2. ブラウザで <http://localhost:8000> を開く
+3. 変更した機能のスクリーンショットを撮影して確認
+4. 特にタブの有効/無効状態、UIの表示を目視確認
+
+### バックエンドAPI検証
+
+```bash
+# ヘルスチェック
+curl http://localhost:8000/api/ping
+
+# PDF解析テスト（名寄帳の場合）
+curl -X POST http://localhost:8000/api/analyze/pdf \
+  -F "file=@test/fixtures/nayose_sample.pdf" \
+  -F "doc_type=nayose"
+
+# ジョブ結果取得
+curl http://localhost:8000/api/jobs/{job_id}/result
+```
+
+### 確認チェックリスト
+
+- [ ] 該当タブが「準備中」表示でないこと
+- [ ] ファイルアップロードが可能なこと
+- [ ] API応答が期待通りであること
+- [ ] CSVエクスポートが正常に動作すること
+
 ## Code Conventions
 
 - Python 3.11+, 4-space indentation, explicit type hints
@@ -87,8 +120,32 @@ Run unit tests with `pytest tests/`. Manual validation:
 - CSVs output with UTF-8 BOM for Windows Excel compatibility
 - All user-facing responses in Japanese
 
+## Versioning
+
+本プロジェクトはセマンティックバージョニング（MAJOR.MINOR.PATCH）に準拠。詳細は `Docs/VERSIONING.md` を参照。
+
+### バージョン更新手順
+
+1. `VERSION` ファイルを更新
+2. `backend/app/main.py` の `version` を更新
+3. `webapp/index.html` の `<p class="version">` を更新
+4. `Docs/CHANGELOG.md` に変更内容を記載
+5. コミット & プッシュ
+6. タグ付け（リリース時のみ）: `git tag -a v0.x.x -m "Release v0.x.x"`
+
+### コミットメッセージ規則
+
+- `feat:` 新機能追加
+- `fix:` バグ修正
+- `docs:` ドキュメント変更
+- `refactor:` リファクタリング
+- `test:` テスト追加・修正
+- `chore:` ビルド・設定変更
+
 ## Key Specifications
 
 - `Docs/CSV_SPEC.md` - CSV schema and intermediate JSON format
 - `Docs/USAGE.md` - User guide and FAQ
+- `Docs/VERSIONING.md` - バージョン管理規約
+- `Docs/CHANGELOG.md` - 変更履歴
 - `AGENTS.md` - Progress log and historical context
