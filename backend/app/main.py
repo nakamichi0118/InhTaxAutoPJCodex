@@ -54,7 +54,7 @@ settings = get_settings()
 # 日付推論エンジン（2桁年号のスマート推論用）
 date_inference_engine = DateInferenceEngine()
 
-app = FastAPI(title="InhTaxAutoPJ Backend", version="0.9.0")
+app = FastAPI(title="InhTaxAutoPJ Backend", version="0.9.1")
 app.include_router(ledger_router)
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
@@ -1062,6 +1062,53 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     with open(job.file_path, "rb") as stream:
         contents = stream.read()
     source_name = job.file_name or "uploaded.pdf"
+
+    # 名寄帳・固定資産評価証明書の場合は専用処理
+    if job.document_type_hint == "nayose":
+        handle.update(
+            stage="analyzing",
+            detail="名寄帳を解析しています…",
+            processed_chunks=0,
+            total_chunks=1,
+        )
+        try:
+            nayose_timer = time.perf_counter()
+            assets = _analyze_nayose_with_gemini(contents, settings, source_name)
+            _log_timing(job.job_id, "NAYOSE_GEMINI", 0, nayose_timer)
+
+            export_assets: List[dict] = [asset.to_export_payload() for asset in assets]
+            payload = {"assets": export_assets}
+            csv_map = export_to_csv_strings(payload)
+            files_map = {
+                name: base64.b64encode(content.encode("utf-8-sig")).decode("ascii")
+                for name, content in csv_map.items()
+            }
+            # 土地・家屋の件数をカウント
+            land_count = sum(1 for a in assets if a.category == "land")
+            building_count = sum(1 for a in assets if a.category == "building")
+            detail_msg = f"完了（土地: {land_count}件、家屋: {building_count}件）"
+
+            handle.update(
+                status="completed",
+                stage="completed",
+                detail=detail_msg,
+                document_type="nayose",
+                result_files=files_map,
+                partial_files=files_map,
+                processed_chunks=1,
+                total_chunks=1,
+                assets_payload=export_assets,
+            )
+            _log_timing(job.job_id, "TOTAL_JOB", 0, job_timer)
+            return
+        except GeminiError as exc:
+            logger.error("Nayose Gemini extraction failed: %s", exc)
+            handle.update(
+                status="failed",
+                stage="failed",
+                detail=f"名寄帳解析エラー: {exc}",
+            )
+            return
 
     if job.processing_mode == "gemini":
         model_label = job.gemini_model or settings.gemini_model
