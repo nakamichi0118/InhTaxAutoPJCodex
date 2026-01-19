@@ -16,6 +16,8 @@ class TransactionLine(BaseModel):
     balance: Optional[float] = None
     line_confidence: Optional[float] = None
     correction_note: Optional[str] = None
+    line_order: Optional[int] = Field(default=None, description="OCR読み取り順序（同日取引の並び順保持用）")
+    account_type: Optional[str] = Field(default=None, description="口座種別: ordinary_deposit, time_deposit")
 
 
 class AssetRecord(BaseModel):

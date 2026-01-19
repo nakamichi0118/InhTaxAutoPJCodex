@@ -529,10 +529,10 @@
             <span class="hero-subtitle">相続書類 AI オートメーション</span>
             <h1>SOROBOCR</h1>
                     <p class="tagline">相続財産に関わる PDF・スキャンデータをまとめて解析し、分類から CSV 出力までをワンストップで支援します。</p>
-                <p class="version">バージョン 0.9.1</p>
+                <p class="version">バージョン 0.10.0</p>
             <div class="header-links">
                 <a href="./help.html" target="_blank" rel="noopener">使い方・FAQ</a>
-                <a href="./ledger/" target="_blank" rel="noopener" class="secondary-link">入出金検討表ツール（FastAPI保存）</a>
+                <a href="./ledger/" target="_blank" rel="noopener" class="secondary-link">入出金検討表ツール β版</a>
             </div>
         </div>
     </div>
@@ -569,11 +569,11 @@
         <div id="downloadList" class="summary-list" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));"></div>
         <div id="ledgerShortcut" class="ledger-cta">
             <div>
-                <h3>入出金検討表ツールに送る</h3>
+                <h3>入出金検討表ツールに送る（β版）</h3>
                 <p id="ledgerPendingMessage">CSV を保存した後、ブラウザ上で入出金を並べ替え・色付けできるツールを開けます。</p>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:0.8rem;align-items:center;">
-                <button type="button" class="primary small" id="openLedgerButton">入出金検討表を新しいタブで開く</button>
+                <button type="button" class="primary small" id="openLedgerButton">入出金検討表を開く（β版）</button>
                 <span style="font-size:0.8rem;color:#475569;">※FastAPI (Railway) にCSVを保存し、ブラウザだけで編集できます。</span>
             </div>
         </div>
@@ -1117,7 +1117,38 @@
                     dateControls.appendChild(dateSelect);
 
                     controlsContainer.appendChild(dateControls);
+
+                    // 読取開始日の入力欄
+                    const startDateControls = document.createElement('div');
+                    startDateControls.className = 'input-row';
+
+                    const startDateLabel = document.createElement('label');
+                    startDateLabel.style.fontSize = '0.9rem';
+                    startDateLabel.style.color = '#1f3b8c';
+                    startDateLabel.textContent = '読取開始日（任意）';
+                    startDateControls.appendChild(startDateLabel);
+
+                    const startDateInput = document.createElement('input');
+                    startDateInput.type = 'date';
+                    startDateInput.className = 'text-input';
+                    startDateInput.style.width = '180px';
+                    startDateInput.placeholder = 'YYYY-MM-DD';
+                    startDateControls.appendChild(startDateInput);
+
+                    const startDateHint = document.createElement('span');
+                    startDateHint.style.fontSize = '0.8rem';
+                    startDateHint.style.color = '#6b7280';
+                    startDateHint.textContent = 'この日以降の取引のみを読み込みます';
+                    startDateControls.appendChild(startDateHint);
+
+                    controlsContainer.appendChild(startDateControls);
                 }
+
+                // startDateInputのゲッター（dateFormatと同じスコープで定義）
+                const getStartDate = () => {
+                    const input = controlsContainer.querySelector('input[type="date"]');
+                    return input ? input.value : '';
+                };
 
                 const modeControls = document.createElement('div');
                 modeControls.className = 'input-row';
@@ -1197,14 +1228,15 @@
                             tab,
                             event.dataTransfer.files,
                             () => dateSelect?.value || 'auto',
-                            getDocType
+                            getDocType,
+                            getStartDate
                         );
                     }
                 });
 
                 hiddenInput.addEventListener('change', (event) => {
                     if (event.target.files && event.target.files.length) {
-                        handleTabFiles(tab, event.target.files, () => dateSelect?.value || 'auto', getDocType);
+                        handleTabFiles(tab, event.target.files, () => dateSelect?.value || 'auto', getDocType, getStartDate);
                         hiddenInput.value = '';
                     }
                 });
@@ -1240,13 +1272,14 @@
         });
     }
 
-    function handleTabFiles(tab, fileList, getDateFormat, getDocType) {
+    function handleTabFiles(tab, fileList, getDateFormat, getDocType, getStartDate) {
         processFiles(fileList, {
             tabId: tab.id,
             label: tab.label,
             docType: tab.docType,
             getDocType,
             dateFormat: getDateFormat ? getDateFormat() : 'auto',
+            startDate: getStartDate ? getStartDate() : '',
             getProcessingConfig: () => getProcessingModeConfig(),
         });
     }
@@ -1274,6 +1307,7 @@
             : () => getProcessingModeConfig();
         const label = tabConfig.label || '';
         const dateFormat = normalizeDateFormat(tabConfig.dateFormat);
+        const startDate = tabConfig.startDate || '';
         const initialDocType = docTypeGetter() || '';
         const docTypeLabel = describeDocType(initialDocType);
         const prefixParts = [];
@@ -1300,7 +1334,7 @@
             }
             try {
                 const processingConfig = processingConfigGetter() || {};
-                const doc = await handleSingleFile(file, currentDocType, dateFormat, processingConfig);
+                const doc = await handleSingleFile(file, currentDocType, dateFormat, processingConfig, startDate);
                 state.documents.push(doc);
                 state.activeDocId = doc.id;
                 notifyCompletion(doc);
@@ -1357,10 +1391,10 @@
         );
     }
 
-    async function handleSingleFile(file, docType, dateFormat, processingConfig = {}) {
+    async function handleSingleFile(file, docType, dateFormat, processingConfig = {}, startDate = '') {
         setStatus(`「${file.name}」の解析ジョブを登録しています…`, 'info');
         const startedAt = performance.now();
-        const jobId = await enqueueJob(file, docType, dateFormat, processingConfig);
+        const jobId = await enqueueJob(file, docType, dateFormat, processingConfig, startDate);
         const result = await pollJobUntilComplete(jobId, { fileName: file.name });
         const assets = Array.isArray(result.assets) ? result.assets : [];
         if (!assets.length) {
@@ -1380,7 +1414,7 @@
         };
     }
 
-    async function enqueueJob(file, docType, dateFormat, processingConfig = {}) {
+    async function enqueueJob(file, docType, dateFormat, processingConfig = {}, startDate = '') {
         const base = normalizedApiBase();
         const form = new FormData();
         form.append('file', file);
@@ -1395,6 +1429,9 @@
         }
         if (processingConfig && processingConfig.gemini_model) {
             form.append('gemini_model', processingConfig.gemini_model);
+        }
+        if (startDate) {
+            form.append('start_date', startDate);
         }
         const res = await fetchWithAbort(`${base}/jobs`, {
             method: 'POST',

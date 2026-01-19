@@ -54,7 +54,7 @@ settings = get_settings()
 # 日付推論エンジン（2桁年号のスマート推論用）
 date_inference_engine = DateInferenceEngine()
 
-app = FastAPI(title="InhTaxAutoPJ Backend", version="0.9.1")
+app = FastAPI(title="InhTaxAutoPJ Backend", version="0.10.0")
 app.include_router(ledger_router)
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
@@ -74,6 +74,17 @@ DEPOSIT_DESC_HINTS = (
     "給与",
     "お利息",
 )
+# 利子・税金キーワード（残高補正から除外するため）
+INTEREST_TAX_KEYWORDS = (
+    "利息",
+    "利子",
+    "お利息",
+    "源泉税",
+    "税金",
+    "所得税",
+    "国税",
+    "復興税",
+)
 DEPOSIT_NOTE_KEYWORDS = (
     "入金額を再算出",
     "入金扱い",
@@ -85,6 +96,74 @@ WITHDRAWAL_NOTE_KEYWORDS = (
     "出金を前行",
 )
 BALANCE_DIRECTION_TOLERANCE = 0.5
+
+
+def _filter_transactions_by_start_date(
+    transactions: List[TransactionLine],
+    start_date: Optional[str],
+) -> List[TransactionLine]:
+    """指定された開始日以降の取引のみを返す"""
+    if not start_date:
+        return transactions
+    return [
+        txn for txn in transactions
+        if txn.transaction_date and txn.transaction_date >= start_date
+    ]
+
+
+def _separate_assets_by_account_type(
+    transactions: List[TransactionLine],
+    source_document: str,
+) -> List[AssetRecord]:
+    """取引をaccount_typeごとに分離し、別々のAssetRecordを作成する。
+
+    総合口座通帳の場合、普通預金と定期預金が混在する。
+    account_typeが設定されている取引は分離し、設定されていない取引は普通預金として扱う。
+    """
+    # 取引をaccount_typeでグループ化
+    ordinary_txns: List[TransactionLine] = []
+    time_deposit_txns: List[TransactionLine] = []
+
+    for txn in transactions:
+        if txn.account_type == "time_deposit":
+            time_deposit_txns.append(txn)
+        else:
+            # account_typeがNoneまたはordinary_depositの場合は普通預金
+            ordinary_txns.append(txn)
+
+    assets: List[AssetRecord] = []
+
+    # 普通預金のAsset
+    if ordinary_txns:
+        assets.append(AssetRecord(
+            category="bank_deposit",
+            type="ordinary_deposit",
+            source_document=source_document,
+            asset_name="普通預金取引推移表",
+            transactions=ordinary_txns,
+        ))
+
+    # 定期預金のAsset
+    if time_deposit_txns:
+        assets.append(AssetRecord(
+            category="bank_deposit",
+            type="time_deposit",
+            source_document=source_document,
+            asset_name="定期預金取引推移表",
+            transactions=time_deposit_txns,
+        ))
+
+    # 取引がない場合はデフォルトの空Asset
+    if not assets:
+        assets.append(AssetRecord(
+            category="bank_deposit",
+            type="transaction_history",
+            source_document=source_document,
+            asset_name="預金取引推移表",
+            transactions=[],
+        ))
+
+    return assets
 
 
 @dataclass
@@ -693,10 +772,16 @@ def _enforce_continuity(
                 has_withdrawal = False
                 has_deposit = True
                 notes.append("残高推移に合わせて入出金を入れ替えました")
+        # 利子・税金取引は残高補正をスキップ（小額のため誤差の原因になりやすい）
+        is_interest_or_tax = any(kw in description for kw in INTEREST_TAX_KEYWORDS)
+        # 明確な金額がある取引は残高差からの再算出をスキップ
+        has_clear_amount = (has_withdrawal or has_deposit) and not is_interest_or_tax
+
         if running_balance is not None:
             if actual_balance is not None:
                 balance_delta = running_balance - actual_balance
-                if abs(balance_delta) > BALANCE_TOLERANCE:
+                # 残高差からの金額再算出は、明確な金額がない場合のみ実行
+                if abs(balance_delta) > BALANCE_TOLERANCE and not has_clear_amount:
                     if balance_delta > 0:
                         withdrawal = abs(balance_delta)
                         deposit = 0.0
@@ -880,6 +965,15 @@ def _convert_gemini_structured_transactions(
             or item.get("deposit_amount")
         )
         balance = _parse_gemini_amount(item.get("balance") or item.get("current_balance"))
+        # account_type を抽出（普通預金 / 定期預金）
+        account_type_raw = item.get("account_type")
+        account_type: Optional[str] = None
+        if account_type_raw:
+            account_type_str = str(account_type_raw).lower().strip()
+            if account_type_str in ("ordinary_deposit", "ordinary", "普通預金", "普通"):
+                account_type = "ordinary_deposit"
+            elif account_type_str in ("time_deposit", "time", "定期預金", "定期", "定期積金"):
+                account_type = "time_deposit"
         if not any([transaction_date, description, withdrawal, deposit, balance]):
             continue
         # 出金・入金両方がnullの行はスキップ（繰越行など）
@@ -892,6 +986,7 @@ def _convert_gemini_structured_transactions(
                 withdrawal_amount=withdrawal,
                 deposit_amount=deposit,
                 balance=balance,
+                account_type=account_type,
             )
         )
     return transactions
@@ -1172,16 +1267,18 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         _log_timing(job.job_id, "GEMINI_JOB", 0, gemini_timer)
         page_results.sort(key=lambda result: result.page_index)
         combined_transactions: List[TransactionLine] = []
+        line_order = 0  # OCR読み取り順序を追跡
         for result in page_results:
-            combined_transactions.extend(result.transactions)
-        asset = AssetRecord(
-            category="bank_deposit",
-            type="transaction_history",
-            source_document=source_name,
-            asset_name="預金取引推移表",
-            transactions=combined_transactions,
+            for txn in result.transactions:
+                txn.line_order = line_order
+                combined_transactions.append(txn)
+                line_order += 1
+
+        # 総合口座の場合、普通預金と定期預金を分離
+        assets: List[AssetRecord] = _separate_assets_by_account_type(
+            combined_transactions,
+            source_name,
         )
-        assets: List[AssetRecord] = [asset]
 
         export_assets: List[dict] = []
         document_type = assets[0].category if assets else "transaction_history"
@@ -1199,6 +1296,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             balance_timer = time.perf_counter()
             transactions = _finalize_transactions_from_balance(transactions)
             _log_timing(job.job_id, "PY_FINALIZE_BAL", 0, balance_timer)
+            # 開始日でフィルタリング
+            transactions = _filter_transactions_by_start_date(transactions, job.start_date)
             asset.transactions = transactions
             export_assets.append(asset.to_export_payload())
 
@@ -1346,6 +1445,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     balance_timer = time.perf_counter()
     reconciled_transactions = _finalize_transactions_from_balance(reconciled_transactions)
     _log_timing(job.job_id, "PY_FINALIZE_BAL", 0, balance_timer)
+    # 開始日でフィルタリング
+    reconciled_transactions = _filter_transactions_by_start_date(reconciled_transactions, job.start_date)
 
     asset = AssetRecord(
         category=document_type or "transaction_history",
@@ -1514,6 +1615,7 @@ async def enqueue_document_job(
     date_format: Optional[str] = Form("auto"),
     processing_mode: Optional[str] = Form("gemini"),
     gemini_model: Optional[str] = Form("gemini-2.5-pro"),
+    start_date: Optional[str] = Form(None),
 ) -> JobCreateResponse:
     contents, content_type = await _load_file_bytes(file)
     source_name = file.filename or "uploaded.pdf"
@@ -1531,6 +1633,10 @@ async def enqueue_document_job(
             raise HTTPException(status_code=400, detail="Unsupported Gemini model specified")
         if candidate:
             gemini_model_normalized = candidate
+    # start_dateの正規化（空文字はNoneに）
+    start_date_normalized = start_date.strip() if start_date else None
+    if start_date_normalized == "":
+        start_date_normalized = None
     job = job_manager.submit(
         contents,
         content_type,
@@ -1539,6 +1645,7 @@ async def enqueue_document_job(
         date_format_normalized,
         processing_mode=processing_mode_normalized,
         gemini_model=gemini_model_normalized,
+        start_date=start_date_normalized,
     )
     return JobCreateResponse(status="accepted", job_id=job.job_id)
 

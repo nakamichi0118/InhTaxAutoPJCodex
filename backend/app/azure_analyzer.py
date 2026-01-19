@@ -223,6 +223,7 @@ def _extract_transactions_from_table(table, *, date_format: str) -> List[Transac
 
 def _extract_transactions_from_lines(lines: Iterable[str], *, date_format: str) -> List[TransactionLine]:
     transactions: List[TransactionLine] = []
+    line_order = 0  # OCR読み取り順序を追跡
     for line in lines:
         normalized = _clean_text(line)
         if not normalized:
@@ -276,8 +277,10 @@ def _extract_transactions_from_lines(lines: Iterable[str], *, date_format: str) 
                 withdrawal_amount=withdrawal,
                 deposit_amount=deposit,
                 balance=balance,
+                line_order=line_order,
             )
         )
+        line_order += 1
     return transactions
 
 
@@ -306,10 +309,12 @@ def _transaction_signature(txn: TransactionLine) -> Tuple[str, str, Optional[flo
     )
 
 
-def _transaction_sort_key(txn: TransactionLine) -> Tuple[str, float]:
+def _transaction_sort_key(txn: TransactionLine) -> Tuple[str, int, float]:
+    """同日取引はline_order（OCR読み取り順）でソート、なければbalanceでソート"""
     date_key = txn.transaction_date or ""
+    order_key = txn.line_order if txn.line_order is not None else 999999
     balance_key = txn.balance if txn.balance is not None else 0.0
-    return (date_key, balance_key)
+    return (date_key, order_key, balance_key)
 
 
 def _find_matching_transaction_index(

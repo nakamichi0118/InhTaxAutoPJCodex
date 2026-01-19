@@ -195,13 +195,18 @@ class GeminiClient:
             "You are assisting with converting Japanese bank and financial documents into structured text. "
             "Read the attached PDF and return JSON with two keys: `lines` containing an array of strings "
             "in reading order, and `transactions` containing an array of objects with the fields "
-            "`date`, `description`, `withdrawal`, `deposit`, and `balance`. "
+            "`date`, `description`, `withdrawal`, `deposit`, `balance`, and `account_type`. "
             "IMPORTANT: Japanese passbooks use 2-digit Japanese era years (和暦). "
             "Return dates EXACTLY as shown in the document without converting the year. "
             "For example: if the document shows '01-12-06', return '01-12-06' (not '2001-12-06' or '2019-12-06'). "
             "If it shows '17-11-24', return '17-11-24' (not '2005-11-24' or '2017-11-24'). "
             "Use null for unknown numeric values, keep amounts as plain numbers (no commas), and do not add "
-            "explanations or markdown. Return raw JSON only."
+            "explanations or markdown. Return raw JSON only.\n\n"
+            "ACCOUNT TYPE DETECTION: For combined passbooks (総合口座通帳), detect and return `account_type` for each transaction:\n"
+            "- 'ordinary_deposit': Transactions on pages labeled 普通預金, 普通口座, or the front side of the passbook\n"
+            "- 'time_deposit': Transactions on pages labeled 定期預金, 定期積金, 定期, or the back side showing fixed deposits\n"
+            "If account type cannot be determined, return null for `account_type`.\n"
+            "IMPORTANT: Always extract the description (摘要) for ALL transactions, regardless of amount."
         )
 
     @staticmethod
