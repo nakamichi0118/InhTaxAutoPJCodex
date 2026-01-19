@@ -504,9 +504,35 @@ Private Function BuildUsageSummary(csvData As Variant, isWithdrawal As Boolean) 
     Next i
     BuildUsageSummary = Join(parts, " / ")
 
+    ' 文字数制限（Excelの行高さ制限対策: 最大200文字）
+    Const MAX_SUMMARY_LENGTH As Long = 200
+    If Len(BuildUsageSummary) > MAX_SUMMARY_LENGTH Then
+        BuildUsageSummary = Left$(BuildUsageSummary, MAX_SUMMARY_LENGTH - 3) & "..."
+    End If
+
 ExitFunc:
     Exit Function
 End Function
+
+' 用途サマリのみを書き込む（取引データがない場合用）
+Sub WriteUsageSummaryOnly(csvData As Variant, buttonCol As Long, buttonRow As Long)
+    Dim ws As Worksheet
+    Dim targetRow As Long
+    Dim withdrawalSummary As String
+    Dim depositSummary As String
+
+    If IsEmpty(csvData) Then Exit Sub
+    If buttonRow <= 1 Then Exit Sub
+
+    targetRow = buttonRow - 1
+    Set ws = Worksheets("預金推移")
+
+    withdrawalSummary = BuildUsageSummary(csvData, True)
+    depositSummary = BuildUsageSummary(csvData, False)
+
+    ApplySummaryToCell ws.Cells(targetRow, buttonCol), withdrawalSummary
+    ApplySummaryToCell ws.Cells(targetRow, buttonCol + 1), depositSummary
+End Sub
 
 Private Function ReadUtf8File(filePath As String) As String
     On Error GoTo Failed
@@ -951,12 +977,22 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     LogPdfRawJsonSample payloadText
     usageData = ParseTransactionPayload(payloadText, 0)
     filteredData = ParseTransactionPayload(payloadText, minAmount)
-    If IsEmpty(filteredData) Then
-        MsgBox "指定金額以上の取引は見つかりませんでした。", vbInformation
-        Exit Sub
-    End If
+
     If IsEmpty(usageData) Then
         usageData = filteredData
+    End If
+
+    ' 指定金額以上の取引がなくても用途サマリは書き込む
+    If IsEmpty(filteredData) Then
+        ' 取引データなしでも用途サマリのみ書き込み
+        If Not IsEmpty(usageData) Then
+            Call WriteUsageSummaryOnly(usageData, buttonCol, buttonRow)
+            MsgBox "指定金額以上の取引は見つかりませんでした。" & vbCrLf & _
+                   "用途欄のみ転記しました。", vbInformation
+        Else
+            MsgBox "取引データが見つかりませんでした。", vbInformation
+        End If
+        Exit Sub
     End If
 
     Call ImportDataToExcel(filteredData, buttonCol, buttonRow, usageData)
