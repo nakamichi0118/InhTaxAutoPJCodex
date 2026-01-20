@@ -973,8 +973,8 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     pdfPath = SelectPdfFile()
     If pdfPath = "" Then Exit Sub
 
-    ' 設定を収集（UserFormまたはフォールバックダイアログ）
-    settings = CollectPdfImportSettingsFallback(targetDocType)
+    ' 設定を収集（UserForm優先、なければフォールバックダイアログ）
+    settings = CollectPdfImportSettings(targetDocType)
     If settings.Cancelled Then Exit Sub
 
     ' API呼び出し
