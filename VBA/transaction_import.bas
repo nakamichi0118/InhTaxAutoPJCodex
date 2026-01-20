@@ -12,6 +12,18 @@ Private gDebugWs As Worksheet
 Private gDebugRow As Long
 Private Const DEBUG_LOG_ENABLED As Boolean = True
 
+'===============================================================================
+' PDF取込設定の型定義（Typeはモジュール先頭で定義が必要）
+'===============================================================================
+Public Type PdfImportSettings
+    Cancelled As Boolean
+    DocType As String
+    DateFormat As String
+    MinAmount As Long
+    StartDate As String
+    EndDate As String
+End Type
+
 'CSV取込ボタンクリック時のメインプロシージャ
 Sub CSV取込ボタン_Click()
     Dim filePath As String
@@ -2256,18 +2268,6 @@ Private Function PromptDateFormatSelection() As String
             PromptDateFormatSelection = "auto"
     End Select
 End Function
-
-'===============================================================================
-' PDF取込設定の型定義
-'===============================================================================
-Public Type PdfImportSettings
-    Cancelled As Boolean
-    DocType As String
-    DateFormat As String
-    MinAmount As Long
-    StartDate As String
-    EndDate As String
-End Type
 
 '===============================================================================
 ' PDF取込設定を収集（UserFormまたはフォールバックダイアログ）
