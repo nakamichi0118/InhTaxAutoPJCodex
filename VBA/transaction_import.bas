@@ -2288,25 +2288,23 @@ Public Function CollectPdfImportSettings(defaultDocType As String) As PdfImportS
 
     ' UserFormが利用可能か試行
     On Error Resume Next
-    Dim frm As Object
-    Set frm = Nothing
-
-    ' frmPdfImportSettingsが存在する場合は使用
-    Set frm = UserForms.Add("frmPdfImportSettings")
+    Dim frm As frmPdfImportSettings
+    Set frm = New frmPdfImportSettings
     If Err.Number <> 0 Then
         Err.Clear
         On Error GoTo 0
         ' UserFormが使えない場合はフォールバック
-        settings = CollectPdfImportSettingsFallback(defaultDocType)
+        CollectPdfImportSettings = CollectPdfImportSettingsFallback(defaultDocType)
         Exit Function
     End If
     On Error GoTo 0
 
-    ' UserFormを表示
-    frm.Show
+    ' UserFormを表示（モーダル）
+    frm.Show vbModal
 
     If frm.Cancelled Then
         Unload frm
+        Set frm = Nothing
         Exit Function
     End If
 
@@ -2322,6 +2320,7 @@ Public Function CollectPdfImportSettings(defaultDocType As String) As PdfImportS
     Debug.Print "settings.MinAmount: " & settings.MinAmount
 
     Unload frm
+    Set frm = Nothing
     CollectPdfImportSettings = settings
 End Function
 
