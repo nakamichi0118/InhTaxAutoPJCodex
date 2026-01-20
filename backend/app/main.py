@@ -138,6 +138,47 @@ def _filter_transactions_by_start_date(
     return _filter_transactions_by_date_range(transactions, start_date, None)
 
 
+def _filter_breakdown_rows(
+    transactions: List[TransactionLine],
+) -> List[TransactionLine]:
+    """内訳行（利子・税金の明細行）を除外する
+
+    ゆうちょなどでは、利子入金時に「利子 XX円」「税金 YY円」という内訳行が
+    別行で表示される。これらは残高が***（None）で表示され、実際の取引ではないため除外する。
+
+    除外条件:
+    - 残高がNone（***表示）
+    - 利子・税金キーワードを含む
+    - 出金または入金のどちらか一方のみに金額がある
+    """
+    if not transactions:
+        return transactions
+
+    filtered = []
+    for i, txn in enumerate(transactions):
+        description = txn.description or ""
+
+        # 残高がある取引は正常な取引として保持
+        if txn.balance is not None:
+            filtered.append(txn)
+            continue
+
+        # 残高がNoneで、利子・税金キーワードを含む場合は内訳行の可能性が高い
+        is_interest_or_tax = any(kw in description for kw in INTEREST_TAX_KEYWORDS)
+        if is_interest_or_tax:
+            # 内訳行として除外（ログ出力）
+            logger.debug(
+                f"内訳行として除外: date={txn.transaction_date}, desc={description}, "
+                f"withdrawal={txn.withdrawal_amount}, deposit={txn.deposit_amount}"
+            )
+            continue
+
+        # それ以外の残高Noneは保持（最初の取引やOCRミスの可能性）
+        filtered.append(txn)
+
+    return filtered
+
+
 def _separate_assets_by_account_type(
     transactions: List[TransactionLine],
     source_document: str,
@@ -1323,6 +1364,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             balance_timer = time.perf_counter()
             transactions = _finalize_transactions_from_balance(transactions)
             _log_timing(job.job_id, "PY_FINALIZE_BAL", 0, balance_timer)
+            # 内訳行（利子・税金の明細行）を除外
+            transactions = _filter_breakdown_rows(transactions)
             # 日付範囲でフィルタリング
             transactions = _filter_transactions_by_date_range(transactions, job.start_date, job.end_date)
             asset.transactions = transactions
@@ -1472,6 +1515,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     balance_timer = time.perf_counter()
     reconciled_transactions = _finalize_transactions_from_balance(reconciled_transactions)
     _log_timing(job.job_id, "PY_FINALIZE_BAL", 0, balance_timer)
+    # 内訳行（利子・税金の明細行）を除外
+    reconciled_transactions = _filter_breakdown_rows(reconciled_transactions)
     # 日付範囲でフィルタリング
     reconciled_transactions = _filter_transactions_by_date_range(reconciled_transactions, job.start_date, job.end_date)
 
