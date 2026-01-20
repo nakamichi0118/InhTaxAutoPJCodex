@@ -22,6 +22,7 @@ class JobRecord:
     document_type_hint: Optional[DocumentType]
     date_format: str
     start_date: Optional[str] = None  # 読取開始日（YYYY-MM-DD形式）
+    end_date: Optional[str] = None  # 読取終了日（YYYY-MM-DD形式、未指定=最新まで）
     status: JobStatus = "pending"
     stage: str = "queued"
     detail: Optional[str] = None
@@ -67,6 +68,7 @@ class JobManager:
         processing_mode: str = "gemini",
         gemini_model: Optional[str] = None,
         start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
     ) -> JobRecord:
         temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         temp.write(payload)
@@ -81,6 +83,7 @@ class JobManager:
             document_type_hint=document_type_hint,
             date_format=date_format,
             start_date=start_date,
+            end_date=end_date,
             processing_mode=processing_mode,
             gemini_model=gemini_model,
         )

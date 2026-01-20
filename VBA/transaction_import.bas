@@ -904,7 +904,6 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim buttonCol As Long
     Dim buttonRow As Long
     Dim pdfPath As String
-    Dim minAmount As Long
     Dim payloadText As String
     Dim filteredData As Variant
     Dim usageData As Variant
@@ -912,7 +911,7 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     Dim shp As Shape
     Dim retryCount As Integer
     Dim dummy As Long
-    Dim dateFmt As String
+    Dim settings As PdfImportSettings
 
     Call InitPdfDebugLog(targetDocType)
 
@@ -958,17 +957,17 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     buttonCol = shp.TopLeftCell.Column
     buttonRow = shp.TopLeftCell.Row
 
+    ' PDFファイルの選択
     pdfPath = SelectPdfFile()
     If pdfPath = "" Then Exit Sub
 
-    minAmount = PromptPdfMinimumAmount()
-    If minAmount = -1 Then Exit Sub
+    ' 設定を収集（UserFormまたはフォールバックダイアログ）
+    settings = CollectPdfImportSettingsFallback(targetDocType)
+    If settings.Cancelled Then Exit Sub
 
-    ' 日付形式の選択
-    dateFmt = PromptDateFormatSelection()
-    If Len(dateFmt) = 0 Then Exit Sub
-
-    payloadText = FetchTransactionsJsonText(pdfPath, targetDocType, dateFmt)
+    ' API呼び出し
+    payloadText = FetchTransactionsJsonText(pdfPath, settings.DocType, settings.DateFormat, _
+                                            settings.StartDate, settings.EndDate)
     If Len(payloadText) = 0 Then
         MsgBox "PDF の読み取りに失敗しました。設定値とネットワークを確認してください。", vbExclamation
         Exit Sub
@@ -976,7 +975,7 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
 
     LogPdfRawJsonSample payloadText
     usageData = ParseTransactionPayload(payloadText, 0)
-    filteredData = ParseTransactionPayload(payloadText, minAmount)
+    filteredData = ParseTransactionPayload(payloadText, settings.MinAmount)
 
     If IsEmpty(usageData) Then
         usageData = filteredData
@@ -1123,7 +1122,8 @@ Private Function SelectPdfFile() As String
     Set fd = Nothing
 End Function
 
-Private Function FetchTransactionsJsonText(pdfPath As String, overrideDocType As String, dateFormat As String) As String
+Private Function FetchTransactionsJsonText(pdfPath As String, overrideDocType As String, dateFormat As String, _
+    Optional startDate As String = "", Optional endDate As String = "") As String
     On Error GoTo ErrHandler
     Dim baseUrl As String
     Dim apiKey As String
@@ -1161,7 +1161,7 @@ Private Function FetchTransactionsJsonText(pdfPath As String, overrideDocType As
 
     normalizedBase = NormalizeBaseUrl(baseUrl)
     displayName = ExtractFileName(pdfPath)
-    jobId = CreateAnalysisJob(normalizedBase & "/jobs", pdfPath, docType, dateFmt, apiKey)
+    jobId = CreateAnalysisJob(normalizedBase & "/jobs", pdfPath, docType, dateFmt, apiKey, startDate, endDate)
     If Len(jobId) = 0 Then GoTo Cleanup
 
     Application.StatusBar = "ファイル: " & displayName & " ｜ 解析を開始しました"
@@ -1214,7 +1214,8 @@ ErrHandler:
 End Function
 
 Private Function CreateAnalysisJob(endpoint As String, pdfPath As String, docType As String, _
-    dateFmt As String, apiKey As String) As String
+    dateFmt As String, apiKey As String, _
+    Optional startDate As String = "", Optional endDate As String = "") As String
     Dim boundary As String
     Dim body() As Byte
     Dim http As Object
@@ -1222,7 +1223,7 @@ Private Function CreateAnalysisJob(endpoint As String, pdfPath As String, docTyp
     Dim responseText As String
 
     boundary = "----SOROBOCR" & Format(Now, "yymmddhhmmss")
-    body = BuildMultipartBody(pdfPath, boundary, docType, dateFmt)
+    body = BuildMultipartBody(pdfPath, boundary, docType, dateFmt, startDate, endDate)
 
     Set http = CreateHttpClient(120000)
     http.Open "POST", endpoint, False
@@ -1437,7 +1438,8 @@ Private Function NormalizeBaseUrl(baseUrl As String) As String
 End Function
 
 Private Function BuildMultipartBody(pdfPath As String, boundary As String, _
-    Optional docType As String = "", Optional dateFmt As String = "") As Byte()
+    Optional docType As String = "", Optional dateFmt As String = "", _
+    Optional startDate As String = "", Optional endDate As String = "") As Byte()
     Dim fileBytes() As Byte
     Dim fileName As String
     Dim stream As Object
@@ -1453,6 +1455,12 @@ Private Function BuildMultipartBody(pdfPath As String, boundary As String, _
     End If
     If Len(dateFmt) > 0 Then
         stream.Write StringToBytes(BuildTextPart(boundary, "date_format", dateFmt))
+    End If
+    If Len(startDate) > 0 Then
+        stream.Write StringToBytes(BuildTextPart(boundary, "start_date", startDate))
+    End If
+    If Len(endDate) > 0 Then
+        stream.Write StringToBytes(BuildTextPart(boundary, "end_date", endDate))
     End If
     stream.Write StringToBytes(BuildFileHeader(boundary, fileName))
     stream.Write fileBytes
@@ -2220,25 +2228,158 @@ End Function
 
 Private Function PromptDateFormatSelection() As String
     Dim prompt As String
-    Dim choice As VbMsgBoxResult
+    Dim choice As Integer
 
     prompt = "通帳の日付表記を選択してください：" & vbCrLf & vbCrLf & _
-             "【はい】西暦（みずほ銀行など）" & vbCrLf & _
-             "　例: 20-02-14 → 2020年2月14日" & vbCrLf & vbCrLf & _
-             "【いいえ】和暦（三菱UFJ、ゆうちょなど）" & vbCrLf & _
-             "　例: 01-12-06 → 令和1年12月6日" & vbCrLf & _
-             "　例: 17-11-24 → 平成17年11月24日" & vbCrLf & vbCrLf & _
-             "※ 不明な場合は「いいえ」を選択（自動判定）"
+             "　1 = 自動判定（推奨）" & vbCrLf & _
+             "　2 = 和暦（三菱UFJ、ゆうちょなど）" & vbCrLf & _
+             "　　　例: 01-12-06 → 令和1年12月6日" & vbCrLf & _
+             "　3 = 西暦（みずほ銀行など）" & vbCrLf & _
+             "　　　例: 20-02-14 → 2020年2月14日"
 
-    choice = MsgBox(prompt, vbQuestion + vbYesNoCancel, "日付形式の選択")
-    Select Case choice
-        Case vbYes
-            PromptDateFormatSelection = "western"
-        Case vbNo
+    Dim inputValue As String
+    inputValue = InputBox(prompt, "日付形式の選択", "1")
+
+    If Len(inputValue) = 0 Then
+        PromptDateFormatSelection = ""
+        Exit Function
+    End If
+
+    Select Case Trim$(inputValue)
+        Case "1"
             PromptDateFormatSelection = "auto"
-        Case vbCancel
-            PromptDateFormatSelection = ""
+        Case "2"
+            PromptDateFormatSelection = "auto"  ' 和暦も auto で処理
+        Case "3"
+            PromptDateFormatSelection = "western"
+        Case Else
+            PromptDateFormatSelection = "auto"
     End Select
+End Function
+
+'===============================================================================
+' PDF取込設定の型定義
+'===============================================================================
+Public Type PdfImportSettings
+    Cancelled As Boolean
+    DocType As String
+    DateFormat As String
+    MinAmount As Long
+    StartDate As String
+    EndDate As String
+End Type
+
+'===============================================================================
+' PDF取込設定を収集（UserFormまたはフォールバックダイアログ）
+'===============================================================================
+Public Function CollectPdfImportSettings(defaultDocType As String) As PdfImportSettings
+    Dim settings As PdfImportSettings
+    settings.Cancelled = True
+
+    ' UserFormが利用可能か試行
+    On Error Resume Next
+    Dim frm As Object
+    Set frm = Nothing
+
+    ' frmPdfImportSettingsが存在する場合は使用
+    Set frm = UserForms.Add("frmPdfImportSettings")
+    If Err.Number <> 0 Then
+        Err.Clear
+        On Error GoTo 0
+        ' UserFormが使えない場合はフォールバック
+        settings = CollectPdfImportSettingsFallback(defaultDocType)
+        Exit Function
+    End If
+    On Error GoTo 0
+
+    ' UserFormを表示
+    frm.Show
+
+    If frm.Cancelled Then
+        Unload frm
+        Exit Function
+    End If
+
+    settings.Cancelled = False
+    settings.DocType = frm.DocType
+    settings.DateFormat = frm.DateFormat
+    settings.MinAmount = frm.MinAmount
+    settings.StartDate = frm.NormalizeDateForApi()
+    settings.EndDate = frm.NormalizeEndDateForApi()
+
+    Unload frm
+    CollectPdfImportSettings = settings
+End Function
+
+'===============================================================================
+' フォールバック：個別ダイアログで設定を収集
+'===============================================================================
+Private Function CollectPdfImportSettingsFallback(defaultDocType As String) As PdfImportSettings
+    Dim settings As PdfImportSettings
+    settings.Cancelled = True
+
+    ' 書類タイプの選択（通帳ボタンから呼ばれた場合はスキップ）
+    If Len(defaultDocType) > 0 Then
+        settings.DocType = defaultDocType
+    Else
+        settings.DocType = ResolveDocumentType("")
+        If Len(settings.DocType) = 0 Then Exit Function
+    End If
+
+    ' 日付形式の選択
+    settings.DateFormat = PromptDateFormatSelection()
+    If Len(settings.DateFormat) = 0 Then Exit Function
+
+    ' 最小金額の入力
+    Dim minAmountResult As Long
+    minAmountResult = PromptPdfMinimumAmount()
+    If minAmountResult = -1 Then Exit Function
+    settings.MinAmount = minAmountResult
+
+    ' 開始日の入力（任意）
+    settings.StartDate = PromptDateInput("開始日", "取込開始日を入力してください（任意）" & vbCrLf & _
+        "空欄にすると全期間を対象にします。" & vbCrLf & vbCrLf & _
+        "形式: YYYY-MM-DD （例: 2021-04-01）")
+
+    ' 終了日の入力（任意）
+    settings.EndDate = PromptDateInput("終了日", "取込終了日を入力してください（任意）" & vbCrLf & _
+        "空欄にすると最新まで取り込みます。" & vbCrLf & vbCrLf & _
+        "形式: YYYY-MM-DD （例: 2024-12-31）")
+
+    settings.Cancelled = False
+    CollectPdfImportSettingsFallback = settings
+End Function
+
+'===============================================================================
+' 日付入力ダイアログ（任意入力用）
+'===============================================================================
+Private Function PromptDateInput(title As String, prompt As String) As String
+    Dim inputValue As String
+
+    inputValue = InputBox(prompt, title, "")
+
+    If Len(Trim$(inputValue)) = 0 Then
+        PromptDateInput = ""
+        Exit Function
+    End If
+
+    ' 簡易バリデーション: 数字とハイフン/スラッシュのみ
+    inputValue = Replace(inputValue, "/", "-")
+    If Len(inputValue) > 0 Then
+        ' YYYY-MM-DD形式かどうか簡易チェック
+        Dim parts() As String
+        parts = Split(inputValue, "-")
+        If UBound(parts) = 2 Then
+            If IsNumeric(parts(0)) And IsNumeric(parts(1)) And IsNumeric(parts(2)) Then
+                PromptDateInput = inputValue
+                Exit Function
+            End If
+        End If
+        MsgBox "日付形式が正しくありません。空欄として扱います。" & vbCrLf & _
+               "正しい形式: YYYY-MM-DD", vbExclamation
+    End If
+
+    PromptDateInput = ""
 End Function
 
 

@@ -98,17 +98,44 @@ WITHDRAWAL_NOTE_KEYWORDS = (
 BALANCE_DIRECTION_TOLERANCE = 0.5
 
 
+def _filter_transactions_by_date_range(
+    transactions: List[TransactionLine],
+    start_date: Optional[str],
+    end_date: Optional[str] = None,
+) -> List[TransactionLine]:
+    """指定された日付範囲内の取引のみを返す
+
+    Args:
+        transactions: フィルタリング対象の取引リスト
+        start_date: 開始日（YYYY-MM-DD形式、Noneの場合は下限なし）
+        end_date: 終了日（YYYY-MM-DD形式、Noneの場合は上限なし＝最新まで）
+
+    Returns:
+        日付範囲内の取引リスト
+    """
+    if not start_date and not end_date:
+        return transactions
+
+    filtered = []
+    for txn in transactions:
+        if not txn.transaction_date:
+            continue
+        # 開始日チェック
+        if start_date and txn.transaction_date < start_date:
+            continue
+        # 終了日チェック
+        if end_date and txn.transaction_date > end_date:
+            continue
+        filtered.append(txn)
+    return filtered
+
+
 def _filter_transactions_by_start_date(
     transactions: List[TransactionLine],
     start_date: Optional[str],
 ) -> List[TransactionLine]:
-    """指定された開始日以降の取引のみを返す"""
-    if not start_date:
-        return transactions
-    return [
-        txn for txn in transactions
-        if txn.transaction_date and txn.transaction_date >= start_date
-    ]
+    """指定された開始日以降の取引のみを返す（後方互換性のため）"""
+    return _filter_transactions_by_date_range(transactions, start_date, None)
 
 
 def _separate_assets_by_account_type(
@@ -1296,8 +1323,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             balance_timer = time.perf_counter()
             transactions = _finalize_transactions_from_balance(transactions)
             _log_timing(job.job_id, "PY_FINALIZE_BAL", 0, balance_timer)
-            # 開始日でフィルタリング
-            transactions = _filter_transactions_by_start_date(transactions, job.start_date)
+            # 日付範囲でフィルタリング
+            transactions = _filter_transactions_by_date_range(transactions, job.start_date, job.end_date)
             asset.transactions = transactions
             export_assets.append(asset.to_export_payload())
 
@@ -1445,8 +1472,8 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     balance_timer = time.perf_counter()
     reconciled_transactions = _finalize_transactions_from_balance(reconciled_transactions)
     _log_timing(job.job_id, "PY_FINALIZE_BAL", 0, balance_timer)
-    # 開始日でフィルタリング
-    reconciled_transactions = _filter_transactions_by_start_date(reconciled_transactions, job.start_date)
+    # 日付範囲でフィルタリング
+    reconciled_transactions = _filter_transactions_by_date_range(reconciled_transactions, job.start_date, job.end_date)
 
     asset = AssetRecord(
         category=document_type or "transaction_history",
@@ -1616,6 +1643,7 @@ async def enqueue_document_job(
     processing_mode: Optional[str] = Form("gemini"),
     gemini_model: Optional[str] = Form("gemini-2.5-pro"),
     start_date: Optional[str] = Form(None),
+    end_date: Optional[str] = Form(None),
 ) -> JobCreateResponse:
     contents, content_type = await _load_file_bytes(file)
     source_name = file.filename or "uploaded.pdf"
@@ -1633,10 +1661,13 @@ async def enqueue_document_job(
             raise HTTPException(status_code=400, detail="Unsupported Gemini model specified")
         if candidate:
             gemini_model_normalized = candidate
-    # start_dateの正規化（空文字はNoneに）
+    # start_date/end_dateの正規化（空文字はNoneに）
     start_date_normalized = start_date.strip() if start_date else None
     if start_date_normalized == "":
         start_date_normalized = None
+    end_date_normalized = end_date.strip() if end_date else None
+    if end_date_normalized == "":
+        end_date_normalized = None
     job = job_manager.submit(
         contents,
         content_type,
@@ -1646,6 +1677,7 @@ async def enqueue_document_job(
         processing_mode=processing_mode_normalized,
         gemini_model=gemini_model_normalized,
         start_date=start_date_normalized,
+        end_date=end_date_normalized,
     )
     return JobCreateResponse(status="accepted", job_id=job.job_id)
 

@@ -1139,7 +1139,7 @@
 
                     const startDateInput = document.createElement('input');
                     startDateInput.type = 'date';
-                    startDateInput.className = 'text-input';
+                    startDateInput.className = 'text-input start-date-input';
                     startDateInput.style.width = '180px';
                     startDateInput.placeholder = 'YYYY-MM-DD';
                     startDateControls.appendChild(startDateInput);
@@ -1147,15 +1147,44 @@
                     const startDateHint = document.createElement('span');
                     startDateHint.style.fontSize = '0.8rem';
                     startDateHint.style.color = '#6b7280';
-                    startDateHint.textContent = 'この日以降の取引のみを読み込みます';
+                    startDateHint.textContent = 'この日以降の取引を読み込み';
                     startDateControls.appendChild(startDateHint);
 
                     controlsContainer.appendChild(startDateControls);
+
+                    // 読取終了日の入力欄
+                    const endDateControls = document.createElement('div');
+                    endDateControls.className = 'input-row';
+
+                    const endDateLabel = document.createElement('label');
+                    endDateLabel.style.fontSize = '0.9rem';
+                    endDateLabel.style.color = '#1f3b8c';
+                    endDateLabel.textContent = '読取終了日（任意）';
+                    endDateControls.appendChild(endDateLabel);
+
+                    const endDateInput = document.createElement('input');
+                    endDateInput.type = 'date';
+                    endDateInput.className = 'text-input end-date-input';
+                    endDateInput.style.width = '180px';
+                    endDateInput.placeholder = 'YYYY-MM-DD';
+                    endDateControls.appendChild(endDateInput);
+
+                    const endDateHint = document.createElement('span');
+                    endDateHint.style.fontSize = '0.8rem';
+                    endDateHint.style.color = '#6b7280';
+                    endDateHint.textContent = '空欄＝最新まで';
+                    endDateControls.appendChild(endDateHint);
+
+                    controlsContainer.appendChild(endDateControls);
                 }
 
-                // startDateInputのゲッター（dateFormatと同じスコープで定義）
+                // 日付入力のゲッター
                 const getStartDate = () => {
-                    const input = controlsContainer.querySelector('input[type="date"]');
+                    const input = controlsContainer.querySelector('.start-date-input');
+                    return input ? input.value : '';
+                };
+                const getEndDate = () => {
+                    const input = controlsContainer.querySelector('.end-date-input');
                     return input ? input.value : '';
                 };
 
@@ -1238,14 +1267,15 @@
                             event.dataTransfer.files,
                             () => dateSelect?.value || 'auto',
                             getDocType,
-                            getStartDate
+                            getStartDate,
+                            getEndDate
                         );
                     }
                 });
 
                 hiddenInput.addEventListener('change', (event) => {
                     if (event.target.files && event.target.files.length) {
-                        handleTabFiles(tab, event.target.files, () => dateSelect?.value || 'auto', getDocType, getStartDate);
+                        handleTabFiles(tab, event.target.files, () => dateSelect?.value || 'auto', getDocType, getStartDate, getEndDate);
                         hiddenInput.value = '';
                     }
                 });
@@ -1281,7 +1311,7 @@
         });
     }
 
-    function handleTabFiles(tab, fileList, getDateFormat, getDocType, getStartDate) {
+    function handleTabFiles(tab, fileList, getDateFormat, getDocType, getStartDate, getEndDate) {
         processFiles(fileList, {
             tabId: tab.id,
             label: tab.label,
@@ -1289,6 +1319,7 @@
             getDocType,
             dateFormat: getDateFormat ? getDateFormat() : 'auto',
             startDate: getStartDate ? getStartDate() : '',
+            endDate: getEndDate ? getEndDate() : '',
             getProcessingConfig: () => getProcessingModeConfig(),
         });
     }
@@ -1317,6 +1348,7 @@
         const label = tabConfig.label || '';
         const dateFormat = normalizeDateFormat(tabConfig.dateFormat);
         const startDate = tabConfig.startDate || '';
+        const endDate = tabConfig.endDate || '';
         const initialDocType = docTypeGetter() || '';
         const docTypeLabel = describeDocType(initialDocType);
         const prefixParts = [];
@@ -1343,7 +1375,7 @@
             }
             try {
                 const processingConfig = processingConfigGetter() || {};
-                const doc = await handleSingleFile(file, currentDocType, dateFormat, processingConfig, startDate);
+                const doc = await handleSingleFile(file, currentDocType, dateFormat, processingConfig, startDate, endDate);
                 state.documents.push(doc);
                 state.activeDocId = doc.id;
                 notifyCompletion(doc);
@@ -1400,10 +1432,10 @@
         );
     }
 
-    async function handleSingleFile(file, docType, dateFormat, processingConfig = {}, startDate = '') {
+    async function handleSingleFile(file, docType, dateFormat, processingConfig = {}, startDate = '', endDate = '') {
         setStatus(`「${file.name}」の解析ジョブを登録しています…`, 'info');
         const startedAt = performance.now();
-        const jobId = await enqueueJob(file, docType, dateFormat, processingConfig, startDate);
+        const jobId = await enqueueJob(file, docType, dateFormat, processingConfig, startDate, endDate);
         const result = await pollJobUntilComplete(jobId, { fileName: file.name });
         const assets = Array.isArray(result.assets) ? result.assets : [];
         if (!assets.length) {
@@ -1423,7 +1455,7 @@
         };
     }
 
-    async function enqueueJob(file, docType, dateFormat, processingConfig = {}, startDate = '') {
+    async function enqueueJob(file, docType, dateFormat, processingConfig = {}, startDate = '', endDate = '') {
         const base = normalizedApiBase();
         const form = new FormData();
         form.append('file', file);
@@ -1441,6 +1473,9 @@
         }
         if (startDate) {
             form.append('start_date', startDate);
+        }
+        if (endDate) {
+            form.append('end_date', endDate);
         }
         const res = await fetchWithAbort(`${base}/jobs`, {
             method: 'POST',
