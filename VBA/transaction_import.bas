@@ -977,6 +977,12 @@ Private Sub RunPdfImportWorkflow(targetDocType As String)
     settings = CollectPdfImportSettings(targetDocType)
     If settings.Cancelled Then Exit Sub
 
+    ' デバッグ: 設定値をログに記録
+    Call LogPdfParseRow("Settings", -1, "DocType=" & settings.DocType, _
+        "MinAmount=" & CStr(settings.MinAmount), _
+        "StartDate=" & settings.StartDate, _
+        settings.MinAmount, 0, 0, True, "EndDate=" & settings.EndDate)
+
     ' API呼び出し
     payloadText = FetchTransactionsJsonText(pdfPath, settings.DocType, settings.DateFormat, _
                                             settings.StartDate, settings.EndDate)
@@ -2310,6 +2316,10 @@ Public Function CollectPdfImportSettings(defaultDocType As String) As PdfImportS
     settings.MinAmount = frm.MinAmount
     settings.StartDate = frm.NormalizeDateForApi()
     settings.EndDate = frm.NormalizeEndDateForApi()
+
+    ' デバッグ: UserFormから取得した値を確認
+    Debug.Print "UserForm MinAmount: " & frm.MinAmount
+    Debug.Print "settings.MinAmount: " & settings.MinAmount
 
     Unload frm
     CollectPdfImportSettings = settings
