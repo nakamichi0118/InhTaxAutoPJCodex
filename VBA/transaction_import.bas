@@ -1159,8 +1159,12 @@ Private Function FetchTransactionsJsonText(pdfPath As String, overrideDocType As
 
     baseUrl = GetConfigValue("BASE_URL")
     apiKey = GetConfigValue("API_KEY")
-    docType = ResolveDocumentType(overrideDocType)
-    If Len(docType) = 0 Then GoTo Cleanup
+    ' 引数で渡された書類タイプを使用（空の場合は設定シートから取得、ダイアログは表示しない）
+    If Len(overrideDocType) > 0 Then
+        docType = overrideDocType
+    Else
+        docType = GetOptionalConfigValue("DOC_TYPE", "transaction_history")
+    End If
     ' 引数で渡された日付形式を使用（空の場合は設定シートから取得）
     If Len(dateFormat) > 0 Then
         dateFmt = dateFormat
