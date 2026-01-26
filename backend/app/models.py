@@ -1,9 +1,9 @@
 ﻿"""Pydantic models for document processing endpoints."""
 from __future__ import annotations
 
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 DocumentType = Literal["bank_deposit", "land", "building", "nayose", "transaction_history", "unknown"]
 
@@ -38,6 +38,45 @@ class AssetRecord(BaseModel):
     ownership_share: Optional[float] = None
     notes: Optional[str] = None
     transactions: List[TransactionLine] = Field(default_factory=list)
+
+    @model_validator(mode='before')
+    @classmethod
+    def flatten_nested_structure(cls, data: Any) -> Any:
+        """Handle nested structure from to_export_payload() by flattening it."""
+        if not isinstance(data, dict):
+            return data
+
+        # Extract from nested 'location' object
+        location = data.get('location')
+        if isinstance(location, dict):
+            if location.get('prefecture') and not data.get('location_prefecture'):
+                data['location_prefecture'] = location['prefecture']
+            if location.get('municipality') and not data.get('location_municipality'):
+                data['location_municipality'] = location['municipality']
+            if location.get('detail') and not data.get('location_detail'):
+                data['location_detail'] = location['detail']
+
+        # Extract from nested 'identifiers' object
+        identifiers = data.get('identifiers')
+        if isinstance(identifiers, dict):
+            if identifiers.get('primary') and not data.get('identifier_primary'):
+                data['identifier_primary'] = identifiers['primary']
+            if identifiers.get('secondary') and not data.get('identifier_secondary'):
+                data['identifier_secondary'] = identifiers['secondary']
+
+        # Extract from nested 'valuation' object
+        valuation = data.get('valuation')
+        if isinstance(valuation, dict):
+            if valuation.get('basis') and not data.get('valuation_basis'):
+                data['valuation_basis'] = valuation['basis']
+            if valuation.get('currency') and not data.get('valuation_currency'):
+                data['valuation_currency'] = valuation['currency']
+            if valuation.get('amount') is not None and data.get('valuation_amount') is None:
+                data['valuation_amount'] = valuation['amount']
+            if valuation.get('date') and not data.get('valuation_date'):
+                data['valuation_date'] = valuation['date']
+
+        return data
 
     def to_export_payload(self) -> dict:
         location = {

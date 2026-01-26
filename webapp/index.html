@@ -735,6 +735,7 @@
             ? window.__app_id.trim()
             : 'ledger-app';
     const LEDGER_SESSION_KEY = 'ledger_session_token';
+    const PENDING_IMPORT_STORAGE_KEY = 'pending_ledger_imports';
 
     const state = {
         documents: [],
@@ -772,8 +773,6 @@
             ledgerPendingMessage.textContent = 'CSV を保存した後、ブラウザ上で入出金を並べ替え・色付けできるツールを開けます。';
         }
     }
-
-    const PENDING_IMPORT_STORAGE_KEY = 'pending_ledger_imports';
 
     function getStoredLedgerToken() {
         if (!window?.localStorage) {
