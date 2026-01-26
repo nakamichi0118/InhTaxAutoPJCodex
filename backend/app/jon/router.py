@@ -185,6 +185,7 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
 
                 # 2. 路線価図取得
                 if "rosenka" in item.acquisitions:
+                    # JON APIから路線価図画像を取得
                     try:
                         rosenka = await client.rosen_image_async(
                             lat=location.lat,
@@ -193,6 +194,10 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                         result.rosenka_image = rosenka.image_base64
                     except JonApiError as e:
                         logger.warning(f"路線価図取得エラー: {e}")
+
+                    # 注: 国税庁サイトはBotアクセス制限(403)があるため、
+                    # 路線価図URLの自動取得は無効化。
+                    # フロントエンドで都道府県レベルのリンクを表示する。
 
                 # 3. 登記取得
                 if any(acq in item.acquisitions for acq in ["touki", "kozu", "chiseki", "tatemono"]):

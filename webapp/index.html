@@ -396,6 +396,10 @@
             font-size: 0.72rem;
             color: #6b7280;
         }
+        .asset-nav-button .lock-icon {
+            font-size: 0.72rem;
+            margin-left: 0.3rem;
+        }
         .asset-nav-button.active {
             background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(37, 99, 235, 0.28));
             color: #1d4ed8;
@@ -792,6 +796,7 @@
         latestJobId: null,
         ledgerToken: null,
         pendingImportCount: 0,
+        unlockedTabs: new Set(),  // ロック解除されたタブのIDを保持
     };
     state.pendingImportCount = loadPendingImportEntries().length;
     state.ledgerToken = getStoredLedgerToken();
@@ -920,6 +925,8 @@
             allowUpload: true,
             enableJonApi: true,
             recommendedModel: 'gemini_flash',
+            locked: true,
+            unlockPassword: 'IUProperty7520',
         },
         {
             id: 'securities',
@@ -1007,7 +1014,10 @@
             state.apiBase = queryApi.replace(/\/$/, '');
         }
 
-        const defaultTab = TAB_DEFINITIONS.find((tab) => tab.allowUpload) || TAB_DEFINITIONS[0];
+        // デフォルトはロックされていないアップロード可能なタブ（通帳・取引履歴）
+        const defaultTab = TAB_DEFINITIONS.find((tab) => tab.allowUpload && !tab.locked)
+            || TAB_DEFINITIONS.find((tab) => tab.allowUpload)
+            || TAB_DEFINITIONS[0];
         state.activeAssetTabId = defaultTab ? defaultTab.id : null;
         renderAssetTabs();
         setupRevealAnimations();
@@ -1160,7 +1170,9 @@
         }
 
         if (!state.activeAssetTabId) {
-            const defaultTab = TAB_DEFINITIONS.find((tab) => tab.allowUpload) || TAB_DEFINITIONS[0];
+            const defaultTab = TAB_DEFINITIONS.find((tab) => tab.allowUpload && !tab.locked)
+                || TAB_DEFINITIONS.find((tab) => tab.allowUpload)
+                || TAB_DEFINITIONS[0];
             state.activeAssetTabId = defaultTab ? defaultTab.id : null;
         }
 
@@ -1190,6 +1202,12 @@
                 coming.className = 'coming';
                 coming.textContent = '準備中';
                 button.appendChild(coming);
+            } else if (tab.locked) {
+                const lockIcon = document.createElement('span');
+                lockIcon.className = 'lock-icon';
+                lockIcon.textContent = '🔒';
+                lockIcon.title = 'パスワード保護されています';
+                button.appendChild(lockIcon);
             }
 
             button.addEventListener('click', () => setActiveAssetTab(tab.id));
@@ -1438,10 +1456,30 @@
         assetTabsRoot.appendChild(layout);
 
         const fallbackTabId = state.activeAssetTabId || (TAB_DEFINITIONS[0] && TAB_DEFINITIONS[0].id);
-        setActiveAssetTab(fallbackTabId);
+        setActiveAssetTab(fallbackTabId, true);  // 初期化時はロックチェックをスキップ
     }
 
-    function setActiveAssetTab(tabId) {
+    function checkTabLock(tabId) {
+        const tab = TAB_DEFINITIONS.find(t => t.id === tabId);
+        if (!tab || !tab.locked) return true;
+        if (state.unlockedTabs.has(tabId)) return true;
+
+        const password = prompt('このタブはロックされています。\nパスワードを入力してください:');
+        if (password === tab.unlockPassword) {
+            state.unlockedTabs.add(tabId);
+            return true;
+        } else if (password !== null) {
+            alert('パスワードが正しくありません。');
+        }
+        return false;
+    }
+
+    function setActiveAssetTab(tabId, skipLockCheck = false) {
+        // ロックチェック（skipLockCheck=trueの場合はスキップ）
+        if (!skipLockCheck && !checkTabLock(tabId)) {
+            return;
+        }
+
         state.activeAssetTabId = tabId;
         const buttons = assetTabsRoot.querySelectorAll('.asset-nav-button');
         buttons.forEach((button) => {
@@ -2694,7 +2732,7 @@
             }
 
             if (result.rosenka_image) {
-                // 路線価図が取得できた場合: 画像ボタン + 国税庁リンク
+                // 路線価図が取得できた場合: 画像ボタン
                 const imgBtn = document.createElement('button');
                 imgBtn.type = 'button';
                 imgBtn.className = 'secondary small';
@@ -2702,34 +2740,51 @@
                 imgBtn.addEventListener('click', () => showRosenkaImage(result.rosenka_image));
                 linksDiv.appendChild(imgBtn);
 
-                // 国税庁の路線価図ページへのリンク（確認用）
-                const municipality = originalProp?.city || originalProp?.location_municipality || '';
-                const prefecture = originalProp?.location_prefecture || inferPrefectureFromMunicipality(municipality);
-                const rosenkaUrl = getRosenkaUrl(prefecture);
-                const ntaLink = document.createElement('a');
-                ntaLink.href = rosenkaUrl;
-                ntaLink.target = '_blank';
-                ntaLink.rel = 'noopener';
-                ntaLink.className = 'jon-result-link';
-                ntaLink.textContent = '国税庁で確認';
-                ntaLink.title = '国税庁の路線価図ページで確認';
-                linksDiv.appendChild(ntaLink);
+                // 国税庁の路線価図ページへのリンク
+                if (result.rosenka_urls && result.rosenka_urls.length > 0) {
+                    // バックエンドから取得した具体的なURLを表示
+                    result.rosenka_urls.forEach((url, idx) => {
+                        const ntaLink = document.createElement('a');
+                        ntaLink.href = url;
+                        ntaLink.target = '_blank';
+                        ntaLink.rel = 'noopener';
+                        ntaLink.className = 'jon-result-link';
+                        ntaLink.textContent = result.rosenka_urls.length > 1 ? `国税庁${idx + 1}` : '国税庁';
+                        ntaLink.title = '国税庁の路線価図ページで確認';
+                        linksDiv.appendChild(ntaLink);
+                    });
+                }
             } else if (isLand) {
                 // 路線価図が取得できなかった場合（倍率地域）: 倍率表へのリンク
                 const batchItem = jonState.batchItems.find(item => item.id === result.id);
                 if (batchItem?.acquisitions?.includes('rosenka')) {
-                    const municipality = originalProp?.city || originalProp?.location_municipality || '';
-                    const prefecture = originalProp?.location_prefecture || inferPrefectureFromMunicipality(municipality);
-                    const rosenkaUrl = getRosenkaUrl(prefecture);
+                    // rosenka_urlsがあればそれを使う（倍率表ページの可能性）
+                    if (result.rosenka_urls && result.rosenka_urls.length > 0) {
+                        result.rosenka_urls.forEach((url, idx) => {
+                            const bairitsuLink = document.createElement('a');
+                            bairitsuLink.href = url;
+                            bairitsuLink.target = '_blank';
+                            bairitsuLink.rel = 'noopener';
+                            bairitsuLink.className = 'jon-result-link';
+                            bairitsuLink.textContent = result.rosenka_urls.length > 1 ? `倍率表${idx + 1}` : '倍率表';
+                            bairitsuLink.title = '倍率地域です。国税庁の倍率表で評価額を確認してください。';
+                            linksDiv.appendChild(bairitsuLink);
+                        });
+                    } else {
+                        // フォールバック: 都道府県レベルのURL
+                        const municipality = originalProp?.city || originalProp?.location_municipality || '';
+                        const prefecture = originalProp?.location_prefecture || inferPrefectureFromMunicipality(municipality);
+                        const rosenkaUrl = getRosenkaUrl(prefecture);
 
-                    const bairitsuLink = document.createElement('a');
-                    bairitsuLink.href = rosenkaUrl;
-                    bairitsuLink.target = '_blank';
-                    bairitsuLink.rel = 'noopener';
-                    bairitsuLink.className = 'jon-result-link';
-                    bairitsuLink.textContent = prefecture ? `${prefecture}の倍率表` : '倍率表を検索';
-                    bairitsuLink.title = '倍率地域です。国税庁の倍率表で評価額を確認してください。';
-                    linksDiv.appendChild(bairitsuLink);
+                        const bairitsuLink = document.createElement('a');
+                        bairitsuLink.href = rosenkaUrl;
+                        bairitsuLink.target = '_blank';
+                        bairitsuLink.rel = 'noopener';
+                        bairitsuLink.className = 'jon-result-link';
+                        bairitsuLink.textContent = prefecture ? `${prefecture}の倍率表` : '倍率表を検索';
+                        bairitsuLink.title = '倍率地域です。国税庁の倍率表で評価額を確認してください。';
+                        linksDiv.appendChild(bairitsuLink);
+                    }
                 }
             }
 
