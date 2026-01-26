@@ -24,6 +24,55 @@ Public Type PdfImportSettings
     EndDate As String
 End Type
 
+'===============================================================================
+' 印刷用ユーティリティ：ボタン行を非表示にして印刷
+'===============================================================================
+Sub 印刷プレビュー_ボタン非表示()
+    Call HideButtonRowsForPrint
+    ActiveSheet.PrintPreview
+    Call ShowButtonRowsAfterPrint
+End Sub
+
+Sub 印刷_ボタン非表示()
+    Call HideButtonRowsForPrint
+    ActiveSheet.PrintOut
+    Call ShowButtonRowsAfterPrint
+End Sub
+
+' ボタン行を非表示（印刷前に呼び出し）
+' A列に「ボタン行」と入力されている行を非表示にする
+Sub HideButtonRowsForPrint()
+    Dim ws As Worksheet
+    Dim i As Long
+    Dim lastRow As Long
+
+    Set ws = Worksheets("預金推移")
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+
+    For i = 1 To lastRow
+        If ws.Cells(i, 1).Value = "ボタン行" Then
+            ws.Rows(i).Hidden = True
+        End If
+    Next i
+End Sub
+
+' ボタン行を再表示（印刷後に呼び出し）
+' A列に「ボタン行」と入力されている行を再表示する
+Sub ShowButtonRowsAfterPrint()
+    Dim ws As Worksheet
+    Dim i As Long
+    Dim lastRow As Long
+
+    Set ws = Worksheets("預金推移")
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+
+    For i = 1 To lastRow
+        If ws.Cells(i, 1).Value = "ボタン行" Then
+            ws.Rows(i).Hidden = False
+        End If
+    Next i
+End Sub
+
 'CSV取込ボタンクリック時のメインプロシージャ
 Sub CSV取込ボタン_Click()
     Dim filePath As String
@@ -101,8 +150,16 @@ Sub CSV取込ボタン_Click()
     End If
     usageData = ParseTransactionCsvContent(rawText, 0)
     csvData = ParseTransactionCsvContent(rawText, minAmount)
+
+    ' 指定金額以上の取引がなくても用途サマリは書き込む
     If IsEmpty(csvData) Then
-        MsgBox "指定金額以上の取引は見つかりませんでした。", vbInformation
+        If Not IsEmpty(usageData) Then
+            Call WriteUsageSummaryOnly(usageData, buttonCol, buttonRow)
+            MsgBox "指定金額以上の取引は見つかりませんでした。" & vbCrLf & _
+                   "用途欄のみ転記しました。", vbInformation
+        Else
+            MsgBox "取引データが見つかりませんでした。", vbInformation
+        End If
         Exit Sub
     End If
 
@@ -402,27 +459,76 @@ Sub UpdateBorders()
     Dim currentYear As String
     Dim nextYear As String
 
+    ' 相続関連の境界線用
+    Dim deathDate As Date
+    Dim inheritanceBoundary As Date
+    Dim newRuleThreshold As Date
+    Dim newRuleStartDate As Date
+    Dim cellDate As Date
+    Dim nextCellDate As Date
+    Dim drewBoundaryLine As Boolean
+
     Set ws = Worksheets("預金推移")
 
-    gyouhajime = ws.Range("A1:A10000").Find("資金移動始").row
-    gyousaigo = ws.Range("A1:A10000").Find("資金移動終").row
+    gyouhajime = ws.Range("A1:A10000").Find("資金移動始").Row
+    gyousaigo = ws.Range("A1:A10000").Find("資金移動終").Row
     retuhajime = ws.Range("C1:BZ1").Find("資金移動始").Column
     retusaigo = ws.Range("C1:DZ1").Find("資金移動終").Column
 
     '横罫線を設定
     ws.Range(ws.Cells(gyouhajime, retuhajime), ws.Cells(gyousaigo, retusaigo)).Borders(xlInsideHorizontal).LineStyle = xlContinuous
 
-    '年度境界に色付き罫線
-    For i = gyouhajime + 1 To gyousaigo - 4
-        currentYear = ExtractYear(ws.Cells(i, 3).value)
-        nextYear = ExtractYear(ws.Cells(i + 1, 3).value)
+    ' 相続開始日を取得（相続分シートのI1）
+    deathDate = GetDeathDateFromSheet()
+    If deathDate > 0 Then
+        ' 2027.1.1を境に判定を変える
+        newRuleThreshold = DateSerial(2027, 1, 1)
+        newRuleStartDate = DateSerial(2024, 1, 1)
 
+        If deathDate < newRuleThreshold Then
+            ' 2027.1.1より前の相続開始 → 従来の3年ルール
+            inheritanceBoundary = DateAdd("yyyy", -3, deathDate)
+        Else
+            ' 2027.1.1以降の相続開始 → 7年ルール（経過措置考慮）
+            inheritanceBoundary = DateAdd("yyyy", -7, deathDate)
+            If inheritanceBoundary < newRuleStartDate Then
+                inheritanceBoundary = newRuleStartDate
+            End If
+        End If
+    End If
+
+    drewBoundaryLine = False
+
+    '年度境界に色付き罫線 + 相続境界線
+    For i = gyouhajime + 1 To gyousaigo - 4
+        currentYear = ExtractYear(ws.Cells(i, 3).Value)
+        nextYear = ExtractYear(ws.Cells(i + 1, 3).Value)
+
+        ' 年変わりの赤線
         If currentYear <> nextYear Then
             With ws.Range(ws.Cells(i, 3), ws.Cells(i, retusaigo)).Borders(xlEdgeBottom)
                 .LineStyle = xlContinuous
                 .Color = RGB(255, 0, 0)
                 .Weight = xlThin
             End With
+        End If
+
+        ' 相続境界線（相続開始日が取得できた場合のみ）
+        If deathDate > 0 And Not drewBoundaryLine Then
+            cellDate = ExtractFullDate(ws.Cells(i, 3).Value)
+            nextCellDate = ExtractFullDate(ws.Cells(i + 1, 3).Value)
+
+            ' 境界線（currentが境界より前、nextが境界以降）
+            If cellDate > 0 And nextCellDate > 0 Then
+                If cellDate < inheritanceBoundary And nextCellDate >= inheritanceBoundary Then
+                    With ws.Range(ws.Cells(i, 3), ws.Cells(i, retusaigo)).Borders(xlEdgeBottom)
+                        .LineStyle = xlContinuous
+                        .Color = RGB(0, 176, 80)  ' 緑
+                        .Weight = xlMedium
+                    End With
+                    drewBoundaryLine = True
+                End If
+            End If
         End If
     Next i
 
@@ -432,11 +538,88 @@ Sub UpdateBorders()
 
 End Sub
 
+'===============================================================================
+' 相続開始日を「相続分」シートのI1から取得
+'===============================================================================
+Private Function GetDeathDateFromSheet() As Date
+    Dim wsInheritance As Worksheet
+    Dim cellValue As Variant
+
+    On Error Resume Next
+    Set wsInheritance = Worksheets("相続分")
+    If wsInheritance Is Nothing Then
+        GetDeathDateFromSheet = 0
+        Exit Function
+    End If
+
+    cellValue = wsInheritance.Range("I1").Value
+    On Error GoTo 0
+
+    If IsEmpty(cellValue) Then
+        GetDeathDateFromSheet = 0
+        Exit Function
+    End If
+
+    ' セルが日付型の場合
+    If IsDate(cellValue) Then
+        GetDeathDateFromSheet = CDate(cellValue)
+        Exit Function
+    End If
+
+    ' 文字列の場合、パースを試みる
+    On Error Resume Next
+    GetDeathDateFromSheet = CDate(cellValue)
+    If Err.Number <> 0 Then
+        GetDeathDateFromSheet = 0
+    End If
+    On Error GoTo 0
+End Function
+
+'===============================================================================
+' セルの日付文字列からDateを抽出（例: "R6(2024)/07/31" → Date）
+'===============================================================================
+Private Function ExtractFullDate(inputText As String) As Date
+    Dim regex As Object
+    Dim matches As Object
+    Dim yearStr As String
+    Dim monthStr As String
+    Dim dayStr As String
+
+    On Error GoTo InvalidDate
+
+    If Len(inputText) = 0 Then
+        ExtractFullDate = 0
+        Exit Function
+    End If
+
+    Set regex = CreateObject("VBScript.RegExp")
+
+    ' パターン: R6(2024)/07/31 または H30(2018)/12/25 など
+    regex.Pattern = "\((\d{4})\)/(\d{2})/(\d{2})"
+    regex.Global = False
+
+    If regex.Test(inputText) Then
+        Set matches = regex.Execute(inputText)
+        yearStr = matches(0).SubMatches(0)
+        monthStr = matches(0).SubMatches(1)
+        dayStr = matches(0).SubMatches(2)
+        ExtractFullDate = DateSerial(CInt(yearStr), CInt(monthStr), CInt(dayStr))
+    Else
+        ExtractFullDate = 0
+    End If
+    Exit Function
+
+InvalidDate:
+    ExtractFullDate = 0
+End Function
+
 Sub WriteUsageSummary(csvData As Variant, buttonCol As Long, buttonRow As Long)
     Dim ws As Worksheet
     Dim targetRow As Long
     Dim withdrawalSummary As String
     Dim depositSummary As String
+    Dim rowsNeeded As Long
+    Dim rowsToInsert As Long
 
     If IsEmpty(csvData) Then Exit Sub
     If buttonRow <= 1 Then Exit Sub
@@ -447,8 +630,77 @@ Sub WriteUsageSummary(csvData As Variant, buttonCol As Long, buttonRow As Long)
     withdrawalSummary = BuildUsageSummary(csvData, True)
     depositSummary = BuildUsageSummary(csvData, False)
 
-    ApplySummaryToCell ws.Cells(targetRow, buttonCol), withdrawalSummary
-    ApplySummaryToCell ws.Cells(targetRow, buttonCol + 1), depositSummary
+    ' 必要な行数を計算（出金・入金の長い方に合わせる）
+    rowsNeeded = CalcRowsNeeded(withdrawalSummary, depositSummary)
+
+    ' 追加行が必要な場合は挿入
+    If rowsNeeded > 1 Then
+        rowsToInsert = rowsNeeded - 1
+        ' targetRowの上に行を挿入
+        ws.Rows(targetRow & ":" & targetRow + rowsToInsert - 1).Insert Shift:=xlDown
+        ' 挿入後、targetRowは変わらない（挿入された行の下になる）
+        ' 最初の用途行から書き始める
+        targetRow = targetRow  ' 挿入された行の最初
+    End If
+
+    ' 複数行に分割して書き込み
+    WriteMultiRowSummary ws, targetRow, buttonCol, withdrawalSummary, rowsNeeded
+    WriteMultiRowSummary ws, targetRow, buttonCol + 1, depositSummary, rowsNeeded
+End Sub
+
+'===============================================================================
+' 必要な行数を計算（1行あたり約200文字）
+'===============================================================================
+Private Function CalcRowsNeeded(summary1 As String, summary2 As String) As Long
+    Const CHARS_PER_ROW As Long = 200
+    Dim maxLen As Long
+    Dim rows As Long
+
+    maxLen = Len(summary1)
+    If Len(summary2) > maxLen Then maxLen = Len(summary2)
+
+    If maxLen = 0 Then
+        CalcRowsNeeded = 1
+        Exit Function
+    End If
+
+    rows = Int((maxLen - 1) / CHARS_PER_ROW) + 1
+    ' 最大5行まで
+    If rows > 5 Then rows = 5
+    CalcRowsNeeded = rows
+End Function
+
+'===============================================================================
+' 複数行にサマリを分割して書き込み
+'===============================================================================
+Private Sub WriteMultiRowSummary(ws As Worksheet, startRow As Long, col As Long, summary As String, totalRows As Long)
+    Const CHARS_PER_ROW As Long = 200
+    Dim i As Long
+    Dim chunk As String
+    Dim pos As Long
+
+    If Len(summary) = 0 Then
+        ' 空の場合は最初の行だけクリア
+        ws.Cells(startRow, col).Value = ""
+        Exit Sub
+    End If
+
+    pos = 1
+    For i = 0 To totalRows - 1
+        If pos <= Len(summary) Then
+            chunk = Mid$(summary, pos, CHARS_PER_ROW)
+            ' 最後の行でない場合は「...」を付けない
+            ' 最後の行で残りがある場合は「...」
+            If i = totalRows - 1 And pos + CHARS_PER_ROW - 1 < Len(summary) Then
+                chunk = Left$(chunk, CHARS_PER_ROW - 3) & "..."
+            End If
+            ApplySummaryToCell ws.Cells(startRow + i, col), chunk
+            pos = pos + CHARS_PER_ROW
+        Else
+            ' 残りの行は空
+            ws.Cells(startRow + i, col).Value = ""
+        End If
+    Next i
 End Sub
 
 Private Function BuildUsageSummary(csvData As Variant, isWithdrawal As Boolean) As String
@@ -516,11 +768,7 @@ Private Function BuildUsageSummary(csvData As Variant, isWithdrawal As Boolean) 
     Next i
     BuildUsageSummary = Join(parts, " / ")
 
-    ' 文字数制限（Excelの行高さ制限対策: 最大200文字）
-    Const MAX_SUMMARY_LENGTH As Long = 200
-    If Len(BuildUsageSummary) > MAX_SUMMARY_LENGTH Then
-        BuildUsageSummary = Left$(BuildUsageSummary, MAX_SUMMARY_LENGTH - 3) & "..."
-    End If
+    ' 文字数制限は削除（複数行対応のため）
 
 ExitFunc:
     Exit Function
@@ -532,6 +780,8 @@ Sub WriteUsageSummaryOnly(csvData As Variant, buttonCol As Long, buttonRow As Lo
     Dim targetRow As Long
     Dim withdrawalSummary As String
     Dim depositSummary As String
+    Dim rowsNeeded As Long
+    Dim rowsToInsert As Long
 
     If IsEmpty(csvData) Then Exit Sub
     If buttonRow <= 1 Then Exit Sub
@@ -542,8 +792,18 @@ Sub WriteUsageSummaryOnly(csvData As Variant, buttonCol As Long, buttonRow As Lo
     withdrawalSummary = BuildUsageSummary(csvData, True)
     depositSummary = BuildUsageSummary(csvData, False)
 
-    ApplySummaryToCell ws.Cells(targetRow, buttonCol), withdrawalSummary
-    ApplySummaryToCell ws.Cells(targetRow, buttonCol + 1), depositSummary
+    ' 必要な行数を計算
+    rowsNeeded = CalcRowsNeeded(withdrawalSummary, depositSummary)
+
+    ' 追加行が必要な場合は挿入
+    If rowsNeeded > 1 Then
+        rowsToInsert = rowsNeeded - 1
+        ws.Rows(targetRow & ":" & targetRow + rowsToInsert - 1).Insert Shift:=xlDown
+    End If
+
+    ' 複数行に分割して書き込み
+    WriteMultiRowSummary ws, targetRow, buttonCol, withdrawalSummary, rowsNeeded
+    WriteMultiRowSummary ws, targetRow, buttonCol + 1, depositSummary, rowsNeeded
 End Sub
 
 Private Function ReadUtf8File(filePath As String) As String
@@ -2290,6 +2550,7 @@ Public Function CollectPdfImportSettings(defaultDocType As String) As PdfImportS
     On Error Resume Next
     Dim frm As frmPdfImportSettings
     Set frm = New frmPdfImportSettings
+
     If Err.Number <> 0 Then
         Err.Clear
         On Error GoTo 0
@@ -2314,10 +2575,6 @@ Public Function CollectPdfImportSettings(defaultDocType As String) As PdfImportS
     settings.MinAmount = frm.MinAmount
     settings.StartDate = frm.NormalizeDateForApi()
     settings.EndDate = frm.NormalizeEndDateForApi()
-
-    ' デバッグ: UserFormから取得した値を確認
-    Debug.Print "UserForm MinAmount: " & frm.MinAmount
-    Debug.Print "settings.MinAmount: " & settings.MinAmount
 
     Unload frm
     Set frm = Nothing
