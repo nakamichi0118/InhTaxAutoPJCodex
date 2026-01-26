@@ -1688,21 +1688,20 @@
             return container;
         }
 
-        const summaryList = document.createElement('div');
-        summaryList.className = 'summary-list';
-        computeSummaryItems(doc).forEach((item) => {
-            const div = document.createElement('div');
-            div.innerHTML = `<strong>${item.label}</strong><div style="margin-top:0.4rem;">${escapeHtml(item.value)}</div>`;
-            summaryList.appendChild(div);
-        });
-        container.appendChild(summaryList);
-
-        // For nayose documents, show property table and JON API integration
+        // For nayose documents, show different summary and Handsontable
         if (doc.docType === 'nayose' && Array.isArray(doc.assets)) {
-            const propertyTable = buildPropertyPreviewTable(doc.assets);
-            if (propertyTable) {
-                container.appendChild(propertyTable);
-            }
+            const summaryList = document.createElement('div');
+            summaryList.className = 'summary-list';
+            computeNayoseSummaryItems(doc).forEach((item) => {
+                const div = document.createElement('div');
+                div.innerHTML = `<strong>${item.label}</strong><div style="margin-top:0.4rem;">${escapeHtml(item.value)}</div>`;
+                summaryList.appendChild(div);
+            });
+            container.appendChild(summaryList);
+
+            // Use Handsontable for editable property list
+            renderNayoseHandsontable(doc.assets, container);
+
             // Check JON API status and render panel if configured
             checkJonApiStatus().then(status => {
                 if (status.configured) {
@@ -1720,6 +1719,15 @@
                 }
             });
         } else {
+            const summaryList = document.createElement('div');
+            summaryList.className = 'summary-list';
+            computeSummaryItems(doc).forEach((item) => {
+                const div = document.createElement('div');
+                div.innerHTML = `<strong>${item.label}</strong><div style="margin-top:0.4rem;">${escapeHtml(item.value)}</div>`;
+                summaryList.appendChild(div);
+            });
+            container.appendChild(summaryList);
+
             const previewTable = buildPreviewTable(doc.assets);
             if (previewTable) {
                 container.appendChild(previewTable);
@@ -1735,49 +1743,94 @@
         return container;
     }
 
-    function buildPropertyPreviewTable(assets) {
+    function computeNayoseSummaryItems(doc) {
+        const assets = Array.isArray(doc.assets) ? doc.assets : [];
+        const landCount = assets.filter(a => a.category === 'land').length;
+        const buildingCount = assets.filter(a => a.category === 'building').length;
+        const durationValue =
+            typeof doc.durationSeconds === 'number'
+                ? `${doc.durationSeconds.toFixed(1)} 秒`
+                : '計測中';
+
+        return [
+            { label: '処理時間', value: durationValue },
+            { label: '資料種別', value: describeDocType(doc.docType) },
+            { label: '土地', value: `${landCount} 筆` },
+            { label: '家屋', value: `${buildingCount} 棟` },
+        ];
+    }
+
+    function renderNayoseHandsontable(assets, container) {
         const assetList = Array.isArray(assets) ? assets : [];
         const properties = assetList.filter(a => a.category === 'land' || a.category === 'building');
-        if (!properties.length) return null;
 
-        const columns = [
-            { key: 'category', label: '種別', format: v => v === 'building' ? '家屋' : '土地' },
-            { key: 'city', label: '市区町村' },
-            { key: 'address', label: '所在地・地番' },
-            { key: 'land_type', label: '地目/構造', alt: 'structure' },
-            { key: 'area', label: '地積/床面積' },
-            { key: 'value', label: '評価額', format: v => v ? formatNumber(v) + '円' : '' },
-        ];
+        if (!properties.length) {
+            const note = document.createElement('p');
+            note.style.margin = '0';
+            note.style.color = '#4b5563';
+            note.textContent = '不動産データが見つかりませんでした。';
+            container.appendChild(note);
+            return;
+        }
 
-        const table = document.createElement('table');
-        table.className = 'preview';
+        // Parse notes to extract land_type/structure and area
+        const data = properties.map((prop, idx) => {
+            const notes = prop.notes || '';
+            let landType = '';
+            let area = '';
 
-        const thead = document.createElement('thead');
-        const headerRow = document.createElement('tr');
-        columns.forEach(col => {
-            const th = document.createElement('th');
-            th.textContent = col.label;
-            headerRow.appendChild(th);
+            // Extract from notes: "課税地目: 宅地" or "構造: 木造瓦葺2階建"
+            const landTypeMatch = notes.match(/課税地目:\s*([^\n]+)/);
+            const structureMatch = notes.match(/構造:\s*([^\n]+)/);
+            const areaMatch = notes.match(/(?:地積|床面積):\s*([0-9,.]+)/);
+
+            if (landTypeMatch) landType = landTypeMatch[1].trim();
+            else if (structureMatch) landType = structureMatch[1].trim();
+
+            if (areaMatch) area = areaMatch[1].trim();
+
+            return {
+                category: prop.category === 'building' ? '家屋' : '土地',
+                municipality: prop.location_municipality || '',
+                location: prop.location_detail || '',
+                landType: landType,
+                area: area,
+                value: prop.valuation_amount ? formatNumber(prop.valuation_amount) : '',
+                id: prop.identifier_primary || `prop-${idx}`,
+            };
         });
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
 
-        const tbody = document.createElement('tbody');
-        properties.slice(0, 20).forEach(prop => {
-            const row = document.createElement('tr');
-            columns.forEach(col => {
-                const cell = document.createElement('td');
-                let value = prop[col.key];
-                if (!value && col.alt) value = prop[col.alt];
-                if (col.format) value = col.format(value);
-                cell.textContent = escapeHtml(value || '');
-                row.appendChild(cell);
+        const hotWrapper = document.createElement('div');
+        hotWrapper.className = 'handsontable-wrapper';
+        hotWrapper.id = `nayoseHot-${Date.now()}`;
+        container.appendChild(hotWrapper);
+
+        // Initialize Handsontable after DOM is ready
+        setTimeout(() => {
+            if (typeof Handsontable === 'undefined') {
+                console.warn('Handsontable not loaded');
+                return;
+            }
+            new Handsontable(hotWrapper, {
+                data: data,
+                colHeaders: ['種別', '市区町村', '所在地・地番', '地目/構造', '地積/床面積', '評価額'],
+                columns: [
+                    { data: 'category', type: 'dropdown', source: ['土地', '家屋'], width: 60 },
+                    { data: 'municipality', type: 'text', width: 100 },
+                    { data: 'location', type: 'text', width: 200 },
+                    { data: 'landType', type: 'text', width: 100 },
+                    { data: 'area', type: 'text', width: 80 },
+                    { data: 'value', type: 'text', width: 100 },
+                ],
+                rowHeaders: true,
+                height: 'auto',
+                maxRows: 100,
+                licenseKey: 'non-commercial-and-evaluation',
+                stretchH: 'all',
+                contextMenu: true,
+                manualColumnResize: true,
             });
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-
-        return table;
+        }, 100);
     }
 
     function computeSummaryItems(doc) {
@@ -2177,22 +2230,27 @@
         title.textContent = 'JON API 情報取得';
         jonContainer.appendChild(title);
 
-        // Handsontable container
-        const hotWrapper = document.createElement('div');
-        hotWrapper.className = 'handsontable-wrapper';
-        hotWrapper.id = 'jonHandsontable';
-        jonContainer.appendChild(hotWrapper);
+        const description = document.createElement('p');
+        description.style.margin = '0 0 1rem';
+        description.style.fontSize = '0.9rem';
+        description.style.color = '#4b5563';
+        description.textContent = '上記の不動産について、JON APIで登記情報・路線価図等を取得できます。取得したい項目を選択してください。';
+        jonContainer.appendChild(description);
 
         // Acquisition options
         const optionsDiv = document.createElement('div');
         optionsDiv.className = 'jon-options';
         optionsDiv.id = 'jonAcquisitionOptions';
 
+        const hasLand = properties.some(p => p.category === 'land');
+        const hasBuilding = properties.some(p => p.category === 'building');
+
         JON_ACQUISITION_OPTIONS.forEach(opt => {
             const label = document.createElement('label');
             label.className = 'jon-option-label';
-            label.innerHTML = `<input type="checkbox" name="${opt.key}" checked> ${opt.label}`;
-            if (!opt.forLand && !opt.forBuilding) {
+            const shouldEnable = (hasLand && opt.forLand) || (hasBuilding && opt.forBuilding);
+            label.innerHTML = `<input type="checkbox" name="${opt.key}" ${shouldEnable ? 'checked' : 'disabled'}> ${opt.label}`;
+            if (!shouldEnable) {
                 label.dataset.disabled = 'true';
             }
             optionsDiv.appendChild(label);
@@ -2203,26 +2261,12 @@
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'jon-actions';
 
-        const selectAllBtn = document.createElement('button');
-        selectAllBtn.type = 'button';
-        selectAllBtn.className = 'secondary small';
-        selectAllBtn.textContent = '全選択';
-        selectAllBtn.addEventListener('click', () => selectAllJonRows(true));
-        actionsDiv.appendChild(selectAllBtn);
-
-        const deselectAllBtn = document.createElement('button');
-        deselectAllBtn.type = 'button';
-        deselectAllBtn.className = 'secondary small';
-        deselectAllBtn.textContent = '全解除';
-        deselectAllBtn.addEventListener('click', () => selectAllJonRows(false));
-        actionsDiv.appendChild(deselectAllBtn);
-
         const executeBtn = document.createElement('button');
         executeBtn.type = 'button';
         executeBtn.className = 'primary';
         executeBtn.id = 'executeJonBtn';
         executeBtn.textContent = '情報取得を実行';
-        executeBtn.addEventListener('click', executeJonBatch);
+        executeBtn.addEventListener('click', () => executeJonBatchFromProperties(properties));
         actionsDiv.appendChild(executeBtn);
 
         jonContainer.appendChild(actionsDiv);
@@ -2242,116 +2286,34 @@
         jonContainer.appendChild(resultsDiv);
 
         container.appendChild(jonContainer);
-
-        // Initialize Handsontable
-        initJonHandsontable(properties);
     }
 
-    function initJonHandsontable(properties) {
-        const hotContainer = document.getElementById('jonHandsontable');
-        if (!hotContainer || typeof Handsontable === 'undefined') {
-            console.warn('Handsontable not available');
-            return;
-        }
-
-        const data = properties.map((prop, idx) => ({
-            selected: true,
-            type: prop.category === 'building' ? '家屋' : '土地',
-            city: prop.city || '',
-            address: prop.address || prop.location || '',
-            landType: prop.land_type || prop.structure || '',
-            area: prop.area || '',
-            value: prop.value || '',
-            id: prop.id || `prop-${idx}`,
-        }));
-
-        jonState.hotInstance = new Handsontable(hotContainer, {
-            data: data,
-            colHeaders: ['選択', '種別', '市区町村', '所在地・地番', '地目/構造', '地積/床面積', '評価額'],
-            columns: [
-                { data: 'selected', type: 'checkbox', width: 50 },
-                { data: 'type', type: 'dropdown', source: ['土地', '家屋'], width: 60 },
-                { data: 'city', type: 'text', width: 100 },
-                { data: 'address', type: 'text', width: 200 },
-                { data: 'landType', type: 'text', width: 80 },
-                { data: 'area', type: 'text', width: 80 },
-                { data: 'value', type: 'text', width: 100 },
-            ],
-            rowHeaders: true,
-            height: 'auto',
-            maxRows: 100,
-            licenseKey: 'non-commercial-and-evaluation',
-            stretchH: 'all',
-            contextMenu: true,
-            manualColumnResize: true,
-            afterChange: updateJonOptionsVisibility,
-        });
-
-        updateJonOptionsVisibility();
-    }
-
-    function updateJonOptionsVisibility() {
-        const optionsContainer = document.getElementById('jonAcquisitionOptions');
-        if (!optionsContainer || !jonState.hotInstance) return;
-
-        const data = jonState.hotInstance.getData();
-        const hasLand = data.some(row => row[1] === '土地' && row[0]);
-        const hasBuilding = data.some(row => row[1] === '家屋' && row[0]);
-
-        optionsContainer.querySelectorAll('.jon-option-label').forEach(label => {
-            const checkbox = label.querySelector('input');
-            const key = checkbox.name;
-            const opt = JON_ACQUISITION_OPTIONS.find(o => o.key === key);
-            if (!opt) return;
-
-            const shouldEnable = (hasLand && opt.forLand) || (hasBuilding && opt.forBuilding);
-            label.dataset.disabled = shouldEnable ? 'false' : 'true';
-            checkbox.disabled = !shouldEnable;
-        });
-    }
-
-    function selectAllJonRows(selected) {
-        if (!jonState.hotInstance) return;
-        const rowCount = jonState.hotInstance.countRows();
-        for (let i = 0; i < rowCount; i++) {
-            jonState.hotInstance.setDataAtCell(i, 0, selected);
-        }
-    }
-
-    function getSelectedJonItems() {
-        if (!jonState.hotInstance) return [];
-
-        const data = jonState.hotInstance.getSourceData();
+    async function executeJonBatchFromProperties(properties) {
         const optionsContainer = document.getElementById('jonAcquisitionOptions');
         const selectedAcquisitions = [];
 
         if (optionsContainer) {
-            optionsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+            optionsContainer.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)').forEach(cb => {
                 selectedAcquisitions.push(cb.name);
             });
         }
 
-        return data
-            .filter(row => row.selected)
-            .map(row => ({
-                id: row.id,
-                address: `${row.city}${row.address}`,
-                property_type: row.type === '家屋' ? 'building' : 'land',
-                acquisitions: selectedAcquisitions.filter(acq => {
-                    const opt = JON_ACQUISITION_OPTIONS.find(o => o.key === acq);
-                    if (!opt) return false;
-                    if (row.type === '家屋') return opt.forBuilding;
-                    return opt.forLand;
-                }),
-            }));
-    }
-
-    async function executeJonBatch() {
-        const items = getSelectedJonItems();
-        if (!items.length) {
-            alert('取得対象の不動産を選択してください。');
+        if (!selectedAcquisitions.length) {
+            alert('取得項目を選択してください。');
             return;
         }
+
+        const items = properties.map(prop => ({
+            id: prop.id,
+            address: `${prop.city}${prop.address}`,
+            property_type: prop.category === 'building' ? 'building' : 'land',
+            acquisitions: selectedAcquisitions.filter(acq => {
+                const opt = JON_ACQUISITION_OPTIONS.find(o => o.key === acq);
+                if (!opt) return false;
+                if (prop.category === 'building') return opt.forBuilding;
+                return opt.forLand;
+            }),
+        }));
 
         const executeBtn = document.getElementById('executeJonBtn');
         const progressDiv = document.getElementById('jonProgress');
@@ -2380,7 +2342,6 @@
             const batchResponse = await res.json();
             jonState.batchId = batchResponse.batch_id;
 
-            // Poll for results
             await pollJonBatchStatus(batchResponse.batch_id);
 
         } catch (error) {
@@ -2571,20 +2532,32 @@
         URL.revokeObjectURL(url);
     }
 
-    // Update renderAssetTabs to handle JON API integration for real_estate tab
+    // Handle JON API integration for nayose results
     function handleNayoseResultsForJon(assets, panel) {
         // Convert assets to properties format for JON API
         const properties = assets.flatMap(asset => {
             if (asset.category === 'land' || asset.category === 'building') {
+                const notes = asset.notes || '';
+                let landType = '';
+                let area = '';
+
+                const landTypeMatch = notes.match(/課税地目:\s*([^\n]+)/);
+                const structureMatch = notes.match(/構造:\s*([^\n]+)/);
+                const areaMatch = notes.match(/(?:地積|床面積):\s*([0-9,.]+)/);
+
+                if (landTypeMatch) landType = landTypeMatch[1].trim();
+                else if (structureMatch) landType = structureMatch[1].trim();
+                if (areaMatch) area = areaMatch[1].trim();
+
                 return [{
                     id: asset.identifier_primary || `prop-${Math.random().toString(36).slice(2)}`,
                     category: asset.category,
-                    city: asset.city || '',
-                    address: asset.address || asset.location || '',
-                    land_type: asset.land_type || '',
-                    structure: asset.structure || '',
-                    area: asset.area || '',
-                    value: asset.value || '',
+                    city: asset.location_municipality || '',
+                    address: asset.location_detail || '',
+                    land_type: landType,
+                    structure: landType,
+                    area: area,
+                    value: asset.valuation_amount || '',
                 }];
             }
             return [];
