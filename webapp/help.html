@@ -159,16 +159,87 @@
         </section>
 
         <section>
-            <h2>操作手順</h2>
+            <h2>タブ一覧</h2>
+            <div class="grid">
+                <div class="card">
+                    <h3>不動産</h3>
+                    <p><strong>利用可能</strong> - 名寄帳・固定資産評価証明書から土地・家屋を読み取り、登記情報・路線価図・Googleマップを取得</p>
+                </div>
+                <div class="card">
+                    <h3>通帳・取引履歴</h3>
+                    <p><strong>利用可能</strong> - 通帳PDFから取引明細を読み取り、CSV出力</p>
+                </div>
+                <div class="card">
+                    <h3>有価証券・預貯金・生命保険・その他</h3>
+                    <p><span style="color:#94a3b8;">準備中</span> - 今後対応予定</p>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>不動産タブの使い方</h2>
+            <p>名寄帳・固定資産評価証明書・課税明細から土地・家屋情報を自動抽出し、JON APIで追加情報を取得します。</p>
+            <div class="steps">
+                <div class="card">
+                    <div class="step-number">STEP 1</div>
+                    <h3>PDFをアップロード</h3>
+                    <p>解析エンジン（Gemini 2.5 Flash推奨）を選択し、名寄帳PDFをアップロードします。</p>
+                    <div class="mock-panel">
+                        <strong>ドロップエリア</strong>
+                        <div style="border:2px dashed #93c5fd;border-radius:12px;padding:0.8rem;text-align:center;color:#0f172a;">
+                            ここにPDFをドロップ<br><small>名寄帳・固定資産評価証明書</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="step-number">STEP 2</div>
+                    <h3>取得オプションを選択</h3>
+                    <p>読み取り完了後、各物件の取得オプションにチェックを入れます。</p>
+                    <div class="mock-panel">
+                        <strong>取得オプション</strong>
+                        <ul style="margin:0;padding-left:1rem;font-size:0.85rem;">
+                            <li><strong>地図</strong> - 位置特定・Googleマップリンク生成</li>
+                            <li><strong>登記簿</strong> - 登記情報PDF取得（認証必要）</li>
+                            <li><strong>路線価</strong> - 路線価図画像取得（土地のみ）</li>
+                            <li><strong>図面</strong> - 地積測量図/建物図面（認証必要）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="step-number">STEP 3</div>
+                    <h3>情報取得を実行</h3>
+                    <p>「情報取得を実行」をクリックすると、JON APIで各種情報を自動取得します。</p>
+                    <div class="mock-panel">
+                        <strong>結果リンク例</strong>
+                        <ul style="margin:0;padding-left:1rem;font-size:0.85rem;">
+                            <li>[Googleマップ] - 物件位置を確認</li>
+                            <li>[路線価図] + [国税庁で確認]</li>
+                            <li>または [〇〇の倍率表]（倍率地域の場合）</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="warning">
+                <strong>チェックボックスの連動</strong>
+                <ul style="padding-left:1.2rem;margin:0.5rem 0 0;font-size:0.9rem;line-height:1.5;">
+                    <li>登記簿・路線価・図面を取得するには、<strong>地図（位置特定）が必須</strong>です。</li>
+                    <li>登記簿・路線価・図面にチェックを入れると、地図が自動でONになります。</li>
+                    <li>地図をOFFにしようとすると、他にチェックがあれば警告が表示されます。</li>
+                </ul>
+            </div>
+        </section>
+
+        <section>
+            <h2>通帳・取引履歴タブの使い方</h2>
             <div class="steps">
                 <div class="card">
                     <div class="step-number">STEP 1</div>
                     <h3>種別とエンジンを選ぶ</h3>
-                    <p>通帳・取引履歴タブで「取引履歴」または「通帳（預貯金）」を選び、解析エンジン（Gemini 2.5 Pro／Flash）を指定します。標準は <strong>Gemini 2.5 Pro</strong> です。</p>
+                    <p>「取引履歴」または「通帳（預貯金）」を選び、解析エンジンを指定します。標準は <strong>Gemini 2.5 Pro</strong> です。</p>
                     <div class="mock-panel">
                         <strong>解析エンジン</strong>
                         <ul style="margin:0;padding-left:1rem;">
-                            <li>Gemini 2.5 Pro（高精度）</li>
+                            <li>Gemini 2.5 Pro（高精度・推奨）</li>
                             <li>Gemini 2.5 Flash（高速・軽量）</li>
                         </ul>
                     </div>
@@ -187,20 +258,36 @@
                 <div class="card">
                     <div class="step-number">STEP 3</div>
                     <h3>結果を確認・ダウンロード</h3>
-                    <p>進捗バーを見ながら待ち、完了したら処理時間／件数をチェック。必要なCSV（assets/bank_transactions）を保存します。</p>
+                    <p>進捗バーを見ながら待ち、完了したら処理時間／件数をチェック。CSVを保存します。</p>
                     <div class="mock-panel">
                         <strong>プレビュー例</strong>
                         <p style="margin:0;">処理時間 132.4 秒 / 取引 248 件</p>
-                        <p style="margin:0;">CSV: assets.csv / bank_transactions.csv</p>
+                        <p style="margin:0;">CSV: bank_transactions.csv</p>
                     </div>
                 </div>
             </div>
-            <p style="margin-top:1rem;font-size:0.9rem;">※ 出力ファイルは `assets.csv` / `bank_transactions.csv` の2種類です。必要に応じて補正メモを確認し、社内フローへ取り込んでください。</p>
+            <p style="margin-top:1rem;font-size:0.9rem;">※ 出力ファイルは `bank_transactions.csv` です。補正メモを確認し、社内フローへ取り込んでください。</p>
         </section>
 
         <section>
-            <h2>FAQ</h2>
+            <h2>FAQ - 不動産タブ</h2>
             <details open>
+                <summary>路線価図が取得できない場合は？</summary>
+                <p>倍率地域の可能性があります。「〇〇の倍率表」リンクから国税庁サイトで確認してください。倍率地域では路線価ではなく固定資産税評価額に倍率を乗じて評価します。</p>
+            </details>
+            <details>
+                <summary>登記簿が取得できない</summary>
+                <p>登記簿取得には認証情報の設定が必要です。管理者に連絡してください。</p>
+            </details>
+            <details>
+                <summary>位置特定に失敗した場合は？</summary>
+                <p>住所表記を確認・修正してください。JON APIが住所を特定できない場合、登記簿・路線価・図面の取得もできません。</p>
+            </details>
+        </section>
+
+        <section>
+            <h2>FAQ - 通帳・取引履歴タブ</h2>
+            <details>
                 <summary>画像が横向きでも読み取れますか？</summary>
                 <p>はい。Geminiが自動で向きを判定するため、そのままアップロードして問題ありません。</p>
             </details>
