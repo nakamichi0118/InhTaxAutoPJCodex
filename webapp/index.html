@@ -1347,11 +1347,9 @@
                     opt.textContent = option.label;
                     modeSelect.appendChild(opt);
                 });
-                // Set initial value based on current tab's recommended model
-                const currentTab = TAB_DEFINITIONS.find(t => t.id === state.activeAssetTabId);
-                const initialModel = currentTab?.recommendedModel || 'gemini_pro';
+                // Set initial value based on THIS tab's recommended model (not the active tab)
+                const initialModel = tab.recommendedModel || 'gemini_pro';
                 modeSelect.value = initialModel;
-                state.analysisMode = initialModel;
                 modeSelect.addEventListener('change', () => {
                     state.analysisMode = modeSelect.value || 'gemini_pro';
                 });
@@ -1459,7 +1457,9 @@
         // Switch Gemini model based on tab's recommended model
         const tab = TAB_DEFINITIONS.find(t => t.id === tabId);
         if (tab?.recommendedModel) {
-            const modeSelect = document.getElementById('analysisModeSelect');
+            // Find modeSelect within the active panel (each panel has its own modeSelect)
+            const activePanel = assetTabsRoot.querySelector(`.asset-panel[data-tab-id="${tabId}"]`);
+            const modeSelect = activePanel?.querySelector('#analysisModeSelect');
             if (modeSelect) {
                 modeSelect.value = tab.recommendedModel;
                 state.analysisMode = tab.recommendedModel;
@@ -2255,6 +2255,7 @@
         properties: [],
         hotInstance: null,
         batchId: null,
+        batchItems: [], // Store batch request items to track requested acquisitions
         batchResults: [],
         isProcessing: false,
     };
@@ -2467,6 +2468,9 @@
             return;
         }
 
+        // Store batch items to track requested acquisitions for result display
+        jonState.batchItems = items;
+
         const executeBtn = document.getElementById('executeJonBtn');
         const progressDiv = document.getElementById('jonProgress');
         const resultsDiv = document.getElementById('jonResults');
@@ -2619,6 +2623,19 @@
                 imgBtn.textContent = '路線価図';
                 imgBtn.addEventListener('click', () => showRosenkaImage(result.rosenka_image));
                 linksDiv.appendChild(imgBtn);
+            } else if (isLand) {
+                // 路線価図が取得できなかった場合、倍率表へのリンクを表示（rosenkaがリクエストされていた場合）
+                const batchItem = jonState.batchItems.find(item => item.id === result.id);
+                if (batchItem?.acquisitions?.includes('rosenka')) {
+                    const bairitsuLink = document.createElement('a');
+                    bairitsuLink.href = 'https://www.rosenka.nta.go.jp/';
+                    bairitsuLink.target = '_blank';
+                    bairitsuLink.rel = 'noopener';
+                    bairitsuLink.className = 'jon-result-link';
+                    bairitsuLink.textContent = '倍率表を検索';
+                    bairitsuLink.title = '路線価図がない地域です。国税庁の倍率表から評価額を確認してください。';
+                    linksDiv.appendChild(bairitsuLink);
+                }
             }
 
             itemDiv.appendChild(linksDiv);
