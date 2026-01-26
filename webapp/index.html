@@ -2269,6 +2269,53 @@
         { key: 'tatemono', label: '建物図面', forLand: false, forBuilding: true },
     ];
 
+    // 都道府県から国税庁路線価サイトのURLコードへのマッピング
+    const PREF_TO_ROSENKA_CODE = {
+        '北海道': 'hokkaido', '青森': 'aomori', '岩手': 'iwate', '宮城': 'miyagi',
+        '秋田': 'akita', '山形': 'yamagata', '福島': 'fukushima', '茨城': 'ibaraki',
+        '栃木': 'tochigi', '群馬': 'gunma', '埼玉': 'saitama', '千葉': 'chiba',
+        '東京': 'tokyo', '神奈川': 'kanagawa', '新潟': 'niigata', '富山': 'toyama',
+        '石川': 'ishikawa', '福井': 'fukui', '山梨': 'yamanashi', '長野': 'nagano',
+        '岐阜': 'gifu', '静岡': 'shizuoka', '愛知': 'aichi', '三重': 'mie',
+        '滋賀': 'shiga', '京都': 'kyoto', '大阪': 'osaka', '兵庫': 'hyogo',
+        '奈良': 'nara', '和歌山': 'wakayama', '鳥取': 'tottori', '島根': 'shimane',
+        '岡山': 'okayama', '広島': 'hiroshima', '山口': 'yamaguchi', '徳島': 'tokushima',
+        '香川': 'kagawa', '愛媛': 'ehime', '高知': 'kochi', '福岡': 'fukuoka',
+        '佐賀': 'saga', '長崎': 'nagasaki', '熊本': 'kumamoto', '大分': 'oita',
+        '宮崎': 'miyazaki', '鹿児島': 'kagoshima', '沖縄': 'okinawa',
+    };
+
+    // 市区町村名から都道府県を推測
+    function inferPrefectureFromMunicipality(municipality) {
+        if (!municipality) return null;
+        // 政令指定都市などから都道府県を推測
+        const cityToPref = {
+            '札幌市': '北海道', '仙台市': '宮城', 'さいたま市': '埼玉', '千葉市': '千葉',
+            '横浜市': '神奈川', '川崎市': '神奈川', '相模原市': '神奈川', '新潟市': '新潟',
+            '静岡市': '静岡', '浜松市': '静岡', '名古屋市': '愛知', '京都市': '京都',
+            '大阪市': '大阪', '堺市': '大阪', '神戸市': '兵庫', '岡山市': '岡山',
+            '広島市': '広島', '北九州市': '福岡', '福岡市': '福岡', '熊本市': '熊本',
+        };
+        for (const [city, pref] of Object.entries(cityToPref)) {
+            if (municipality.startsWith(city)) return pref;
+        }
+        // 県名が含まれている場合
+        for (const pref of Object.keys(PREF_TO_ROSENKA_CODE)) {
+            if (municipality.includes(pref)) return pref;
+        }
+        return null;
+    }
+
+    // 都道府県レベルの路線価・倍率表URLを生成
+    function getRosenkaUrl(prefecture) {
+        const code = PREF_TO_ROSENKA_CODE[prefecture];
+        if (code) {
+            // 令和7年分（最新年度）の路線価ページ
+            return `https://www.rosenka.nta.go.jp/main_r07/${code}/`;
+        }
+        return 'https://www.rosenka.nta.go.jp/';
+    }
+
     async function checkJonApiStatus() {
         try {
             const res = await fetch(`${normalizedApiBase()}/jon/status`);
@@ -2377,18 +2424,12 @@
             toukiTd.innerHTML = `<input type="checkbox" data-prop="${idx}" data-acq="touki" ${toukiDisabled}>`;
             tr.appendChild(toukiTd);
 
-            // 路線価 checkbox (土地のみ) + 国税庁リンク
+            // 路線価 checkbox (土地のみ)
             const rosenkaTd = document.createElement('td');
             rosenkaTd.style.padding = '0.5rem 0.6rem';
             rosenkaTd.style.textAlign = 'center';
             if (isLand) {
-                // チェックボックスと国税庁リンクを表示
-                rosenkaTd.innerHTML = `
-                    <div style="display:flex;flex-direction:column;align-items:center;gap:0.2rem;">
-                        <input type="checkbox" data-prop="${idx}" data-acq="rosenka" checked>
-                        <a href="https://www.rosenka.nta.go.jp/" target="_blank" rel="noopener"
-                           style="font-size:0.7rem;color:#3b82f6;" title="国税庁 路線価図・評価倍率表">国税庁</a>
-                    </div>`;
+                rosenkaTd.innerHTML = `<input type="checkbox" data-prop="${idx}" data-acq="rosenka" checked>`;
             } else {
                 rosenkaTd.innerHTML = `<span style="color:#94a3b8;">―</span>`;
             }
@@ -2633,13 +2674,18 @@
                 // 路線価図が取得できなかった場合、倍率表へのリンクを表示（rosenkaがリクエストされていた場合）
                 const batchItem = jonState.batchItems.find(item => item.id === result.id);
                 if (batchItem?.acquisitions?.includes('rosenka')) {
+                    // 都道府県を推測して、より具体的なURLを生成
+                    const municipality = originalProp?.city || originalProp?.location_municipality || '';
+                    const prefecture = originalProp?.location_prefecture || inferPrefectureFromMunicipality(municipality);
+                    const rosenkaUrl = getRosenkaUrl(prefecture);
+
                     const bairitsuLink = document.createElement('a');
-                    bairitsuLink.href = 'https://www.rosenka.nta.go.jp/';
+                    bairitsuLink.href = rosenkaUrl;
                     bairitsuLink.target = '_blank';
                     bairitsuLink.rel = 'noopener';
                     bairitsuLink.className = 'jon-result-link';
-                    bairitsuLink.textContent = '倍率表を検索';
-                    bairitsuLink.title = '路線価図がない地域です。国税庁の倍率表から評価額を確認してください。';
+                    bairitsuLink.textContent = prefecture ? `${prefecture}の路線価・倍率表` : '路線価・倍率表を検索';
+                    bairitsuLink.title = '路線価図がない地域は倍率表を確認してください。';
                     linksDiv.appendChild(bairitsuLink);
                 }
             }
