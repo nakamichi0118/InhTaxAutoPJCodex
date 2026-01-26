@@ -2292,7 +2292,7 @@
         jonContainer.id = 'jonApiContainer';
 
         const title = document.createElement('h4');
-        title.textContent = 'JON API 情報取得';
+        title.textContent = '登記・地図情報を取得';
         jonContainer.appendChild(title);
 
         // Show configuration status
@@ -2334,10 +2334,10 @@
             <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
                 <th style="padding:0.6rem;text-align:left;width:50px;">種別</th>
                 <th style="padding:0.6rem;text-align:left;">所在地</th>
-                <th style="padding:0.6rem;text-align:center;width:90px;">Googleマップ</th>
+                <th style="padding:0.6rem;text-align:center;width:50px;">地図</th>
                 <th style="padding:0.6rem;text-align:center;width:60px;">登記簿</th>
-                <th style="padding:0.6rem;text-align:center;width:90px;">路線価図</th>
-                <th style="padding:0.6rem;text-align:center;width:90px;">地積測量図<br><span style="font-size:0.7rem;font-weight:normal;color:#64748b;">／建物図面</span></th>
+                <th style="padding:0.6rem;text-align:center;width:70px;">路線価</th>
+                <th style="padding:0.6rem;text-align:center;width:50px;">図面</th>
             </tr>
         `;
         table.appendChild(thead);
@@ -2377,12 +2377,18 @@
             toukiTd.innerHTML = `<input type="checkbox" data-prop="${idx}" data-acq="touki" ${toukiDisabled}>`;
             tr.appendChild(toukiTd);
 
-            // 路線価図 checkbox (土地のみ)
+            // 路線価 checkbox (土地のみ) + 国税庁リンク
             const rosenkaTd = document.createElement('td');
             rosenkaTd.style.padding = '0.5rem 0.6rem';
             rosenkaTd.style.textAlign = 'center';
             if (isLand) {
-                rosenkaTd.innerHTML = `<input type="checkbox" data-prop="${idx}" data-acq="rosenka" checked>`;
+                // チェックボックスと国税庁リンクを表示
+                rosenkaTd.innerHTML = `
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:0.2rem;">
+                        <input type="checkbox" data-prop="${idx}" data-acq="rosenka" checked>
+                        <a href="https://www.rosenka.nta.go.jp/" target="_blank" rel="noopener"
+                           style="font-size:0.7rem;color:#3b82f6;" title="国税庁 路線価図・評価倍率表">国税庁</a>
+                    </div>`;
             } else {
                 rosenkaTd.innerHTML = `<span style="color:#94a3b8;">―</span>`;
             }
