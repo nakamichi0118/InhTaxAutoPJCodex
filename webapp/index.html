@@ -2454,6 +2454,36 @@
         tableContainer.appendChild(table);
         jonContainer.appendChild(tableContainer);
 
+        // チェックボックスの連動: 登記簿・路線価・図面にチェック → 地図も自動チェック
+        tableContainer.addEventListener('change', (e) => {
+            const checkbox = e.target;
+            if (checkbox.type !== 'checkbox') return;
+
+            const propIdx = checkbox.dataset.prop;
+            const acqType = checkbox.dataset.acq;
+            const row = tableContainer.querySelector(`tr[data-prop-idx="${propIdx}"]`);
+            if (!row) return;
+
+            const gmapCheckbox = row.querySelector('input[data-acq="google_map"]');
+            const dependentCheckboxes = row.querySelectorAll('input[data-acq="touki"], input[data-acq="rosenka"], input[data-acq="chiseki"], input[data-acq="tatemono"]');
+
+            if (acqType === 'google_map') {
+                // 地図をオフにしようとした場合、他にチェックがあれば警告
+                if (!checkbox.checked) {
+                    const hasOtherChecked = Array.from(dependentCheckboxes).some(cb => cb.checked && !cb.disabled);
+                    if (hasOtherChecked) {
+                        checkbox.checked = true; // 戻す
+                        alert('登記簿・路線価・図面を取得するには位置特定（地図）が必要です。先に他のチェックを外してください。');
+                    }
+                }
+            } else {
+                // 登記簿・路線価・図面をオンにした場合、地図も自動でオン
+                if (checkbox.checked && gmapCheckbox && !gmapCheckbox.checked) {
+                    gmapCheckbox.checked = true;
+                }
+            }
+        });
+
         // Actions
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'jon-actions';
