@@ -1,0 +1,130 @@
+"""Pydantic models for JON API."""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Literal, Optional
+from pydantic import BaseModel, Field
+
+
+class LocationResult(BaseModel):
+    """位置特定APIの結果"""
+    lat: float
+    long: float
+    locating_level: int = 0
+    located_by: str = ""
+    v1_code: str
+    pref: str = ""
+    city: str = ""
+    large_section: str = ""
+    small_section: str = ""
+    number: str = ""
+    address_type_result: str = ""
+    raw_response: Dict[str, Any] = Field(default_factory=dict)
+
+
+class BuildingNumber(BaseModel):
+    """家屋番号"""
+    building_number: str
+    v1_code: str = ""
+    pref: str = ""
+    city: str = ""
+    large_section: str = ""
+    small_section: str = ""
+
+
+class RegistrationResult(BaseModel):
+    """登記取得APIの結果"""
+    pdf_id: int
+    pdf_url: str
+    v1_code: str
+    number: str
+    number_type: int
+    pdf_type: int
+    based_at: str
+    raw_response: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RosenImageResult(BaseModel):
+    """路線価図APIの結果"""
+    image_base64: str
+    lat: float
+    long: float
+
+
+class AnalyzeResult(BaseModel):
+    """登記解析APIの結果"""
+    pdf_id: int
+    status: str
+    data: Optional[Dict[str, Any]] = None
+    raw_response: Dict[str, Any] = Field(default_factory=dict)
+
+
+# Batch processing models
+class JonBatchItem(BaseModel):
+    """バッチ処理の個別アイテム"""
+    id: str
+    address: str
+    property_type: Literal["land", "building"]
+    acquisitions: List[Literal["google_map", "rosenka", "touki", "kozu", "chiseki", "tatemono"]]
+
+
+class JonBatchRequest(BaseModel):
+    """バッチ処理リクエスト"""
+    properties: List[JonBatchItem]
+
+
+class JonBatchItemResult(BaseModel):
+    """バッチ処理の個別結果"""
+    id: str
+    status: Literal["pending", "processing", "completed", "failed"]
+    location: Optional[LocationResult] = None
+    google_map_url: Optional[str] = None
+    rosenka_image: Optional[str] = None  # base64
+    registration: Optional[RegistrationResult] = None
+    analyze_result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class JonBatchResponse(BaseModel):
+    """バッチ処理レスポンス"""
+    batch_id: str
+    status: Literal["pending", "processing", "completed", "failed"]
+    total: int
+    completed: int
+    results: List[JonBatchItemResult]
+
+
+# Request models for individual API calls
+class LocatingRequest(BaseModel):
+    """位置特定APIリクエスト"""
+    address: str
+    address_type: Literal["地番", "家屋番号", "住居表示番号", "不明"] = "不明"
+
+
+class RosenkaRequest(BaseModel):
+    """路線価図APIリクエスト"""
+    lat: float
+    long: float
+    length: int = Field(default=250, ge=1, le=250)
+    width: int = Field(default=250, ge=1, le=250)
+
+
+class RegistrationRequest(BaseModel):
+    """登記取得APIリクエスト"""
+    v1_code: str
+    number: str
+    number_type: Literal[1, 2] = 1  # 1=地番, 2=家屋番号
+    pdf_type: Literal[1, 2, 3, 4, 5, 6] = 1  # 1=全部事項, 2=所有者事項, 3=地図, 4=地積測量図, 5=地役権図面, 6=建物図面
+
+
+class AnalyzeRequest(BaseModel):
+    """登記解析APIリクエスト"""
+    pdf_id: int
+    fields: Optional[List[str]] = None
+
+
+# Status response
+class JonStatusResponse(BaseModel):
+    """JON API設定状態"""
+    configured: bool
+    has_touki_credentials: bool
+    api_base_url: str

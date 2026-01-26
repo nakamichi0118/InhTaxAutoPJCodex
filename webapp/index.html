@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SOROBOCR｜相続書類OCR</title>
     <link rel="icon" type="image/png" href="./image/TitleLog.png">
+    <!-- Handsontable for spreadsheet-like editing -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable@12/dist/handsontable.full.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/handsontable@12/dist/handsontable.full.min.js"></script>
     <script>
         window.__ledger_app_url = window.__ledger_app_url || './ledger/';
         window.__ledger_api_base = window.__ledger_api_base || 'https://inhtaxautopjcodex-production.up.railway.app/api/ledger';
@@ -528,6 +531,108 @@
             .asset-nav { flex-direction: row; overflow-x: auto; padding: 0.75rem; }
             .asset-nav-button { flex: 0 0 auto; min-width: 160px; }
         }
+        /* JON API integration styles */
+        .jon-container {
+            margin-top: 1.2rem;
+            padding: 1rem;
+            border: 1px solid #dbeafe;
+            border-radius: 12px;
+            background: #f8fafc;
+        }
+        .jon-container h4 {
+            margin: 0 0 0.8rem;
+            font-size: 1rem;
+            color: #1f3b8c;
+        }
+        .jon-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            margin-bottom: 1rem;
+        }
+        .jon-option-label {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.4rem 0.8rem;
+            border: 1px solid #cbd5f5;
+            border-radius: 8px;
+            background: #fff;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+        .jon-option-label:hover {
+            background: #eff6ff;
+            border-color: #93c5fd;
+        }
+        .jon-option-label input[type="checkbox"] {
+            accent-color: #2563eb;
+        }
+        .jon-option-label[data-disabled="true"] {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .jon-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            margin-top: 1rem;
+        }
+        .handsontable-wrapper {
+            margin-top: 1rem;
+            border: 1px solid #dbeafe;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .jon-results {
+            margin-top: 1.2rem;
+            padding: 1rem;
+            border: 1px solid #6ee7b7;
+            border-radius: 12px;
+            background: #ecfdf5;
+        }
+        .jon-results h4 {
+            margin: 0 0 0.8rem;
+            font-size: 1rem;
+            color: #047857;
+        }
+        .jon-result-item {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            padding: 0.6rem;
+            border-bottom: 1px solid #d1fae5;
+        }
+        .jon-result-item:last-child {
+            border-bottom: none;
+        }
+        .jon-result-link {
+            color: #1d4ed8;
+            text-decoration: none;
+        }
+        .jon-result-link:hover {
+            text-decoration: underline;
+        }
+        .jon-progress {
+            margin-top: 0.8rem;
+            padding: 0.6rem;
+            border-radius: 8px;
+            background: #eff6ff;
+            font-size: 0.9rem;
+            color: #1e3a8a;
+        }
+        .jon-status-badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .jon-status-badge.pending { background: #fef3c7; color: #92400e; }
+        .jon-status-badge.processing { background: #dbeafe; color: #1e40af; }
+        .jon-status-badge.completed { background: #d1fae5; color: #065f46; }
+        .jon-status-badge.failed { background: #fee2e2; color: #991b1b; }
 
     </style>
 </head>
@@ -768,18 +873,12 @@
 
     const TAB_DEFINITIONS = [
         {
-            id: 'land',
-            label: '土地',
-            description: '名寄帳・固定資産評価証明書・課税明細書などをアップロードしてください。土地の所在地・地番・地目・地積・評価額を読み取ります。',
+            id: 'real_estate',
+            label: '不動産',
+            description: '名寄帳・固定資産評価証明書をアップロードして土地・家屋情報を読み取り、JON APIで登記情報・路線価図等を取得できます。',
             docType: 'nayose',
             allowUpload: true,
-        },
-        {
-            id: 'building',
-            label: '家屋',
-            description: '名寄帳・固定資産評価証明書・課税明細書などをアップロードしてください。家屋の所在地・家屋番号・構造・床面積・評価額を読み取ります。',
-            docType: 'nayose',
-            allowUpload: true,
+            enableJonApi: true,
         },
         {
             id: 'securities',
@@ -1598,18 +1697,87 @@
         });
         container.appendChild(summaryList);
 
-        const previewTable = buildPreviewTable(doc.assets);
-        if (previewTable) {
-            container.appendChild(previewTable);
+        // For nayose documents, show property table and JON API integration
+        if (doc.docType === 'nayose' && Array.isArray(doc.assets)) {
+            const propertyTable = buildPropertyPreviewTable(doc.assets);
+            if (propertyTable) {
+                container.appendChild(propertyTable);
+            }
+            // Check JON API status and render panel if configured
+            checkJonApiStatus().then(status => {
+                if (status.configured) {
+                    handleNayoseResultsForJon(doc.assets, container);
+                } else {
+                    const notice = document.createElement('p');
+                    notice.style.margin = '1rem 0 0';
+                    notice.style.padding = '0.8rem';
+                    notice.style.background = '#fef3c7';
+                    notice.style.borderRadius = '8px';
+                    notice.style.color = '#92400e';
+                    notice.style.fontSize = '0.9rem';
+                    notice.textContent = 'JON APIが設定されていません。.envファイルにJON_CLIENT_IDとJON_CLIENT_SECRETを設定すると、登記情報・路線価図等を自動取得できます。';
+                    container.appendChild(notice);
+                }
+            });
         } else {
-            const note = document.createElement('p');
-            note.style.margin = '0';
-            note.style.color = '#4b5563';
-            note.textContent = '表示できる取引が見つかりませんでした。';
-            container.appendChild(note);
+            const previewTable = buildPreviewTable(doc.assets);
+            if (previewTable) {
+                container.appendChild(previewTable);
+            } else {
+                const note = document.createElement('p');
+                note.style.margin = '0';
+                note.style.color = '#4b5563';
+                note.textContent = '表示できる取引が見つかりませんでした。';
+                container.appendChild(note);
+            }
         }
 
         return container;
+    }
+
+    function buildPropertyPreviewTable(assets) {
+        const assetList = Array.isArray(assets) ? assets : [];
+        const properties = assetList.filter(a => a.category === 'land' || a.category === 'building');
+        if (!properties.length) return null;
+
+        const columns = [
+            { key: 'category', label: '種別', format: v => v === 'building' ? '家屋' : '土地' },
+            { key: 'city', label: '市区町村' },
+            { key: 'address', label: '所在地・地番' },
+            { key: 'land_type', label: '地目/構造', alt: 'structure' },
+            { key: 'area', label: '地積/床面積' },
+            { key: 'value', label: '評価額', format: v => v ? formatNumber(v) + '円' : '' },
+        ];
+
+        const table = document.createElement('table');
+        table.className = 'preview';
+
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        columns.forEach(col => {
+            const th = document.createElement('th');
+            th.textContent = col.label;
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        properties.slice(0, 20).forEach(prop => {
+            const row = document.createElement('tr');
+            columns.forEach(col => {
+                const cell = document.createElement('td');
+                let value = prop[col.key];
+                if (!value && col.alt) value = prop[col.alt];
+                if (col.format) value = col.format(value);
+                cell.textContent = escapeHtml(value || '');
+                row.appendChild(cell);
+            });
+            tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+
+        return table;
     }
 
     function computeSummaryItems(doc) {
@@ -1965,6 +2133,466 @@
             return window.crypto.randomUUID();
         }
         return `doc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    // ========================================
+    // JON API Integration
+    // ========================================
+    const jonState = {
+        properties: [],
+        hotInstance: null,
+        batchId: null,
+        batchResults: [],
+        isProcessing: false,
+    };
+
+    const JON_ACQUISITION_OPTIONS = [
+        { key: 'google_map', label: 'Googleマップ', forLand: true, forBuilding: true },
+        { key: 'rosenka', label: '路線価図', forLand: true, forBuilding: true },
+        { key: 'touki', label: '登記簿', forLand: true, forBuilding: true },
+        { key: 'kozu', label: '公図', forLand: true, forBuilding: true },
+        { key: 'chiseki', label: '地積測量図', forLand: true, forBuilding: false },
+        { key: 'tatemono', label: '建物図面', forLand: false, forBuilding: true },
+    ];
+
+    async function checkJonApiStatus() {
+        try {
+            const res = await fetch(`${normalizedApiBase()}/jon/status`);
+            if (!res.ok) return { configured: false, has_touki_credentials: false };
+            return await res.json();
+        } catch (error) {
+            console.warn('JON API status check failed:', error);
+            return { configured: false, has_touki_credentials: false };
+        }
+    }
+
+    function renderJonApiPanel(container, properties) {
+        jonState.properties = properties;
+
+        const jonContainer = document.createElement('div');
+        jonContainer.className = 'jon-container';
+        jonContainer.id = 'jonApiContainer';
+
+        const title = document.createElement('h4');
+        title.textContent = 'JON API 情報取得';
+        jonContainer.appendChild(title);
+
+        // Handsontable container
+        const hotWrapper = document.createElement('div');
+        hotWrapper.className = 'handsontable-wrapper';
+        hotWrapper.id = 'jonHandsontable';
+        jonContainer.appendChild(hotWrapper);
+
+        // Acquisition options
+        const optionsDiv = document.createElement('div');
+        optionsDiv.className = 'jon-options';
+        optionsDiv.id = 'jonAcquisitionOptions';
+
+        JON_ACQUISITION_OPTIONS.forEach(opt => {
+            const label = document.createElement('label');
+            label.className = 'jon-option-label';
+            label.innerHTML = `<input type="checkbox" name="${opt.key}" checked> ${opt.label}`;
+            if (!opt.forLand && !opt.forBuilding) {
+                label.dataset.disabled = 'true';
+            }
+            optionsDiv.appendChild(label);
+        });
+        jonContainer.appendChild(optionsDiv);
+
+        // Actions
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'jon-actions';
+
+        const selectAllBtn = document.createElement('button');
+        selectAllBtn.type = 'button';
+        selectAllBtn.className = 'secondary small';
+        selectAllBtn.textContent = '全選択';
+        selectAllBtn.addEventListener('click', () => selectAllJonRows(true));
+        actionsDiv.appendChild(selectAllBtn);
+
+        const deselectAllBtn = document.createElement('button');
+        deselectAllBtn.type = 'button';
+        deselectAllBtn.className = 'secondary small';
+        deselectAllBtn.textContent = '全解除';
+        deselectAllBtn.addEventListener('click', () => selectAllJonRows(false));
+        actionsDiv.appendChild(deselectAllBtn);
+
+        const executeBtn = document.createElement('button');
+        executeBtn.type = 'button';
+        executeBtn.className = 'primary';
+        executeBtn.id = 'executeJonBtn';
+        executeBtn.textContent = '情報取得を実行';
+        executeBtn.addEventListener('click', executeJonBatch);
+        actionsDiv.appendChild(executeBtn);
+
+        jonContainer.appendChild(actionsDiv);
+
+        // Progress area
+        const progressDiv = document.createElement('div');
+        progressDiv.className = 'jon-progress';
+        progressDiv.id = 'jonProgress';
+        progressDiv.style.display = 'none';
+        jonContainer.appendChild(progressDiv);
+
+        // Results area
+        const resultsDiv = document.createElement('div');
+        resultsDiv.className = 'jon-results';
+        resultsDiv.id = 'jonResults';
+        resultsDiv.style.display = 'none';
+        jonContainer.appendChild(resultsDiv);
+
+        container.appendChild(jonContainer);
+
+        // Initialize Handsontable
+        initJonHandsontable(properties);
+    }
+
+    function initJonHandsontable(properties) {
+        const hotContainer = document.getElementById('jonHandsontable');
+        if (!hotContainer || typeof Handsontable === 'undefined') {
+            console.warn('Handsontable not available');
+            return;
+        }
+
+        const data = properties.map((prop, idx) => ({
+            selected: true,
+            type: prop.category === 'building' ? '家屋' : '土地',
+            city: prop.city || '',
+            address: prop.address || prop.location || '',
+            landType: prop.land_type || prop.structure || '',
+            area: prop.area || '',
+            value: prop.value || '',
+            id: prop.id || `prop-${idx}`,
+        }));
+
+        jonState.hotInstance = new Handsontable(hotContainer, {
+            data: data,
+            colHeaders: ['選択', '種別', '市区町村', '所在地・地番', '地目/構造', '地積/床面積', '評価額'],
+            columns: [
+                { data: 'selected', type: 'checkbox', width: 50 },
+                { data: 'type', type: 'dropdown', source: ['土地', '家屋'], width: 60 },
+                { data: 'city', type: 'text', width: 100 },
+                { data: 'address', type: 'text', width: 200 },
+                { data: 'landType', type: 'text', width: 80 },
+                { data: 'area', type: 'text', width: 80 },
+                { data: 'value', type: 'text', width: 100 },
+            ],
+            rowHeaders: true,
+            height: 'auto',
+            maxRows: 100,
+            licenseKey: 'non-commercial-and-evaluation',
+            stretchH: 'all',
+            contextMenu: true,
+            manualColumnResize: true,
+            afterChange: updateJonOptionsVisibility,
+        });
+
+        updateJonOptionsVisibility();
+    }
+
+    function updateJonOptionsVisibility() {
+        const optionsContainer = document.getElementById('jonAcquisitionOptions');
+        if (!optionsContainer || !jonState.hotInstance) return;
+
+        const data = jonState.hotInstance.getData();
+        const hasLand = data.some(row => row[1] === '土地' && row[0]);
+        const hasBuilding = data.some(row => row[1] === '家屋' && row[0]);
+
+        optionsContainer.querySelectorAll('.jon-option-label').forEach(label => {
+            const checkbox = label.querySelector('input');
+            const key = checkbox.name;
+            const opt = JON_ACQUISITION_OPTIONS.find(o => o.key === key);
+            if (!opt) return;
+
+            const shouldEnable = (hasLand && opt.forLand) || (hasBuilding && opt.forBuilding);
+            label.dataset.disabled = shouldEnable ? 'false' : 'true';
+            checkbox.disabled = !shouldEnable;
+        });
+    }
+
+    function selectAllJonRows(selected) {
+        if (!jonState.hotInstance) return;
+        const rowCount = jonState.hotInstance.countRows();
+        for (let i = 0; i < rowCount; i++) {
+            jonState.hotInstance.setDataAtCell(i, 0, selected);
+        }
+    }
+
+    function getSelectedJonItems() {
+        if (!jonState.hotInstance) return [];
+
+        const data = jonState.hotInstance.getSourceData();
+        const optionsContainer = document.getElementById('jonAcquisitionOptions');
+        const selectedAcquisitions = [];
+
+        if (optionsContainer) {
+            optionsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+                selectedAcquisitions.push(cb.name);
+            });
+        }
+
+        return data
+            .filter(row => row.selected)
+            .map(row => ({
+                id: row.id,
+                address: `${row.city}${row.address}`,
+                property_type: row.type === '家屋' ? 'building' : 'land',
+                acquisitions: selectedAcquisitions.filter(acq => {
+                    const opt = JON_ACQUISITION_OPTIONS.find(o => o.key === acq);
+                    if (!opt) return false;
+                    if (row.type === '家屋') return opt.forBuilding;
+                    return opt.forLand;
+                }),
+            }));
+    }
+
+    async function executeJonBatch() {
+        const items = getSelectedJonItems();
+        if (!items.length) {
+            alert('取得対象の不動産を選択してください。');
+            return;
+        }
+
+        const executeBtn = document.getElementById('executeJonBtn');
+        const progressDiv = document.getElementById('jonProgress');
+        const resultsDiv = document.getElementById('jonResults');
+
+        if (executeBtn) executeBtn.disabled = true;
+        if (progressDiv) {
+            progressDiv.style.display = 'block';
+            progressDiv.textContent = 'バッチ処理を開始しています...';
+        }
+        if (resultsDiv) resultsDiv.style.display = 'none';
+
+        jonState.isProcessing = true;
+
+        try {
+            const res = await fetch(`${normalizedApiBase()}/jon/batch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ properties: items }),
+            });
+
+            if (!res.ok) {
+                throw new Error(`バッチ処理の開始に失敗しました (HTTP ${res.status})`);
+            }
+
+            const batchResponse = await res.json();
+            jonState.batchId = batchResponse.batch_id;
+
+            // Poll for results
+            await pollJonBatchStatus(batchResponse.batch_id);
+
+        } catch (error) {
+            console.error('JON batch error:', error);
+            if (progressDiv) {
+                progressDiv.textContent = `エラー: ${error.message}`;
+            }
+        } finally {
+            jonState.isProcessing = false;
+            if (executeBtn) executeBtn.disabled = false;
+        }
+    }
+
+    async function pollJonBatchStatus(batchId) {
+        const progressDiv = document.getElementById('jonProgress');
+        const resultsDiv = document.getElementById('jonResults');
+
+        while (true) {
+            try {
+                const res = await fetch(`${normalizedApiBase()}/jon/batch/${batchId}`);
+                if (!res.ok) throw new Error('バッチ状態の取得に失敗しました');
+
+                const status = await res.json();
+
+                if (progressDiv) {
+                    progressDiv.textContent = `処理中... ${status.completed}/${status.total} 件完了`;
+                }
+
+                if (status.status === 'completed' || status.status === 'failed') {
+                    jonState.batchResults = status.results;
+                    renderJonResults(status.results);
+                    if (progressDiv) {
+                        progressDiv.textContent = status.status === 'completed'
+                            ? `完了: ${status.completed}/${status.total} 件`
+                            : 'バッチ処理が失敗しました';
+                    }
+                    break;
+                }
+
+                await sleep(2000);
+            } catch (error) {
+                console.error('Polling error:', error);
+                if (progressDiv) {
+                    progressDiv.textContent = `エラー: ${error.message}`;
+                }
+                break;
+            }
+        }
+    }
+
+    function renderJonResults(results) {
+        const resultsDiv = document.getElementById('jonResults');
+        if (!resultsDiv) return;
+
+        resultsDiv.innerHTML = '';
+        resultsDiv.style.display = 'block';
+
+        const title = document.createElement('h4');
+        title.textContent = '取得結果';
+        resultsDiv.appendChild(title);
+
+        results.forEach(result => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'jon-result-item';
+
+            const statusBadge = document.createElement('span');
+            statusBadge.className = `jon-status-badge ${result.status}`;
+            statusBadge.textContent = result.status === 'completed' ? '完了'
+                : result.status === 'failed' ? '失敗'
+                : result.status === 'processing' ? '処理中' : '待機中';
+            itemDiv.appendChild(statusBadge);
+
+            const idSpan = document.createElement('span');
+            idSpan.textContent = result.id;
+            idSpan.style.fontWeight = '600';
+            itemDiv.appendChild(idSpan);
+
+            if (result.google_map_url) {
+                const mapLink = document.createElement('a');
+                mapLink.href = result.google_map_url;
+                mapLink.target = '_blank';
+                mapLink.rel = 'noopener';
+                mapLink.className = 'jon-result-link';
+                mapLink.textContent = 'Googleマップ';
+                itemDiv.appendChild(mapLink);
+            }
+
+            if (result.registration?.pdf_url) {
+                const pdfLink = document.createElement('a');
+                pdfLink.href = result.registration.pdf_url;
+                pdfLink.target = '_blank';
+                pdfLink.rel = 'noopener';
+                pdfLink.className = 'jon-result-link';
+                pdfLink.textContent = '登記PDF';
+                itemDiv.appendChild(pdfLink);
+            }
+
+            if (result.rosenka_image) {
+                const imgBtn = document.createElement('button');
+                imgBtn.type = 'button';
+                imgBtn.className = 'secondary small';
+                imgBtn.textContent = '路線価図';
+                imgBtn.addEventListener('click', () => showRosenkaImage(result.rosenka_image));
+                itemDiv.appendChild(imgBtn);
+            }
+
+            if (result.error) {
+                const errorSpan = document.createElement('span');
+                errorSpan.style.color = '#991b1b';
+                errorSpan.style.fontSize = '0.85rem';
+                errorSpan.textContent = result.error;
+                itemDiv.appendChild(errorSpan);
+            }
+
+            resultsDiv.appendChild(itemDiv);
+        });
+
+        // Export buttons
+        const exportDiv = document.createElement('div');
+        exportDiv.style.marginTop = '1rem';
+        exportDiv.style.display = 'flex';
+        exportDiv.style.gap = '0.6rem';
+
+        const jsonBtn = document.createElement('button');
+        jsonBtn.type = 'button';
+        jsonBtn.className = 'secondary small';
+        jsonBtn.textContent = 'JSONエクスポート';
+        jsonBtn.addEventListener('click', () => exportJonResults('json'));
+        exportDiv.appendChild(jsonBtn);
+
+        const csvBtn = document.createElement('button');
+        csvBtn.type = 'button';
+        csvBtn.className = 'secondary small';
+        csvBtn.textContent = 'CSVエクスポート';
+        csvBtn.addEventListener('click', () => exportJonResults('csv'));
+        exportDiv.appendChild(csvBtn);
+
+        resultsDiv.appendChild(exportDiv);
+    }
+
+    function showRosenkaImage(base64) {
+        const imgWindow = window.open('', '_blank');
+        if (imgWindow) {
+            imgWindow.document.write(`
+                <html>
+                <head><title>路線価図</title></head>
+                <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f5f5f5;">
+                    <img src="data:image/png;base64,${base64}" style="max-width:100%;height:auto;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+                </body>
+                </html>
+            `);
+        }
+    }
+
+    function exportJonResults(format) {
+        if (!jonState.batchResults.length) return;
+
+        if (format === 'json') {
+            const jsonStr = JSON.stringify(jonState.batchResults, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            downloadBlob(blob, 'jon_results.json');
+        } else if (format === 'csv') {
+            const headers = ['ID', 'ステータス', 'Googleマップ', '登記PDF', '緯度', '経度', 'v1_code', 'エラー'];
+            const rows = jonState.batchResults.map(r => [
+                r.id,
+                r.status,
+                r.google_map_url || '',
+                r.registration?.pdf_url || '',
+                r.location?.lat || '',
+                r.location?.long || '',
+                r.location?.v1_code || '',
+                r.error || '',
+            ]);
+            const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            downloadBlob(blob, 'jon_results.csv');
+        }
+    }
+
+    function downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
+    // Update renderAssetTabs to handle JON API integration for real_estate tab
+    function handleNayoseResultsForJon(assets, panel) {
+        // Convert assets to properties format for JON API
+        const properties = assets.flatMap(asset => {
+            if (asset.category === 'land' || asset.category === 'building') {
+                return [{
+                    id: asset.identifier_primary || `prop-${Math.random().toString(36).slice(2)}`,
+                    category: asset.category,
+                    city: asset.city || '',
+                    address: asset.address || asset.location || '',
+                    land_type: asset.land_type || '',
+                    structure: asset.structure || '',
+                    area: asset.area || '',
+                    value: asset.value || '',
+                }];
+            }
+            return [];
+        });
+
+        if (properties.length > 0) {
+            renderJonApiPanel(panel, properties);
+        }
     }
 })();
 </script>

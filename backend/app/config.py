@@ -25,6 +25,12 @@ class Settings:
     azure_form_recognizer_key: Optional[str]
     ledger_db_path: Path
     cors_allow_origins: tuple[str, ...]
+    # JON API settings
+    jon_client_id: Optional[str]
+    jon_client_secret: Optional[str]
+    jon_api_base_url: str
+    touki_login_id: Optional[str]
+    touki_password: Optional[str]
 
 
 @lru_cache()
@@ -74,6 +80,13 @@ def get_settings() -> Settings:
             "http://127.0.0.1:5173",
         )
 
+    # JON API settings
+    jon_client_id = os.getenv("JON_CLIENT_ID")
+    jon_client_secret = os.getenv("JON_CLIENT_SECRET")
+    jon_api_base_url = os.getenv("JON_API_BASE_URL", "https://jon-api.com/api/v1")
+    touki_login_id = os.getenv("TOUKI_LOGIN_ID")
+    touki_password = os.getenv("TOUKI_PASSWORD")
+
     return Settings(
         gemini_api_key=gemini_api_key,
         gemini_api_keys=gemini_api_keys,
@@ -85,4 +98,9 @@ def get_settings() -> Settings:
         azure_form_recognizer_key=os.getenv("AZURE_FORM_RECOGNIZER_KEY"),
         ledger_db_path=ledger_db_path,
         cors_allow_origins=cors_allow_origins,
+        jon_client_id=jon_client_id,
+        jon_client_secret=jon_client_secret,
+        jon_api_base_url=jon_api_base_url,
+        touki_login_id=touki_login_id,
+        touki_password=touki_password,
     )

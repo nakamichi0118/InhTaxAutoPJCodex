@@ -33,6 +33,7 @@ from .gemini import GeminiClient, GeminiError, GeminiExtraction
 from .job_manager import JobHandle, JobManager, JobRecord
 from . import job_registry
 from .ledger_router import router as ledger_router
+from .jon.router import router as jon_router
 from .models import (
     AssetRecord,
     DocumentAnalyzeResponse,
@@ -56,6 +57,7 @@ date_inference_engine = DateInferenceEngine()
 
 app = FastAPI(title="InhTaxAutoPJ Backend", version="0.10.0")
 app.include_router(ledger_router)
+app.include_router(jon_router)
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
 SUPPORTED_GEMINI_MODELS = {"gemini-2.5-flash", "gemini-2.5-pro"}
