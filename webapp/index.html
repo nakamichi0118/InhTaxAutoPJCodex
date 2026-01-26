@@ -919,6 +919,7 @@
             docType: 'nayose',
             allowUpload: true,
             enableJonApi: true,
+            recommendedModel: 'gemini_flash',
         },
         {
             id: 'securities',
@@ -959,6 +960,7 @@
                 { value: 'transaction_history', label: '取引履歴' },
                 { value: 'bank_deposit', label: '通帳（預貯金）' },
             ],
+            recommendedModel: 'gemini_pro',
         },
     ];
 
@@ -1338,13 +1340,18 @@
 
                 const modeSelect = document.createElement('select');
                 modeSelect.className = 'text-input';
+                modeSelect.id = 'analysisModeSelect';
                 ANALYSIS_MODE_OPTIONS.forEach((option) => {
                     const opt = document.createElement('option');
                     opt.value = option.value;
                     opt.textContent = option.label;
                     modeSelect.appendChild(opt);
                 });
-                modeSelect.value = state.analysisMode || 'gemini_pro';
+                // Set initial value based on current tab's recommended model
+                const currentTab = TAB_DEFINITIONS.find(t => t.id === state.activeAssetTabId);
+                const initialModel = currentTab?.recommendedModel || 'gemini_pro';
+                modeSelect.value = initialModel;
+                state.analysisMode = initialModel;
                 modeSelect.addEventListener('change', () => {
                     state.analysisMode = modeSelect.value || 'gemini_pro';
                 });
@@ -1448,6 +1455,16 @@
         panels.forEach((panel) => {
             panel.classList.toggle('active', panel.dataset.tabId === tabId);
         });
+
+        // Switch Gemini model based on tab's recommended model
+        const tab = TAB_DEFINITIONS.find(t => t.id === tabId);
+        if (tab?.recommendedModel) {
+            const modeSelect = document.getElementById('analysisModeSelect');
+            if (modeSelect) {
+                modeSelect.value = tab.recommendedModel;
+                state.analysisMode = tab.recommendedModel;
+            }
+        }
     }
 
     function handleTabFiles(tab, fileList, getDateFormat, getDocType, getStartDate, getEndDate) {
@@ -2314,11 +2331,12 @@
         const thead = document.createElement('thead');
         thead.innerHTML = `
             <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
-                <th style="padding:0.6rem;text-align:left;width:60px;">種別</th>
+                <th style="padding:0.6rem;text-align:left;width:50px;">種別</th>
                 <th style="padding:0.6rem;text-align:left;">所在地</th>
-                <th style="padding:0.6rem;text-align:center;width:70px;">Gマップ</th>
-                <th style="padding:0.6rem;text-align:center;width:70px;">登記簿</th>
-                <th style="padding:0.6rem;text-align:center;width:80px;">図面等</th>
+                <th style="padding:0.6rem;text-align:center;width:90px;">Googleマップ</th>
+                <th style="padding:0.6rem;text-align:center;width:60px;">登記簿</th>
+                <th style="padding:0.6rem;text-align:center;width:90px;">路線価図</th>
+                <th style="padding:0.6rem;text-align:center;width:90px;">地積測量図<br><span style="font-size:0.7rem;font-weight:normal;color:#64748b;">／建物図面</span></th>
             </tr>
         `;
         table.appendChild(thead);
@@ -2358,29 +2376,27 @@
             toukiTd.innerHTML = `<input type="checkbox" data-prop="${idx}" data-acq="touki" ${toukiDisabled}>`;
             tr.appendChild(toukiTd);
 
-            // 図面等 (土地→路線価図/地積測量図、家屋→建物図面)
+            // 路線価図 checkbox (土地のみ)
+            const rosenkaTd = document.createElement('td');
+            rosenkaTd.style.padding = '0.5rem 0.6rem';
+            rosenkaTd.style.textAlign = 'center';
+            if (isLand) {
+                rosenkaTd.innerHTML = `<input type="checkbox" data-prop="${idx}" data-acq="rosenka" checked>`;
+            } else {
+                rosenkaTd.innerHTML = `<span style="color:#94a3b8;">―</span>`;
+            }
+            tr.appendChild(rosenkaTd);
+
+            // 地積測量図 / 建物図面 checkbox
             const drawingTd = document.createElement('td');
             drawingTd.style.padding = '0.5rem 0.6rem';
             drawingTd.style.textAlign = 'center';
             if (isLand) {
-                // 土地: 路線価図と地積測量図
                 const chisekiDisabled = !hasToukiCredentials ? 'disabled' : '';
-                drawingTd.innerHTML = `
-                    <label style="font-size:0.8rem;margin-right:0.5rem;white-space:nowrap;">
-                        <input type="checkbox" data-prop="${idx}" data-acq="rosenka" checked> 路線価
-                    </label>
-                    <label style="font-size:0.8rem;white-space:nowrap;">
-                        <input type="checkbox" data-prop="${idx}" data-acq="chiseki" ${chisekiDisabled}> 地積
-                    </label>
-                `;
+                drawingTd.innerHTML = `<input type="checkbox" data-prop="${idx}" data-acq="chiseki" ${chisekiDisabled}>`;
             } else {
-                // 家屋: 建物図面
                 const tatemonoDisabled = !hasToukiCredentials ? 'disabled' : '';
-                drawingTd.innerHTML = `
-                    <label style="font-size:0.8rem;white-space:nowrap;">
-                        <input type="checkbox" data-prop="${idx}" data-acq="tatemono" ${tatemonoDisabled}> 建物図面
-                    </label>
-                `;
+                drawingTd.innerHTML = `<input type="checkbox" data-prop="${idx}" data-acq="tatemono" ${tatemonoDisabled}>`;
             }
             tr.appendChild(drawingTd);
 
