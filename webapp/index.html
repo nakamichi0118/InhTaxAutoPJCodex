@@ -2664,17 +2664,30 @@
             }
 
             if (result.rosenka_image) {
+                // 路線価図が取得できた場合: 画像ボタン + 国税庁リンク
                 const imgBtn = document.createElement('button');
                 imgBtn.type = 'button';
                 imgBtn.className = 'secondary small';
                 imgBtn.textContent = '路線価図';
                 imgBtn.addEventListener('click', () => showRosenkaImage(result.rosenka_image));
                 linksDiv.appendChild(imgBtn);
+
+                // 国税庁の路線価図ページへのリンク（確認用）
+                const municipality = originalProp?.city || originalProp?.location_municipality || '';
+                const prefecture = originalProp?.location_prefecture || inferPrefectureFromMunicipality(municipality);
+                const rosenkaUrl = getRosenkaUrl(prefecture);
+                const ntaLink = document.createElement('a');
+                ntaLink.href = rosenkaUrl;
+                ntaLink.target = '_blank';
+                ntaLink.rel = 'noopener';
+                ntaLink.className = 'jon-result-link';
+                ntaLink.textContent = '国税庁で確認';
+                ntaLink.title = '国税庁の路線価図ページで確認';
+                linksDiv.appendChild(ntaLink);
             } else if (isLand) {
-                // 路線価図が取得できなかった場合、倍率表へのリンクを表示（rosenkaがリクエストされていた場合）
+                // 路線価図が取得できなかった場合（倍率地域）: 倍率表へのリンク
                 const batchItem = jonState.batchItems.find(item => item.id === result.id);
                 if (batchItem?.acquisitions?.includes('rosenka')) {
-                    // 都道府県を推測して、より具体的なURLを生成
                     const municipality = originalProp?.city || originalProp?.location_municipality || '';
                     const prefecture = originalProp?.location_prefecture || inferPrefectureFromMunicipality(municipality);
                     const rosenkaUrl = getRosenkaUrl(prefecture);
@@ -2684,8 +2697,8 @@
                     bairitsuLink.target = '_blank';
                     bairitsuLink.rel = 'noopener';
                     bairitsuLink.className = 'jon-result-link';
-                    bairitsuLink.textContent = prefecture ? `${prefecture}の路線価・倍率表` : '路線価・倍率表を検索';
-                    bairitsuLink.title = '路線価図がない地域は倍率表を確認してください。';
+                    bairitsuLink.textContent = prefecture ? `${prefecture}の倍率表` : '倍率表を検索';
+                    bairitsuLink.title = '倍率地域です。国税庁の倍率表で評価額を確認してください。';
                     linksDiv.appendChild(bairitsuLink);
                 }
             }
