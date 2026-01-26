@@ -1786,11 +1786,11 @@
 
             if (areaMatch) area = areaMatch[1].trim();
 
-            // Handle both snake_case and camelCase field names (Pydantic serialization varies)
-            const municipality = prop.location_municipality || prop.locationMunicipality || '';
-            const location = prop.location_detail || prop.locationDetail || '';
-            const identifierPrimary = prop.identifier_primary || prop.identifierPrimary || '';
-            const valuationAmount = prop.valuation_amount ?? prop.valuationAmount ?? null;
+            // Handle nested structure from to_export_payload() and fallback to flat names
+            const municipality = prop.location?.municipality || prop.location_municipality || prop.locationMunicipality || '';
+            const location = prop.location?.detail || prop.location_detail || prop.locationDetail || '';
+            const identifierPrimary = prop.identifiers?.primary || prop.identifier_primary || prop.identifierPrimary || '';
+            const valuationAmount = prop.valuation?.amount ?? prop.valuation_amount ?? prop.valuationAmount ?? null;
 
             return {
                 category: prop.category === 'building' ? '家屋' : '土地',
@@ -2579,11 +2579,11 @@
                 else if (structureMatch) landType = structureMatch[1].trim();
                 if (areaMatch) area = areaMatch[1].trim();
 
-                // Handle both snake_case and camelCase field names
-                const city = asset.location_municipality || asset.locationMunicipality || '';
-                const address = asset.location_detail || asset.locationDetail || '';
-                const identifierPrimary = asset.identifier_primary || asset.identifierPrimary || '';
-                const valuationAmount = asset.valuation_amount ?? asset.valuationAmount ?? '';
+                // Handle nested structure from to_export_payload() and fallback to flat names
+                const city = asset.location?.municipality || asset.location_municipality || asset.locationMunicipality || '';
+                const address = asset.location?.detail || asset.location_detail || asset.locationDetail || '';
+                const identifierPrimary = asset.identifiers?.primary || asset.identifier_primary || asset.identifierPrimary || '';
+                const valuationAmount = asset.valuation?.amount ?? asset.valuation_amount ?? asset.valuationAmount ?? '';
 
                 return [{
                     id: identifierPrimary || `prop-${Math.random().toString(36).slice(2)}`,
