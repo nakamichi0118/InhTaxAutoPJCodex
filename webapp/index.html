@@ -1702,21 +1702,12 @@
             // Use Handsontable for editable property list
             renderNayoseHandsontable(doc.assets, container);
 
-            // Check JON API status and render panel if configured
+            // Always render JON API panel with checkboxes, check status for execution
             checkJonApiStatus().then(status => {
-                if (status.configured) {
-                    handleNayoseResultsForJon(doc.assets, container);
-                } else {
-                    const notice = document.createElement('p');
-                    notice.style.margin = '1rem 0 0';
-                    notice.style.padding = '0.8rem';
-                    notice.style.background = '#fef3c7';
-                    notice.style.borderRadius = '8px';
-                    notice.style.color = '#92400e';
-                    notice.style.fontSize = '0.9rem';
-                    notice.textContent = 'JON APIが設定されていません。.envファイルにJON_CLIENT_IDとJON_CLIENT_SECRETを設定すると、登記情報・路線価図等を自動取得できます。';
-                    container.appendChild(notice);
-                }
+                handleNayoseResultsForJon(doc.assets, container, status.configured, status.has_touki_credentials);
+            }).catch(() => {
+                // If status check fails, still show the panel but disabled
+                handleNayoseResultsForJon(doc.assets, container, false, false);
             });
         } else {
             const summaryList = document.createElement('div');
@@ -1774,6 +1765,12 @@
         }
 
         // Parse notes to extract land_type/structure and area
+        // Debug: log first property to see field names
+        if (properties.length > 0) {
+            console.log('First property keys:', Object.keys(properties[0]));
+            console.log('First property:', JSON.stringify(properties[0], null, 2));
+        }
+
         const data = properties.map((prop, idx) => {
             const notes = prop.notes || '';
             let landType = '';
@@ -1789,14 +1786,20 @@
 
             if (areaMatch) area = areaMatch[1].trim();
 
+            // Handle both snake_case and camelCase field names (Pydantic serialization varies)
+            const municipality = prop.location_municipality || prop.locationMunicipality || '';
+            const location = prop.location_detail || prop.locationDetail || '';
+            const identifierPrimary = prop.identifier_primary || prop.identifierPrimary || '';
+            const valuationAmount = prop.valuation_amount ?? prop.valuationAmount ?? null;
+
             return {
                 category: prop.category === 'building' ? '家屋' : '土地',
-                municipality: prop.location_municipality || '',
-                location: prop.location_detail || '',
+                municipality: municipality,
+                location: location,
                 landType: landType,
                 area: area,
-                value: prop.valuation_amount ? formatNumber(prop.valuation_amount) : '',
-                id: prop.identifier_primary || `prop-${idx}`,
+                value: valuationAmount ? formatNumber(valuationAmount) : '',
+                id: identifierPrimary || `prop-${idx}`,
             };
         });
 
@@ -2219,7 +2222,7 @@
         }
     }
 
-    function renderJonApiPanel(container, properties) {
+    function renderJonApiPanel(container, properties, isConfigured = false, hasToukiCredentials = false) {
         jonState.properties = properties;
 
         const jonContainer = document.createElement('div');
@@ -2229,6 +2232,29 @@
         const title = document.createElement('h4');
         title.textContent = 'JON API 情報取得';
         jonContainer.appendChild(title);
+
+        // Show configuration status
+        if (!isConfigured) {
+            const notice = document.createElement('p');
+            notice.style.margin = '0 0 1rem';
+            notice.style.padding = '0.6rem';
+            notice.style.background = '#fef3c7';
+            notice.style.borderRadius = '6px';
+            notice.style.color = '#92400e';
+            notice.style.fontSize = '0.85rem';
+            notice.textContent = 'JON APIが設定されていません。サーバーの環境変数にJON_CLIENT_IDとJON_CLIENT_SECRETを設定してください。';
+            jonContainer.appendChild(notice);
+        } else if (!hasToukiCredentials) {
+            const notice = document.createElement('p');
+            notice.style.margin = '0 0 1rem';
+            notice.style.padding = '0.6rem';
+            notice.style.background = '#dbeafe';
+            notice.style.borderRadius = '6px';
+            notice.style.color = '#1e40af';
+            notice.style.fontSize = '0.85rem';
+            notice.textContent = '登記情報提供サービスの認証情報が未設定です。登記簿取得にはTOUKI_LOGIN_IDとTOUKI_PASSWORDの設定が必要です。';
+            jonContainer.appendChild(notice);
+        }
 
         const description = document.createElement('p');
         description.style.margin = '0 0 1rem';
@@ -2249,8 +2275,11 @@
             const label = document.createElement('label');
             label.className = 'jon-option-label';
             const shouldEnable = (hasLand && opt.forLand) || (hasBuilding && opt.forBuilding);
-            label.innerHTML = `<input type="checkbox" name="${opt.key}" ${shouldEnable ? 'checked' : 'disabled'}> ${opt.label}`;
-            if (!shouldEnable) {
+            // Disable touki-related options if no credentials
+            const needsTouki = ['touki', 'kozu', 'chiseki', 'tatemono'].includes(opt.key);
+            const isDisabled = !shouldEnable || (needsTouki && !hasToukiCredentials);
+            label.innerHTML = `<input type="checkbox" name="${opt.key}" ${shouldEnable && !isDisabled ? 'checked' : ''} ${isDisabled ? 'disabled' : ''}> ${opt.label}`;
+            if (isDisabled) {
                 label.dataset.disabled = 'true';
             }
             optionsDiv.appendChild(label);
@@ -2266,6 +2295,7 @@
         executeBtn.className = 'primary';
         executeBtn.id = 'executeJonBtn';
         executeBtn.textContent = '情報取得を実行';
+        executeBtn.disabled = !isConfigured;
         executeBtn.addEventListener('click', () => executeJonBatchFromProperties(properties));
         actionsDiv.appendChild(executeBtn);
 
@@ -2533,7 +2563,7 @@
     }
 
     // Handle JON API integration for nayose results
-    function handleNayoseResultsForJon(assets, panel) {
+    function handleNayoseResultsForJon(assets, panel, isConfigured = false, hasToukiCredentials = false) {
         // Convert assets to properties format for JON API
         const properties = assets.flatMap(asset => {
             if (asset.category === 'land' || asset.category === 'building') {
@@ -2549,22 +2579,28 @@
                 else if (structureMatch) landType = structureMatch[1].trim();
                 if (areaMatch) area = areaMatch[1].trim();
 
+                // Handle both snake_case and camelCase field names
+                const city = asset.location_municipality || asset.locationMunicipality || '';
+                const address = asset.location_detail || asset.locationDetail || '';
+                const identifierPrimary = asset.identifier_primary || asset.identifierPrimary || '';
+                const valuationAmount = asset.valuation_amount ?? asset.valuationAmount ?? '';
+
                 return [{
-                    id: asset.identifier_primary || `prop-${Math.random().toString(36).slice(2)}`,
+                    id: identifierPrimary || `prop-${Math.random().toString(36).slice(2)}`,
                     category: asset.category,
-                    city: asset.location_municipality || '',
-                    address: asset.location_detail || '',
+                    city: city,
+                    address: address,
                     land_type: landType,
                     structure: landType,
                     area: area,
-                    value: asset.valuation_amount || '',
+                    value: valuationAmount,
                 }];
             }
             return [];
         });
 
         if (properties.length > 0) {
-            renderJonApiPanel(panel, properties);
+            renderJonApiPanel(panel, properties, isConfigured, hasToukiCredentials);
         }
     }
 })();
