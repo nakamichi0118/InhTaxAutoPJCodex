@@ -27,12 +27,33 @@ def normalize_text(text: str) -> str:
     return text.strip()
 
 
+# 漢数字から算用数字への変換マップ
+KANJI_TO_ARABIC = {
+    '一': '1', '二': '2', '三': '3', '四': '4', '五': '5',
+    '六': '6', '七': '7', '八': '8', '九': '9', '十': '10',
+    '壱': '1', '弐': '2', '参': '3',
+}
+
+
+def convert_kanji_numbers(text: str) -> str:
+    """漢数字を算用数字に変換"""
+    result = text
+    for kanji, arabic in KANJI_TO_ARABIC.items():
+        result = result.replace(kanji, arabic)
+    return result
+
+
 def extract_district_base(district: str) -> str:
-    """丁目部分を除いた町名を抽出（例: 梅田3丁目 → 梅田）"""
+    """丁目部分を除いた町名を抽出（例: 梅田3丁目 → 梅田, 博多駅前四丁目 → 博多駅前）"""
+    # 漢数字を算用数字に変換してから処理
+    normalized = convert_kanji_numbers(district)
     # 丁目、番地などを除去
-    match = re.match(r'^(.+?)[\d０-９一二三四五六七八九十]+', district)
+    match = re.match(r'^(.+?)[\d]+', normalized)
     if match:
         return match.group(1)
+    # 「丁目」で終わる場合も対応
+    if '丁目' in district:
+        return re.sub(r'[\d一二三四五六七八九十]+丁目.*$', '', district)
     return district
 
 
@@ -132,6 +153,9 @@ async def lookup_rosenka_urls(
     city = normalize_text(city)
     district = normalize_text(district)
 
+    # 漢数字を算用数字に変換（例: 博多駅前四丁目 → 博多駅前4丁目）
+    district_normalized = convert_kanji_numbers(district)
+
     # 都道府県の「県」「府」「都」を除去してマッチング
     pref_variations = [pref]
     for suffix in ["県", "府", "都", "道"]:
@@ -140,20 +164,23 @@ async def lookup_rosenka_urls(
         else:
             pref_variations.append(pref + suffix)
 
-    # 丁目の数字を抽出
-    district_match = re.search(r'(\d+)', district)
+    # 丁目の数字を抽出（漢数字変換後）
+    district_match = re.search(r'(\d+)', district_normalized)
     district_num = district_match.group(1) if district_match else None
     district_base = extract_district_base(district)
 
     # 検索キーの候補
     search_keys = []
     for p in pref_variations:
-        # フルマッチ
+        # フルマッチ（オリジナル）
         search_keys.append(f"{p}/{city}/{district}")
-        # 丁目付きバリエーション
+        # フルマッチ（漢数字変換後: 博多駅前四丁目 → 博多駅前4丁目）
+        if district_normalized != district:
+            search_keys.append(f"{p}/{city}/{district_normalized}")
+        # 丁目付きバリエーション（例: 高殿2）
         if district_num:
             search_keys.append(f"{p}/{city}/{district_base}{district_num}")
-        # 町名ベースマッチ
+        # 町名ベースマッチ（丁目なし）
         search_keys.append(f"{p}/{city}/{district_base}")
 
     # 検索

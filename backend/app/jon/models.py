@@ -22,20 +22,25 @@ class LocationResult(BaseModel):
 
     @property
     def accuracy_label(self) -> str:
-        """精度レベルの説明ラベル"""
-        if self.locating_level >= 7:
-            return "高精度"
-        elif self.locating_level >= 5:
-            return "中精度"
-        elif self.locating_level >= 3:
-            return "低精度"
-        else:
+        """
+        精度レベルの説明ラベル
+        JON API locating_level: 1=完全一致, 2=号・枝番不一致, 3=番地不一致,
+        4=丁目・小字不一致, 5=大字・町名不一致, 6=都道府県一致のみ
+        ※数字が小さいほど高精度
+        """
+        if self.locating_level == 0:
             return "精度不明"
+        elif self.locating_level <= 2:
+            return "高精度"
+        elif self.locating_level <= 4:
+            return "中精度"
+        else:
+            return "低精度"
 
     @property
     def is_high_accuracy(self) -> bool:
-        """登記取得に十分な精度か（レベル7以上）"""
-        return self.locating_level >= 7
+        """登記取得に十分な精度か（レベル1-2：完全一致または号・枝番のみ不一致）"""
+        return 1 <= self.locating_level <= 2
 
 
 class BuildingNumber(BaseModel):
