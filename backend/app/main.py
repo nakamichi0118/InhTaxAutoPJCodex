@@ -55,7 +55,7 @@ settings = get_settings()
 # 日付推論エンジン（2桁年号のスマート推論用）
 date_inference_engine = DateInferenceEngine()
 
-app = FastAPI(title="InhTaxAutoPJ Backend", version="0.10.0")
+app = FastAPI(title="InhTaxAutoPJ Backend", version="0.11.0")
 app.include_router(ledger_router)
 app.include_router(jon_router)
 
