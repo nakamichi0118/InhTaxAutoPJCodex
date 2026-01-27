@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..config import get_settings
 from .client import JonApiClient, JonApiError
-from .rosenka_lookup import lookup_rosenka_urls
+from .rosenka_lookup import lookup_rosenka_urls, clear_cache as clear_rosenka_cache
 from .models import (
     AnalyzeRequest,
     ForceRegistrationRequest,
@@ -61,6 +61,14 @@ async def get_status() -> JonStatusResponse:
         has_touki_credentials=bool(settings.touki_login_id and settings.touki_password),
         api_base_url=settings.jon_api_base_url,
     )
+
+
+@router.post("/clear-cache")
+async def clear_cache() -> Dict[str, str]:
+    """路線価キャッシュをクリア（デバッグ用）"""
+    clear_rosenka_cache()
+    logger.info("路線価キャッシュをクリアしました")
+    return {"status": "ok", "message": "路線価キャッシュをクリアしました"}
 
 
 @router.post("/locating", response_model=LocationResult)
