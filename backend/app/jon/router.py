@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..config import get_settings
 from .client import JonApiClient, JonApiError
+from .rosenka_lookup import lookup_rosenka_urls
 from .models import (
     AnalyzeRequest,
     JonBatchItem,
@@ -203,9 +204,18 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                     except JonApiError as e:
                         logger.warning(f"路線価図取得エラー: {e}")
 
-                    # 注: 国税庁サイトはBotアクセス制限(403)があるため、
-                    # 路線価図URLの自動取得は無効化。
-                    # フロントエンドで都道府県レベルのリンクを表示する。
+                    # GCSから路線価図URLを検索
+                    try:
+                        rosenka_urls = await lookup_rosenka_urls(
+                            prefecture=location.pref,
+                            city=location.city,
+                            district=location.small_section or location.large_section,
+                        )
+                        if rosenka_urls:
+                            result.rosenka_urls = rosenka_urls
+                            logger.info(f"路線価URL取得: {len(rosenka_urls)}件 ({location.pref}/{location.city})")
+                    except Exception as e:
+                        logger.warning(f"路線価URL検索エラー: {e}")
 
                 # 3. 登記取得（高精度の場合のみ）
                 if any(acq in item.acquisitions for acq in ["touki", "kozu", "chiseki", "tatemono"]):
