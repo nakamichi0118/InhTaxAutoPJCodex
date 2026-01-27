@@ -41,6 +41,7 @@ async def load_rosenka_data() -> List[Dict]:
     global _rosenka_cache
 
     if _rosenka_cache is not None:
+        logger.debug(f"路線価データキャッシュ使用: {len(_rosenka_cache)}件")
         return _rosenka_cache
 
     try:
@@ -51,8 +52,14 @@ async def load_rosenka_data() -> List[Dict]:
             _rosenka_cache = response.json()
             logger.info(f"路線価データ読み込み完了: {len(_rosenka_cache)}件")
             return _rosenka_cache
+    except httpx.ConnectError as e:
+        logger.error(f"路線価データ接続エラー（GCSへの接続失敗）: {e}")
+        return []
+    except httpx.TimeoutException as e:
+        logger.error(f"路線価データタイムアウト: {e}")
+        return []
     except Exception as e:
-        logger.error(f"路線価データ読み込みエラー: {e}")
+        logger.error(f"路線価データ読み込みエラー: {type(e).__name__}: {e}")
         return []
 
 
@@ -150,7 +157,8 @@ async def lookup_rosenka_urls(
         search_keys.append(f"{p}/{city}/{district_base}")
 
     # 検索
-    logger.debug(f"路線価検索キー: {search_keys[:5]}...")  # 最初の5つだけログ
+    logger.info(f"路線価検索キー: {search_keys}")  # 全てのキーをログ
+    logger.info(f"インデックスサンプル（大阪）: {[k for k in list(index.keys())[:100] if '大阪' in k]}")
     for key in search_keys:
         if key in index:
             logger.info(f"路線価URL発見: key={key}")

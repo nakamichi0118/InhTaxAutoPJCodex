@@ -294,9 +294,11 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                 result.accuracy_label = location.accuracy_label
                 logger.info(f"位置特定結果: address={item.address}, level={location.locating_level}, v1_code={location.v1_code}, raw_locating={location.raw_response.get('result', {}).get('locating', {})}")
 
-                # 精度チェック・警告設定
+                # 精度チェック
                 is_high_accuracy = location.is_high_accuracy
-                if not is_high_accuracy:
+                # 登記関連項目が選択されている場合のみ精度警告を表示
+                has_registration_items = any(acq in item.acquisitions for acq in ["touki", "kozu", "chiseki", "tatemono"])
+                if not is_high_accuracy and has_registration_items:
                     result.accuracy_warning = f"位置特定の精度が低いため（レベル{location.locating_level}）、登記情報の自動取得をスキップしました。住所を確認してください。"
                     logger.warning(f"位置精度低: {item.address} (level={location.locating_level})")
 

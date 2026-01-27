@@ -2427,10 +2427,10 @@
     }
 
     function renderJonApiPanel(container, properties, isConfigured = false, hasToukiCredentials = false) {
-        // Store properties with full address for later use
+        // Store properties with full address for later use (都道府県があれば含める)
         jonState.properties = properties.map(p => ({
             ...p,
-            fullAddress: `${p.city}${p.address}`.trim()
+            fullAddress: `${p.location_prefecture || ''}${p.city}${p.address}`.trim()
         }));
 
         const jonContainer = document.createElement('div');
@@ -2480,11 +2480,11 @@
             <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
                 <th style="padding:0.6rem;text-align:left;width:50px;">種別</th>
                 <th style="padding:0.6rem;text-align:left;">所在地</th>
-                <th style="padding:0.6rem;text-align:center;width:50px;"><input type="checkbox" id="bulk-gmap" title="全て選択/解除" checked> 地図</th>
-                <th style="padding:0.6rem;text-align:center;width:60px;"><input type="checkbox" id="bulk-touki" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}> 登記</th>
-                <th style="padding:0.6rem;text-align:center;width:50px;"><input type="checkbox" id="bulk-kozu" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}> 公図</th>
-                <th style="padding:0.6rem;text-align:center;width:70px;"><input type="checkbox" id="bulk-rosenka" title="全て選択/解除" checked> 路線価</th>
-                <th style="padding:0.6rem;text-align:center;width:50px;"><input type="checkbox" id="bulk-drawing" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}> 図面</th>
+                <th style="padding:0.6rem;text-align:center;width:80px;"><input type="checkbox" id="bulk-gmap" title="全て選択/解除" checked> <span style="font-size:0.75rem;">Googleマップ</span></th>
+                <th style="padding:0.6rem;text-align:center;width:60px;"><input type="checkbox" id="bulk-touki" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}> <span style="font-size:0.75rem;">登記簿</span></th>
+                <th style="padding:0.6rem;text-align:center;width:50px;"><input type="checkbox" id="bulk-kozu" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}> <span style="font-size:0.75rem;">公図</span></th>
+                <th style="padding:0.6rem;text-align:center;width:70px;"><input type="checkbox" id="bulk-rosenka" title="全て選択/解除" checked> <span style="font-size:0.75rem;">路線価図</span></th>
+                <th style="padding:0.6rem;text-align:center;width:90px;"><input type="checkbox" id="bulk-drawing" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}> <span style="font-size:0.75rem;">測量図/図面</span></th>
             </tr>
         `;
         table.appendChild(thead);
@@ -2596,7 +2596,7 @@
             }
         });
 
-        // 一括選択チェックボックスのイベントハンドラー
+        // 一括選択チェックボックスのイベントハンドラー（tableContainerを使用）
         const bulkCheckboxConfig = [
             { bulkId: 'bulk-gmap', acq: 'google_map' },
             { bulkId: 'bulk-touki', acq: 'touki' },
@@ -2606,7 +2606,8 @@
         ];
 
         bulkCheckboxConfig.forEach(({ bulkId, acq }) => {
-            const bulkCb = document.getElementById(bulkId);
+            // tableContainer内で検索（DOMに追加前でも動作）
+            const bulkCb = tableContainer.querySelector(`#${bulkId}`);
             if (!bulkCb) return;
 
             bulkCb.addEventListener('change', () => {
@@ -2622,7 +2623,7 @@
 
                 // 地図以外をチェックした場合、地図も自動チェック
                 if (checked && bulkId !== 'bulk-gmap') {
-                    const gmapBulk = document.getElementById('bulk-gmap');
+                    const gmapBulk = tableContainer.querySelector('#bulk-gmap');
                     if (gmapBulk && !gmapBulk.checked) {
                         gmapBulk.checked = true;
                         const gmapCheckboxes = tableContainer.querySelectorAll('input[data-acq="google_map"]:not(:disabled)');
@@ -3166,6 +3167,7 @@
                 if (areaMatch) area = areaMatch[1].trim();
 
                 // Handle nested structure from to_export_payload() and fallback to flat names
+                const prefecture = asset.location?.prefecture || asset.location_prefecture || asset.locationPrefecture || '';
                 const city = asset.location?.municipality || asset.location_municipality || asset.locationMunicipality || '';
                 const address = asset.location?.detail || asset.location_detail || asset.locationDetail || '';
                 const identifierPrimary = asset.identifiers?.primary || asset.identifier_primary || asset.identifierPrimary || '';
@@ -3174,6 +3176,7 @@
                 return [{
                     id: identifierPrimary || `prop-${Math.random().toString(36).slice(2)}`,
                     category: asset.category,
+                    location_prefecture: prefecture,
                     city: city,
                     address: address,
                     land_type: landType,
