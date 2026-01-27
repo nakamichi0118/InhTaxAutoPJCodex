@@ -169,6 +169,8 @@ async def lookup_rosenka_urls(
     district_num = district_match.group(1) if district_match else None
     district_base = extract_district_base(district)
 
+    logger.info(f"[ROSENKA LOOKUP] district={district}, normalized={district_normalized}, base={district_base}, num={district_num}")
+
     # 検索キーの候補
     search_keys = []
     for p in pref_variations:
@@ -184,12 +186,17 @@ async def lookup_rosenka_urls(
         search_keys.append(f"{p}/{city}/{district_base}")
 
     # 検索
-    logger.info(f"路線価検索キー: {search_keys}")  # 全てのキーをログ
-    logger.info(f"インデックスサンプル（大阪）: {[k for k in list(index.keys())[:100] if '大阪' in k]}")
+    logger.info(f"[ROSENKA LOOKUP] 検索キー: {search_keys[:8]}")  # 最初の8キーをログ
+
+    # 該当地域のインデックスキーを確認
+    city_keys = [k for k in index.keys() if city in k][:10]
+    logger.info(f"[ROSENKA LOOKUP] {city}のキーサンプル: {city_keys}")
     for key in search_keys:
         if key in index:
-            logger.info(f"路線価URL発見: key={key}")
+            logger.info(f"[ROSENKA LOOKUP] 完全一致: key={key}, urls={index[key][:3]}")
             return index[key]
+
+    logger.info(f"[ROSENKA LOOKUP] 完全一致なし、部分一致検索開始")
 
     # 部分一致検索（町名のみ）
     for key, urls in index.items():
@@ -200,8 +207,10 @@ async def lookup_rosenka_urls(
             if any(p in idx_pref or idx_pref in p for p in pref_variations):
                 if city in idx_city or idx_city in city:
                     if district_base in idx_district or idx_district in district_base:
+                        logger.info(f"[ROSENKA LOOKUP] 部分一致: key={key}, district_base={district_base}, idx_district={idx_district}")
                         return urls
 
+    logger.info(f"[ROSENKA LOOKUP] 一致なし")
     return []
 
 
