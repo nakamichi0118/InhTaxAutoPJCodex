@@ -150,8 +150,10 @@ async def lookup_rosenka_urls(
         search_keys.append(f"{p}/{city}/{district_base}")
 
     # 検索
+    logger.debug(f"路線価検索キー: {search_keys[:5]}...")  # 最初の5つだけログ
     for key in search_keys:
         if key in index:
+            logger.info(f"路線価URL発見: key={key}")
             return index[key]
 
     # 部分一致検索（町名のみ）

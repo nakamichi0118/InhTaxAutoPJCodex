@@ -714,6 +714,30 @@
             font-size: 0.8rem;
             margin-top: 0.3rem;
         }
+        .accuracy-warning-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            margin-top: 0.3rem;
+        }
+        .force-fetch-btn {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            font-size: 0.75rem;
+            background: #f59e0b;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 0.2rem;
+        }
+        .force-fetch-btn:hover {
+            background: #d97706;
+        }
+        .force-fetch-btn:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
         .jon-result-table .col-accuracy { width: 70px; text-align: center; }
 
     </style>
@@ -2785,12 +2809,29 @@
                 errorSpan.textContent = `エラー: ${result.error}`;
                 tdAddress.appendChild(errorSpan);
             }
-            // 精度警告を表示
+            // 精度警告を表示（強制取得ボタン付き）
             if (result.accuracy_warning) {
+                const warningContainer = document.createElement('div');
+                warningContainer.className = 'accuracy-warning-container';
+                warningContainer.id = `warning-${result.id}`;
+
                 const warningSpan = document.createElement('div');
                 warningSpan.className = 'accuracy-warning';
                 warningSpan.textContent = result.accuracy_warning;
-                tdAddress.appendChild(warningSpan);
+                warningContainer.appendChild(warningSpan);
+
+                // 強制取得ボタン
+                const forceBtn = document.createElement('button');
+                forceBtn.type = 'button';
+                forceBtn.className = 'force-fetch-btn';
+                forceBtn.textContent = '登記情報を取得（精度低）';
+                forceBtn.title = '位置精度が低いですが、登記情報の取得を試みます';
+                forceBtn.addEventListener('click', async () => {
+                    await forceRegistrationFetch(result.id, forceBtn, warningContainer);
+                });
+                warningContainer.appendChild(forceBtn);
+
+                tdAddress.appendChild(warningContainer);
             }
             tr.appendChild(tdAddress);
 
@@ -2958,6 +2999,64 @@
         exportDiv.appendChild(csvBtn);
 
         resultsDiv.appendChild(exportDiv);
+    }
+
+    async function forceRegistrationFetch(itemId, button, warningContainer) {
+        if (!jonState.batchId) {
+            alert('バッチIDが見つかりません');
+            return;
+        }
+
+        button.disabled = true;
+        button.textContent = '取得中...';
+
+        try {
+            const response = await fetch('/api/jon/force-registration', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    batch_id: jonState.batchId,
+                    item_id: itemId,
+                    pdf_types: [1, 3]  // 登記簿と公図
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                // 成功時：警告を削除し、結果を更新
+                warningContainer.innerHTML = '<div style="color:#059669;font-size:0.8rem;">登記情報を取得しました</div>';
+
+                // 結果テーブルの該当行を更新
+                const itemResult = jonState.batchResults.find(r => r.id === itemId);
+                if (itemResult) {
+                    if (result.registration_pdf_url) {
+                        itemResult.registration = { pdf_url: result.registration_pdf_url };
+                    }
+                    if (result.kozu_pdf_url) {
+                        itemResult.kozu_pdf_url = result.kozu_pdf_url;
+                    }
+                    itemResult.accuracy_warning = null;
+                    // テーブルを再描画
+                    renderJonResults(jonState.batchResults);
+                }
+            } else {
+                // エラー時
+                const errorMsg = result.error || result.detail || '取得に失敗しました';
+                button.textContent = '再試行';
+                button.disabled = false;
+                const errorDiv = document.createElement('div');
+                errorDiv.style.color = '#dc2626';
+                errorDiv.style.fontSize = '0.75rem';
+                errorDiv.textContent = errorMsg;
+                warningContainer.appendChild(errorDiv);
+            }
+        } catch (e) {
+            console.error('強制取得エラー:', e);
+            button.textContent = '再試行';
+            button.disabled = false;
+            alert('通信エラーが発生しました');
+        }
     }
 
     function showRosenkaImage(base64) {

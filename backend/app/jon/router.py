@@ -13,6 +13,8 @@ from .client import JonApiClient, JonApiError
 from .rosenka_lookup import lookup_rosenka_urls
 from .models import (
     AnalyzeRequest,
+    ForceRegistrationRequest,
+    ForceRegistrationResponse,
     JonBatchItem,
     JonBatchItemResult,
     JonBatchRequest,
@@ -127,6 +129,115 @@ async def analyze(request: AnalyzeRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@router.post("/force-registration", response_model=ForceRegistrationResponse)
+async def force_registration(request: ForceRegistrationRequest) -> ForceRegistrationResponse:
+    """
+    強制登記取得API: 精度が低い場合でも登記情報を取得
+    ユーザーが明示的に「取得を試みる」を選択した場合に使用
+    """
+    # バッチジョブから対象アイテムを取得
+    if request.batch_id not in _batch_jobs:
+        raise HTTPException(status_code=404, detail="Batch job not found")
+
+    job = _batch_jobs[request.batch_id]
+    item_result = next((r for r in job.results if r.id == request.item_id), None)
+    if not item_result:
+        raise HTTPException(status_code=404, detail="Item not found in batch")
+
+    if not item_result.location:
+        raise HTTPException(status_code=400, detail="位置情報がありません。先に位置特定を実行してください。")
+
+    client = _get_client()
+    settings = get_settings()
+
+    if not settings.touki_login_id or not settings.touki_password:
+        raise HTTPException(
+            status_code=503,
+            detail="登記情報提供サービスの認証情報が設定されていません。"
+        )
+
+    response = ForceRegistrationResponse(success=False, item_id=request.item_id)
+    location = item_result.location
+
+    # バッチアイテムから物件種別を推定（locationのaddress_type_resultで判定）
+    is_land = location.address_type_result != "家屋番号"
+    number_type = 1 if is_land else 2
+
+    try:
+        # 登記簿（全部事項）
+        if 1 in request.pdf_types:
+            try:
+                reg = await client.get_registration_async(
+                    v1_code=location.v1_code,
+                    number=location.number,
+                    number_type=number_type,
+                    pdf_type=1,
+                )
+                response.registration_pdf_url = reg.pdf_url
+                item_result.registration = reg
+                logger.info(f"強制取得成功（登記簿）: {request.item_id}")
+            except JonApiError as e:
+                logger.warning(f"強制取得エラー（登記簿）: {e}")
+                response.error = f"登記簿取得エラー: {e}"
+
+        # 公図
+        if 3 in request.pdf_types:
+            try:
+                kozu_reg = await client.get_registration_async(
+                    v1_code=location.v1_code,
+                    number=location.number,
+                    number_type=number_type,
+                    pdf_type=3,
+                )
+                response.kozu_pdf_url = kozu_reg.pdf_url
+                item_result.kozu_pdf_url = kozu_reg.pdf_url
+                logger.info(f"強制取得成功（公図）: {request.item_id}")
+            except JonApiError as e:
+                logger.warning(f"強制取得エラー（公図）: {e}")
+                if response.error:
+                    response.error += f" / 公図取得エラー: {e}"
+                else:
+                    response.error = f"公図取得エラー: {e}"
+
+        # 地積測量図（土地のみ）
+        if 4 in request.pdf_types and is_land:
+            try:
+                chiseki_reg = await client.get_registration_async(
+                    v1_code=location.v1_code,
+                    number=location.number,
+                    number_type=number_type,
+                    pdf_type=4,
+                )
+                response.chiseki_pdf_url = chiseki_reg.pdf_url
+                logger.info(f"強制取得成功（地積測量図）: {request.item_id}")
+            except JonApiError as e:
+                logger.warning(f"強制取得エラー（地積測量図）: {e}")
+
+        # 建物図面（建物のみ）
+        if 6 in request.pdf_types and not is_land:
+            try:
+                tatemono_reg = await client.get_registration_async(
+                    v1_code=location.v1_code,
+                    number=location.number,
+                    number_type=number_type,
+                    pdf_type=6,
+                )
+                response.tatemono_pdf_url = tatemono_reg.pdf_url
+                logger.info(f"強制取得成功（建物図面）: {request.item_id}")
+            except JonApiError as e:
+                logger.warning(f"強制取得エラー（建物図面）: {e}")
+
+        # 警告メッセージを更新
+        item_result.accuracy_warning = None
+        response.success = True
+
+    except Exception as e:
+        logger.exception(f"強制取得エラー: {e}")
+        response.error = str(e)
+
+    return response
+
+
 @router.post("/batch", response_model=JonBatchResponse, status_code=202)
 async def batch_process(request: JonBatchRequest) -> JonBatchResponse:
     """バッチ処理API: 複数の不動産情報を一括取得"""
@@ -206,14 +317,18 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
 
                     # GCSから路線価図URLを検索
                     try:
+                        search_district = location.small_section or location.large_section
+                        logger.info(f"路線価URL検索: pref={location.pref}, city={location.city}, district={search_district}")
                         rosenka_urls = await lookup_rosenka_urls(
                             prefecture=location.pref,
                             city=location.city,
-                            district=location.small_section or location.large_section,
+                            district=search_district,
                         )
                         if rosenka_urls:
                             result.rosenka_urls = rosenka_urls
-                            logger.info(f"路線価URL取得: {len(rosenka_urls)}件 ({location.pref}/{location.city})")
+                            logger.info(f"路線価URL取得成功: {len(rosenka_urls)}件 ({location.pref}/{location.city}/{search_district})")
+                        else:
+                            logger.info(f"路線価URL見つからず: {location.pref}/{location.city}/{search_district}")
                     except Exception as e:
                         logger.warning(f"路線価URL検索エラー: {e}")
 

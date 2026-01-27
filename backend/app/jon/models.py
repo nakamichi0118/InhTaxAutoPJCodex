@@ -144,6 +144,25 @@ class AnalyzeRequest(BaseModel):
     fields: Optional[List[str]] = None
 
 
+# Force registration request
+class ForceRegistrationRequest(BaseModel):
+    """強制登記取得リクエスト（精度チェックをスキップ）"""
+    batch_id: str
+    item_id: str
+    pdf_types: List[Literal[1, 3, 4, 6]] = Field(default_factory=lambda: [1])  # 1=登記簿, 3=公図, 4=地積測量図, 6=建物図面
+
+
+class ForceRegistrationResponse(BaseModel):
+    """強制登記取得レスポンス"""
+    success: bool
+    item_id: str
+    registration_pdf_url: Optional[str] = None
+    kozu_pdf_url: Optional[str] = None
+    chiseki_pdf_url: Optional[str] = None
+    tatemono_pdf_url: Optional[str] = None
+    error: Optional[str] = None
+
+
 # Status response
 class JonStatusResponse(BaseModel):
     """JON API設定状態"""
