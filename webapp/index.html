@@ -2478,13 +2478,13 @@
         const thead = document.createElement('thead');
         thead.innerHTML = `
             <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
-                <th style="padding:0.6rem;text-align:left;width:50px;">種別</th>
+                <th style="padding:0.6rem;text-align:left;width:50px;white-space:nowrap;">種別</th>
                 <th style="padding:0.6rem;text-align:left;">所在地</th>
-                <th style="padding:0.6rem;text-align:center;width:80px;"><input type="checkbox" id="bulk-gmap" title="全て選択/解除" checked> <span style="font-size:0.75rem;">Googleマップ</span></th>
-                <th style="padding:0.6rem;text-align:center;width:60px;"><input type="checkbox" id="bulk-touki" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}> <span style="font-size:0.75rem;">登記簿</span></th>
-                <th style="padding:0.6rem;text-align:center;width:50px;"><input type="checkbox" id="bulk-kozu" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}> <span style="font-size:0.75rem;">公図</span></th>
-                <th style="padding:0.6rem;text-align:center;width:70px;"><input type="checkbox" id="bulk-rosenka" title="全て選択/解除" checked> <span style="font-size:0.75rem;">路線価図</span></th>
-                <th style="padding:0.6rem;text-align:center;width:90px;"><input type="checkbox" id="bulk-drawing" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}> <span style="font-size:0.75rem;">測量図/図面</span></th>
+                <th style="padding:0.6rem;text-align:center;width:70px;white-space:nowrap;"><input type="checkbox" id="bulk-gmap" title="全て選択/解除" checked><br><span style="font-size:0.7rem;">Gマップ</span></th>
+                <th style="padding:0.6rem;text-align:center;width:55px;white-space:nowrap;"><input type="checkbox" id="bulk-touki" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}><br><span style="font-size:0.7rem;">登記簿</span></th>
+                <th style="padding:0.6rem;text-align:center;width:45px;white-space:nowrap;"><input type="checkbox" id="bulk-kozu" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}><br><span style="font-size:0.7rem;">公図</span></th>
+                <th style="padding:0.6rem;text-align:center;width:55px;white-space:nowrap;"><input type="checkbox" id="bulk-rosenka" title="全て選択/解除" checked><br><span style="font-size:0.7rem;">路線価</span></th>
+                <th style="padding:0.6rem;text-align:center;width:70px;white-space:nowrap;"><input type="checkbox" id="bulk-drawing" title="全て選択/解除" ${hasToukiCredentials ? '' : 'disabled'}><br><span style="font-size:0.7rem;">図面</span></th>
             </tr>
         `;
         table.appendChild(thead);
@@ -2797,10 +2797,11 @@
                 <th class="col-type">種別</th>
                 <th class="col-address">所在地</th>
                 <th class="col-accuracy">精度</th>
-                <th class="col-link">地図</th>
-                <th class="col-link">登記</th>
+                <th class="col-link">Gマップ</th>
+                <th class="col-link">登記簿</th>
                 <th class="col-link">公図</th>
                 <th class="col-link">路線価</th>
+                <th class="col-link">図面</th>
             </tr>
         `;
         table.appendChild(thead);
@@ -3011,6 +3012,24 @@
                 tdRosenka.style.color = '#94a3b8';
             }
             tr.appendChild(tdRosenka);
+
+            // 図面（地積測量図 / 建物図面）
+            const tdDrawing = document.createElement('td');
+            tdDrawing.className = 'col-link';
+            const drawingUrl = isLand ? result.chiseki_pdf_url : result.tatemono_pdf_url;
+            if (drawingUrl) {
+                const drawingLink = document.createElement('a');
+                drawingLink.href = drawingUrl;
+                drawingLink.target = '_blank';
+                drawingLink.rel = 'noopener';
+                drawingLink.className = 'jon-result-link';
+                drawingLink.textContent = 'PDF';
+                tdDrawing.appendChild(drawingLink);
+            } else {
+                tdDrawing.textContent = '-';
+                tdDrawing.style.color = '#94a3b8';
+            }
+            tr.appendChild(tdDrawing);
 
             tbody.appendChild(tr);
         });

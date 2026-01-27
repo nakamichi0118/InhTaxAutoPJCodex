@@ -383,26 +383,26 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                             # 地積測量図取得（土地のみ）
                             if "chiseki" in item.acquisitions and item.property_type == "land":
                                 try:
-                                    await client.get_registration_async(
+                                    chiseki_reg = await client.get_registration_async(
                                         v1_code=location.v1_code,
                                         number=location.number,
                                         number_type=number_type,
                                         pdf_type=4,  # 地積測量図
                                     )
-                                    # TODO: 結果をresultに格納
+                                    result.chiseki_pdf_url = chiseki_reg.pdf_url
                                 except JonApiError as e:
                                     logger.warning(f"地積測量図取得エラー: {e}")
 
                             # 建物図面取得（建物のみ）
                             if "tatemono" in item.acquisitions and item.property_type == "building":
                                 try:
-                                    await client.get_registration_async(
+                                    tatemono_reg = await client.get_registration_async(
                                         v1_code=location.v1_code,
                                         number=location.number,
                                         number_type=number_type,
                                         pdf_type=6,  # 建物図面
                                     )
-                                    # TODO: 結果をresultに格納
+                                    result.tatemono_pdf_url = tatemono_reg.pdf_url
                                 except JonApiError as e:
                                     logger.warning(f"建物図面取得エラー: {e}")
 

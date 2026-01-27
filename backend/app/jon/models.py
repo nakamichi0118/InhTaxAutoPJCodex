@@ -107,6 +107,8 @@ class JonBatchItemResult(BaseModel):
     rosenka_urls: List[str] = Field(default_factory=list)  # 国税庁路線価図URL
     registration: Optional[RegistrationResult] = None  # 登記簿PDF
     kozu_pdf_url: Optional[str] = None  # 公図PDF URL
+    chiseki_pdf_url: Optional[str] = None  # 地積測量図PDF URL
+    tatemono_pdf_url: Optional[str] = None  # 建物図面PDF URL
     analyze_result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
 
