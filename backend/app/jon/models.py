@@ -92,6 +92,7 @@ class JonBatchItem(BaseModel):
 class JonBatchRequest(BaseModel):
     """バッチ処理リクエスト"""
     properties: List[JonBatchItem]
+    skip_kozu_for_bairitsu: bool = False  # 倍率地域の場合は公図をスキップ
 
 
 class JonBatchItemResult(BaseModel):
@@ -105,6 +106,7 @@ class JonBatchItemResult(BaseModel):
     google_map_url: Optional[str] = None
     rosenka_image: Optional[str] = None  # base64
     rosenka_urls: List[str] = Field(default_factory=list)  # 国税庁路線価図URL
+    is_bairitsu: bool = False  # 倍率地域かどうか
     registration: Optional[RegistrationResult] = None  # 登記簿PDF
     kozu_pdf_url: Optional[str] = None  # 公図PDF URL
     chiseki_pdf_url: Optional[str] = None  # 地積測量図PDF URL

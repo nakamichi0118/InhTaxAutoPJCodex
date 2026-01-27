@@ -259,7 +259,7 @@ async def batch_process(request: JonBatchRequest) -> JonBatchResponse:
     _batch_jobs[batch_id] = response
 
     # バックグラウンドでバッチ処理を開始
-    asyncio.create_task(_process_batch(batch_id, request.properties))
+    asyncio.create_task(_process_batch(batch_id, request.properties, request.skip_kozu_for_bairitsu))
 
     return response
 
@@ -272,7 +272,7 @@ async def get_batch_status(batch_id: str) -> JonBatchResponse:
     return _batch_jobs[batch_id]
 
 
-async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
+async def _process_batch(batch_id: str, items: List[JonBatchItem], skip_kozu_for_bairitsu: bool = False) -> None:
     """バッチ処理を実行"""
     client = _get_client()
     job = _batch_jobs[batch_id]
@@ -316,7 +316,12 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                         )
                         result.rosenka_image = rosenka.image_base64
                     except JonApiError as e:
-                        logger.warning(f"路線価図取得エラー: {e}")
+                        # 606 = 該当する路線価データなし（倍率地域）
+                        if e.status_code == 606:
+                            result.is_bairitsu = True
+                            logger.info(f"倍率地域検出: {item.address}")
+                        else:
+                            logger.warning(f"路線価図取得エラー: {e}")
 
                     # GCSから路線価図URLを検索
                     try:
@@ -367,18 +372,21 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                                 except JonApiError as e:
                                     logger.warning(f"登記簿取得エラー: {e}")
 
-                            # 公図取得
+                            # 公図取得（倍率地域の場合はスキップ可能）
                             if "kozu" in item.acquisitions:
-                                try:
-                                    kozu_reg = await client.get_registration_async(
-                                        v1_code=location.v1_code,
-                                        number=location.number,
-                                        number_type=number_type,
-                                        pdf_type=3,  # 地図（公図）
-                                    )
-                                    result.kozu_pdf_url = kozu_reg.pdf_url
-                                except JonApiError as e:
-                                    logger.warning(f"公図取得エラー: {e}")
+                                if result.is_bairitsu and skip_kozu_for_bairitsu:
+                                    logger.info(f"公図取得スキップ（倍率地域）: {item.address}")
+                                else:
+                                    try:
+                                        kozu_reg = await client.get_registration_async(
+                                            v1_code=location.v1_code,
+                                            number=location.number,
+                                            number_type=number_type,
+                                            pdf_type=3,  # 地図（公図）
+                                        )
+                                        result.kozu_pdf_url = kozu_reg.pdf_url
+                                    except JonApiError as e:
+                                        logger.warning(f"公図取得エラー: {e}")
 
                             # 地積測量図取得（土地のみ）
                             if "chiseki" in item.acquisitions and item.property_type == "land":

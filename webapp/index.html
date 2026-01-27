@@ -2636,6 +2636,10 @@
         // Actions
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'jon-actions';
+        actionsDiv.style.display = 'flex';
+        actionsDiv.style.alignItems = 'center';
+        actionsDiv.style.gap = '1rem';
+        actionsDiv.style.flexWrap = 'wrap';
 
         const executeBtn = document.createElement('button');
         executeBtn.type = 'button';
@@ -2645,6 +2649,21 @@
         executeBtn.disabled = !isConfigured;
         executeBtn.addEventListener('click', () => executeJonBatchFromProperties(properties));
         actionsDiv.appendChild(executeBtn);
+
+        // 倍率地域オプション
+        const bairitsuLabel = document.createElement('label');
+        bairitsuLabel.style.display = 'flex';
+        bairitsuLabel.style.alignItems = 'center';
+        bairitsuLabel.style.gap = '0.3rem';
+        bairitsuLabel.style.fontSize = '0.85rem';
+        bairitsuLabel.style.color = '#475569';
+        const bairitsuCheckbox = document.createElement('input');
+        bairitsuCheckbox.type = 'checkbox';
+        bairitsuCheckbox.id = 'skipKozuForBairitsu';
+        bairitsuCheckbox.checked = true;  // デフォルトでオン
+        bairitsuLabel.appendChild(bairitsuCheckbox);
+        bairitsuLabel.appendChild(document.createTextNode('倍率地域は公図をスキップ'));
+        actionsDiv.appendChild(bairitsuLabel);
 
         jonContainer.appendChild(actionsDiv);
 
@@ -2711,10 +2730,17 @@
         jonState.isProcessing = true;
 
         try {
+            // 倍率地域オプションを取得
+            const skipKozuCheckbox = document.getElementById('skipKozuForBairitsu');
+            const skipKozuForBairitsu = skipKozuCheckbox ? skipKozuCheckbox.checked : false;
+
             const res = await fetch(`${normalizedApiBase()}/jon/batch`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ properties: items }),
+                body: JSON.stringify({
+                    properties: items,
+                    skip_kozu_for_bairitsu: skipKozuForBairitsu,
+                }),
             });
 
             if (!res.ok) {
@@ -2937,8 +2963,18 @@
                 kozuLink.textContent = 'PDF';
                 tdKozu.appendChild(kozuLink);
             } else {
-                tdKozu.textContent = '-';
-                tdKozu.style.color = '#94a3b8';
+                // 倍率地域でスキップされた場合
+                const batchItem = jonState.batchItems.find(item => item.id === result.id);
+                const requestedKozu = batchItem?.acquisitions?.includes('kozu');
+                if (result.is_bairitsu && requestedKozu) {
+                    tdKozu.textContent = 'スキップ';
+                    tdKozu.style.color = '#92400e';
+                    tdKozu.style.fontSize = '0.8rem';
+                    tdKozu.title = '倍率地域のため公図をスキップしました';
+                } else {
+                    tdKozu.textContent = '-';
+                    tdKozu.style.color = '#94a3b8';
+                }
             }
             tr.appendChild(tdKozu);
 
@@ -2949,7 +2985,16 @@
             rosenkaGroup.className = 'jon-link-group';
 
             // デバッグ: rosenka_urls の確認
-            console.log(`[${result.id}] rosenka_urls:`, result.rosenka_urls, 'rosenka_image:', !!result.rosenka_image);
+            console.log(`[${result.id}] rosenka_urls:`, result.rosenka_urls, 'rosenka_image:', !!result.rosenka_image, 'is_bairitsu:', result.is_bairitsu);
+
+            // 倍率地域の場合はバッジを表示
+            if (result.is_bairitsu) {
+                const bairitsuBadge = document.createElement('span');
+                bairitsuBadge.style.cssText = 'background:#fef3c7;color:#92400e;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.7rem;margin-right:0.3rem;';
+                bairitsuBadge.textContent = '倍率';
+                bairitsuBadge.title = '倍率地域のため路線価図はありません';
+                rosenkaGroup.appendChild(bairitsuBadge);
+            }
 
             if (result.rosenka_image) {
                 const imgBtn = document.createElement('button');
