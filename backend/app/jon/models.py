@@ -104,6 +104,7 @@ class JonBatchItemResult(BaseModel):
     accuracy_label: str = ""  # 精度ラベル（高精度/中精度/低精度）
     accuracy_warning: Optional[str] = None  # 精度警告メッセージ
     google_map_url: Optional[str] = None
+    chikamap_url: Optional[str] = None  # 全国地価マップURL
     rosenka_image: Optional[str] = None  # base64
     rosenka_urls: List[str] = Field(default_factory=list)  # 国税庁路線価図URL
     is_bairitsu: bool = False  # 倍率地域かどうか

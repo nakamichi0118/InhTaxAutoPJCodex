@@ -1970,7 +1970,7 @@
                 console.warn('Handsontable not loaded');
                 return;
             }
-            new Handsontable(hotWrapper, {
+            jonState.hotInstance = new Handsontable(hotWrapper, {
                 data: data,
                 colHeaders: ['種別', '市区町村', '所在地・地番', '地目/構造', '地積/床面積', '評価額'],
                 columns: [
@@ -2492,7 +2492,12 @@
         // Body
         const tbody = document.createElement('tbody');
         jonState.properties.forEach((prop, idx) => {
-            const isLand = prop.category === 'land';
+            // Read current values from Handsontable if available
+            const hotData = jonState.hotInstance ? jonState.hotInstance.getSourceData() : null;
+            const hotRow = hotData ? hotData[idx] : null;
+            const isLand = hotRow ? hotRow.category !== '家屋' : prop.category === 'land';
+            const displayAddress = hotRow ? `${hotRow.municipality || ''}${hotRow.location || ''}`.trim() : (prop.fullAddress || prop.id);
+
             const tr = document.createElement('tr');
             tr.style.borderBottom = '1px solid #e2e8f0';
             tr.dataset.propIdx = idx;
@@ -2506,7 +2511,7 @@
             // 所在地
             const addressTd = document.createElement('td');
             addressTd.style.padding = '0.5rem 0.6rem';
-            addressTd.textContent = prop.fullAddress || prop.id;
+            addressTd.textContent = displayAddress;
             tr.appendChild(addressTd);
 
             // Googleマップ checkbox
@@ -2692,6 +2697,9 @@
             return;
         }
 
+        // Read current values from Handsontable (user may have edited)
+        const hotData = jonState.hotInstance ? jonState.hotInstance.getSourceData() : null;
+
         // Build items with per-property acquisitions
         const items = [];
         jonState.properties.forEach((prop, idx) => {
@@ -2699,10 +2707,19 @@
             const acquisitions = Array.from(checkboxes).map(cb => cb.dataset.acq);
 
             if (acquisitions.length > 0) {
+                // Use Handsontable's current data if available (reflects user edits)
+                let address = prop.fullAddress || `${prop.city}${prop.address}`;
+                let propertyType = prop.category === 'building' ? 'building' : 'land';
+                if (hotData && hotData[idx]) {
+                    const row = hotData[idx];
+                    address = `${row.municipality || ''}${row.location || ''}`.trim() || address;
+                    propertyType = row.category === '家屋' ? 'building' : 'land';
+                }
+
                 items.push({
                     id: prop.id,
-                    address: prop.fullAddress || `${prop.city}${prop.address}`,
-                    property_type: prop.category === 'building' ? 'building' : 'land',
+                    address: address,
+                    property_type: propertyType,
                     acquisitions: acquisitions,
                 });
             }
@@ -2811,6 +2828,34 @@
         title.textContent = '取得結果';
         resultsDiv.appendChild(title);
 
+        // 外部サイトリンクバー
+        const extLinksBar = document.createElement('div');
+        extLinksBar.style.cssText = 'display:flex;gap:12px;align-items:center;margin-bottom:10px;padding:6px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;';
+        const extLabel = document.createElement('span');
+        extLabel.style.cssText = 'font-size:0.75rem;color:#64748b;white-space:nowrap;';
+        extLabel.textContent = '外部サイト:';
+        extLinksBar.appendChild(extLabel);
+
+        [{url:'https://app.zip-site.com/txac/app/index.htm', icon:'image/zenrin_logo.svg', alt:'ZENRIN GIS package'},
+         {url:'https://map.maff.go.jp/FarmInformation/Index?dlgName=notes', icon:'image/emaff_logo.svg', alt:'eMAFF農地ナビ'}
+        ].forEach(site => {
+            const a = document.createElement('a');
+            a.href = site.url;
+            a.target = '_blank';
+            a.rel = 'noopener';
+            a.title = site.alt;
+            a.style.cssText = 'display:inline-flex;align-items:center;padding:3px 8px;background:#fff;border:1px solid #d1d5db;border-radius:4px;text-decoration:none;transition:border-color 0.15s;';
+            a.onmouseenter = () => a.style.borderColor = '#3b82f6';
+            a.onmouseleave = () => a.style.borderColor = '#d1d5db';
+            const img = document.createElement('img');
+            img.src = site.icon;
+            img.alt = site.alt;
+            img.style.cssText = 'height:20px;width:auto;';
+            a.appendChild(img);
+            extLinksBar.appendChild(a);
+        });
+        resultsDiv.appendChild(extLinksBar);
+
         // テーブル作成
         const table = document.createElement('table');
         table.className = 'jon-result-table';
@@ -2824,6 +2869,7 @@
                 <th class="col-address">所在地</th>
                 <th class="col-accuracy">精度</th>
                 <th class="col-link">Gマップ</th>
+                <th class="col-link">地価マップ</th>
                 <th class="col-link">登記簿</th>
                 <th class="col-link">公図</th>
                 <th class="col-link">路線価</th>
@@ -2933,6 +2979,23 @@
                 tdMap.style.color = '#94a3b8';
             }
             tr.appendChild(tdMap);
+
+            // 地価マップ
+            const tdChika = document.createElement('td');
+            tdChika.className = 'col-link';
+            if (result.chikamap_url) {
+                const chikaLink = document.createElement('a');
+                chikaLink.href = result.chikamap_url;
+                chikaLink.target = '_blank';
+                chikaLink.rel = 'noopener';
+                chikaLink.className = 'jon-result-link';
+                chikaLink.textContent = '開く';
+                tdChika.appendChild(chikaLink);
+            } else {
+                tdChika.textContent = '-';
+                tdChika.style.color = '#94a3b8';
+            }
+            tr.appendChild(tdChika);
 
             // 登記
             const tdTouki = document.createElement('td');
@@ -3185,11 +3248,12 @@
             const blob = new Blob([jsonStr], { type: 'application/json' });
             downloadBlob(blob, 'jon_results.json');
         } else if (format === 'csv') {
-            const headers = ['ID', 'ステータス', 'Googleマップ', '登記PDF', '緯度', '経度', 'v1_code', 'エラー'];
+            const headers = ['ID', 'ステータス', 'Googleマップ', '地価マップ', '登記PDF', '緯度', '経度', 'v1_code', 'エラー'];
             const rows = jonState.batchResults.map(r => [
                 r.id,
                 r.status,
                 r.google_map_url || '',
+                r.chikamap_url || '',
                 r.registration?.pdf_url || '',
                 r.location?.lat || '',
                 r.location?.long || '',

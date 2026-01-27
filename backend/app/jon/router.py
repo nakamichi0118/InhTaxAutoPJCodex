@@ -314,6 +314,9 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem], skip_kozu_for
                 if "google_map" in item.acquisitions:
                     result.google_map_url = f"https://www.google.com/maps?q={location.lat},{location.long}"
 
+                # 全国地価マップURL生成
+                result.chikamap_url = f"https://www.chikamap.jp/chikamap/Map?mid=225&mpx={location.long}&mpy={location.lat}&gprj=1&bsw=1905&bsh=911"
+
                 # 2. 路線価図取得（精度に関係なく取得）
                 if "rosenka" in item.acquisitions:
                     # JON APIから路線価図画像を取得
