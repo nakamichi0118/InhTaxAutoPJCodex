@@ -333,7 +333,8 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem], skip_kozu_for
 
                     # GCSから路線価図URLを検索
                     try:
-                        search_district = location.small_section or location.large_section
+                        # large_section と small_section を連結（例: "室見" + "２丁目" → "室見２丁目"）
+                        search_district = location.large_section + location.small_section if location.small_section else location.large_section
                         logger.info(f"[ROSENKA DEBUG] location.pref={location.pref}, city={location.city}, large_section={location.large_section}, small_section={location.small_section}")
                         logger.info(f"[ROSENKA DEBUG] search_district={search_district}")
                         rosenka_urls = await lookup_rosenka_urls(
