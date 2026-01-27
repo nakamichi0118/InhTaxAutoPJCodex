@@ -2830,9 +2830,9 @@
 
         // 外部サイトリンクバー
         const extLinksBar = document.createElement('div');
-        extLinksBar.style.cssText = 'display:flex;gap:12px;align-items:center;margin-bottom:10px;padding:6px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;';
+        extLinksBar.style.cssText = 'display:flex;gap:16px;align-items:center;margin-bottom:12px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;';
         const extLabel = document.createElement('span');
-        extLabel.style.cssText = 'font-size:0.75rem;color:#64748b;white-space:nowrap;';
+        extLabel.style.cssText = 'font-size:0.85rem;color:#475569;white-space:nowrap;font-weight:500;';
         extLabel.textContent = '外部サイト:';
         extLinksBar.appendChild(extLabel);
 
@@ -2844,14 +2844,20 @@
             a.target = '_blank';
             a.rel = 'noopener';
             a.title = site.alt;
-            a.style.cssText = 'display:inline-flex;align-items:center;padding:3px 8px;background:#fff;border:1px solid #d1d5db;border-radius:4px;text-decoration:none;transition:border-color 0.15s;';
-            a.onmouseenter = () => a.style.borderColor = '#3b82f6';
-            a.onmouseleave = () => a.style.borderColor = '#d1d5db';
+            a.style.cssText = 'display:inline-flex;align-items:center;gap:8px;padding:8px 16px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;text-decoration:none;cursor:pointer;transition:all 0.2s ease;box-shadow:0 1px 2px rgba(0,0,0,0.05);';
+            a.onmouseenter = () => { a.style.borderColor = '#3b82f6'; a.style.boxShadow = '0 2px 6px rgba(59,130,246,0.2)'; a.style.transform = 'translateY(-1px)'; };
+            a.onmouseleave = () => { a.style.borderColor = '#cbd5e1'; a.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)'; a.style.transform = 'translateY(0)'; };
             const img = document.createElement('img');
             img.src = site.icon;
             img.alt = site.alt;
-            img.style.cssText = 'height:20px;width:auto;';
+            img.style.cssText = 'height:32px;width:auto;';
             a.appendChild(img);
+            const arrow = document.createElement('span');
+            arrow.textContent = '\u2197';
+            arrow.style.cssText = 'font-size:1rem;color:#94a3b8;transition:color 0.2s;';
+            a.appendChild(arrow);
+            a.addEventListener('mouseenter', () => arrow.style.color = '#3b82f6');
+            a.addEventListener('mouseleave', () => arrow.style.color = '#94a3b8');
             extLinksBar.appendChild(a);
         });
         resultsDiv.appendChild(extLinksBar);
