@@ -20,6 +20,23 @@ class LocationResult(BaseModel):
     address_type_result: str = ""
     raw_response: Dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def accuracy_label(self) -> str:
+        """精度レベルの説明ラベル"""
+        if self.locating_level >= 7:
+            return "高精度"
+        elif self.locating_level >= 5:
+            return "中精度"
+        elif self.locating_level >= 3:
+            return "低精度"
+        else:
+            return "精度不明"
+
+    @property
+    def is_high_accuracy(self) -> bool:
+        """登記取得に十分な精度か（レベル7以上）"""
+        return self.locating_level >= 7
+
 
 class BuildingNumber(BaseModel):
     """家屋番号"""
@@ -77,6 +94,9 @@ class JonBatchItemResult(BaseModel):
     id: str
     status: Literal["pending", "processing", "completed", "failed"]
     location: Optional[LocationResult] = None
+    locating_level: int = 0  # 位置特定精度レベル
+    accuracy_label: str = ""  # 精度ラベル（高精度/中精度/低精度）
+    accuracy_warning: Optional[str] = None  # 精度警告メッセージ
     google_map_url: Optional[str] = None
     rosenka_image: Optional[str] = None  # base64
     rosenka_urls: List[str] = Field(default_factory=list)  # 国税庁路線価図URL

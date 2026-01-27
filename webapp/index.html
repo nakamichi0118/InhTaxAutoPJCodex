@@ -699,6 +699,22 @@
         .jon-status-badge.processing { background: #dbeafe; color: #1e40af; }
         .jon-status-badge.completed { background: #d1fae5; color: #065f46; }
         .jon-status-badge.failed { background: #fee2e2; color: #991b1b; }
+        .accuracy-badge {
+            display: inline-block;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .accuracy-badge.high { background: #d1fae5; color: #065f46; }
+        .accuracy-badge.medium { background: #fef3c7; color: #92400e; }
+        .accuracy-badge.low { background: #fee2e2; color: #991b1b; }
+        .accuracy-warning {
+            color: #dc2626;
+            font-size: 0.8rem;
+            margin-top: 0.3rem;
+        }
+        .jon-result-table .col-accuracy { width: 70px; text-align: center; }
 
     </style>
 </head>
@@ -2706,6 +2722,7 @@
                 <th class="col-status">状態</th>
                 <th class="col-type">種別</th>
                 <th class="col-address">所在地</th>
+                <th class="col-accuracy">精度</th>
                 <th class="col-link">地図</th>
                 <th class="col-link">登記</th>
                 <th class="col-link">路線価</th>
@@ -2754,7 +2771,32 @@
                 errorSpan.textContent = `エラー: ${result.error}`;
                 tdAddress.appendChild(errorSpan);
             }
+            // 精度警告を表示
+            if (result.accuracy_warning) {
+                const warningSpan = document.createElement('div');
+                warningSpan.className = 'accuracy-warning';
+                warningSpan.textContent = result.accuracy_warning;
+                tdAddress.appendChild(warningSpan);
+            }
             tr.appendChild(tdAddress);
+
+            // 精度
+            const tdAccuracy = document.createElement('td');
+            tdAccuracy.className = 'col-accuracy';
+            const locatingLevel = result.locating_level || 0;
+            const accuracyLabel = result.accuracy_label || '不明';
+            const accuracyBadge = document.createElement('span');
+            if (locatingLevel >= 7) {
+                accuracyBadge.className = 'accuracy-badge high';
+            } else if (locatingLevel >= 5) {
+                accuracyBadge.className = 'accuracy-badge medium';
+            } else {
+                accuracyBadge.className = 'accuracy-badge low';
+            }
+            accuracyBadge.textContent = accuracyLabel;
+            accuracyBadge.title = `位置特定レベル: ${locatingLevel}`;
+            tdAccuracy.appendChild(accuracyBadge);
+            tr.appendChild(tdAccuracy);
 
             // 地図
             const tdMap = document.createElement('td');

@@ -178,12 +178,20 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                     address_type="地番" if item.property_type == "land" else "家屋番号",
                 )
                 result.location = location
+                result.locating_level = location.locating_level
+                result.accuracy_label = location.accuracy_label
+
+                # 精度チェック・警告設定
+                is_high_accuracy = location.is_high_accuracy
+                if not is_high_accuracy:
+                    result.accuracy_warning = f"位置特定の精度が低いため（レベル{location.locating_level}）、登記情報の自動取得をスキップしました。住所を確認してください。"
+                    logger.warning(f"位置精度低: {item.address} (level={location.locating_level})")
 
                 # Google Map URL生成
                 if "google_map" in item.acquisitions:
                     result.google_map_url = f"https://www.google.com/maps?q={location.lat},{location.long}"
 
-                # 2. 路線価図取得
+                # 2. 路線価図取得（精度に関係なく取得）
                 if "rosenka" in item.acquisitions:
                     # JON APIから路線価図画像を取得
                     try:
@@ -199,44 +207,48 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                     # 路線価図URLの自動取得は無効化。
                     # フロントエンドで都道府県レベルのリンクを表示する。
 
-                # 3. 登記取得
+                # 3. 登記取得（高精度の場合のみ）
                 if any(acq in item.acquisitions for acq in ["touki", "kozu", "chiseki", "tatemono"]):
-                    settings = get_settings()
-                    if settings.touki_login_id and settings.touki_password:
-                        # pdf_type の決定
-                        pdf_types_to_fetch = []
-                        if "touki" in item.acquisitions:
-                            pdf_types_to_fetch.append(1)  # 全部事項
-                        if "kozu" in item.acquisitions:
-                            pdf_types_to_fetch.append(3)  # 地図
-                        if "chiseki" in item.acquisitions and item.property_type == "land":
-                            pdf_types_to_fetch.append(4)  # 地積測量図
-                        if "tatemono" in item.acquisitions and item.property_type == "building":
-                            pdf_types_to_fetch.append(6)  # 建物図面
+                    if not is_high_accuracy:
+                        # 精度が低い場合はスキップ（警告は既に設定済み）
+                        logger.info(f"登記取得スキップ（精度不足）: {item.address}")
+                    else:
+                        settings = get_settings()
+                        if settings.touki_login_id and settings.touki_password:
+                            # pdf_type の決定
+                            pdf_types_to_fetch = []
+                            if "touki" in item.acquisitions:
+                                pdf_types_to_fetch.append(1)  # 全部事項
+                            if "kozu" in item.acquisitions:
+                                pdf_types_to_fetch.append(3)  # 地図
+                            if "chiseki" in item.acquisitions and item.property_type == "land":
+                                pdf_types_to_fetch.append(4)  # 地積測量図
+                            if "tatemono" in item.acquisitions and item.property_type == "building":
+                                pdf_types_to_fetch.append(6)  # 建物図面
 
-                        # 最初の登記情報を取得（複数取得は別途実装）
-                        if pdf_types_to_fetch:
-                            try:
-                                number_type = 1 if item.property_type == "land" else 2
-                                reg = await client.get_registration_async(
-                                    v1_code=location.v1_code,
-                                    number=location.number,
-                                    number_type=number_type,
-                                    pdf_type=pdf_types_to_fetch[0],
-                                )
-                                result.registration = reg
-
-                                # 解析も実行
+                            # 最初の登記情報を取得（複数取得は別途実装）
+                            if pdf_types_to_fetch:
                                 try:
-                                    analyze_result = await client.analyze_registration_async(
-                                        pdf_id=reg.pdf_id,
+                                    number_type = 1 if item.property_type == "land" else 2
+                                    reg = await client.get_registration_async(
+                                        v1_code=location.v1_code,
+                                        number=location.number,
+                                        number_type=number_type,
+                                        pdf_type=pdf_types_to_fetch[0],
                                     )
-                                    result.analyze_result = analyze_result
-                                except JonApiError as e:
-                                    logger.warning(f"登記解析エラー: {e}")
+                                    result.registration = reg
 
-                            except JonApiError as e:
-                                logger.warning(f"登記取得エラー: {e}")
+                                    # 解析も実行
+                                    try:
+                                        analyze_result = await client.analyze_registration_async(
+                                            pdf_id=reg.pdf_id,
+                                        )
+                                        result.analyze_result = analyze_result
+                                    except JonApiError as e:
+                                        logger.warning(f"登記解析エラー: {e}")
+
+                                except JonApiError as e:
+                                    logger.warning(f"登記取得エラー: {e}")
 
             except JonApiError as e:
                 result.error = str(e)
