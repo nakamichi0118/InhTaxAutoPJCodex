@@ -215,26 +215,16 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                     else:
                         settings = get_settings()
                         if settings.touki_login_id and settings.touki_password:
-                            # pdf_type の決定
-                            pdf_types_to_fetch = []
-                            if "touki" in item.acquisitions:
-                                pdf_types_to_fetch.append(1)  # 全部事項
-                            if "kozu" in item.acquisitions:
-                                pdf_types_to_fetch.append(3)  # 地図
-                            if "chiseki" in item.acquisitions and item.property_type == "land":
-                                pdf_types_to_fetch.append(4)  # 地積測量図
-                            if "tatemono" in item.acquisitions and item.property_type == "building":
-                                pdf_types_to_fetch.append(6)  # 建物図面
+                            number_type = 1 if item.property_type == "land" else 2
 
-                            # 最初の登記情報を取得（複数取得は別途実装）
-                            if pdf_types_to_fetch:
+                            # 登記簿（全部事項）取得
+                            if "touki" in item.acquisitions:
                                 try:
-                                    number_type = 1 if item.property_type == "land" else 2
                                     reg = await client.get_registration_async(
                                         v1_code=location.v1_code,
                                         number=location.number,
                                         number_type=number_type,
-                                        pdf_type=pdf_types_to_fetch[0],
+                                        pdf_type=1,  # 全部事項
                                     )
                                     result.registration = reg
 
@@ -246,9 +236,47 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                                         result.analyze_result = analyze_result
                                     except JonApiError as e:
                                         logger.warning(f"登記解析エラー: {e}")
-
                                 except JonApiError as e:
-                                    logger.warning(f"登記取得エラー: {e}")
+                                    logger.warning(f"登記簿取得エラー: {e}")
+
+                            # 公図取得
+                            if "kozu" in item.acquisitions:
+                                try:
+                                    kozu_reg = await client.get_registration_async(
+                                        v1_code=location.v1_code,
+                                        number=location.number,
+                                        number_type=number_type,
+                                        pdf_type=3,  # 地図（公図）
+                                    )
+                                    result.kozu_pdf_url = kozu_reg.pdf_url
+                                except JonApiError as e:
+                                    logger.warning(f"公図取得エラー: {e}")
+
+                            # 地積測量図取得（土地のみ）
+                            if "chiseki" in item.acquisitions and item.property_type == "land":
+                                try:
+                                    await client.get_registration_async(
+                                        v1_code=location.v1_code,
+                                        number=location.number,
+                                        number_type=number_type,
+                                        pdf_type=4,  # 地積測量図
+                                    )
+                                    # TODO: 結果をresultに格納
+                                except JonApiError as e:
+                                    logger.warning(f"地積測量図取得エラー: {e}")
+
+                            # 建物図面取得（建物のみ）
+                            if "tatemono" in item.acquisitions and item.property_type == "building":
+                                try:
+                                    await client.get_registration_async(
+                                        v1_code=location.v1_code,
+                                        number=location.number,
+                                        number_type=number_type,
+                                        pdf_type=6,  # 建物図面
+                                    )
+                                    # TODO: 結果をresultに格納
+                                except JonApiError as e:
+                                    logger.warning(f"建物図面取得エラー: {e}")
 
             except JonApiError as e:
                 result.error = str(e)

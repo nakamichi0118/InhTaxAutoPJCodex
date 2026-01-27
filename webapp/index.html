@@ -2458,6 +2458,7 @@
                 <th style="padding:0.6rem;text-align:left;">所在地</th>
                 <th style="padding:0.6rem;text-align:center;width:50px;">地図</th>
                 <th style="padding:0.6rem;text-align:center;width:60px;">登記簿</th>
+                <th style="padding:0.6rem;text-align:center;width:50px;">公図</th>
                 <th style="padding:0.6rem;text-align:center;width:70px;">路線価</th>
                 <th style="padding:0.6rem;text-align:center;width:50px;">図面</th>
             </tr>
@@ -2498,6 +2499,18 @@
             const toukiDisabled = !hasToukiCredentials ? 'disabled' : '';
             toukiTd.innerHTML = `<input type="checkbox" data-prop="${idx}" data-acq="touki" ${toukiDisabled}>`;
             tr.appendChild(toukiTd);
+
+            // 公図 checkbox (土地のみ)
+            const kozuTd = document.createElement('td');
+            kozuTd.style.padding = '0.5rem 0.6rem';
+            kozuTd.style.textAlign = 'center';
+            if (isLand) {
+                const kozuDisabled = !hasToukiCredentials ? 'disabled' : '';
+                kozuTd.innerHTML = `<input type="checkbox" data-prop="${idx}" data-acq="kozu" ${kozuDisabled}>`;
+            } else {
+                kozuTd.innerHTML = `<span style="color:#94a3b8;">―</span>`;
+            }
+            tr.appendChild(kozuTd);
 
             // 路線価 checkbox (土地のみ)
             const rosenkaTd = document.createElement('td');
@@ -2540,7 +2553,7 @@
             if (!row) return;
 
             const gmapCheckbox = row.querySelector('input[data-acq="google_map"]');
-            const dependentCheckboxes = row.querySelectorAll('input[data-acq="touki"], input[data-acq="rosenka"], input[data-acq="chiseki"], input[data-acq="tatemono"]');
+            const dependentCheckboxes = row.querySelectorAll('input[data-acq="touki"], input[data-acq="kozu"], input[data-acq="rosenka"], input[data-acq="chiseki"], input[data-acq="tatemono"]');
 
             if (acqType === 'google_map') {
                 // 地図をオフにしようとした場合、他にチェックがあれば警告
@@ -2725,6 +2738,7 @@
                 <th class="col-accuracy">精度</th>
                 <th class="col-link">地図</th>
                 <th class="col-link">登記</th>
+                <th class="col-link">公図</th>
                 <th class="col-link">路線価</th>
             </tr>
         `;
@@ -2831,6 +2845,23 @@
                 tdTouki.style.color = '#94a3b8';
             }
             tr.appendChild(tdTouki);
+
+            // 公図
+            const tdKozu = document.createElement('td');
+            tdKozu.className = 'col-link';
+            if (result.kozu_pdf_url) {
+                const kozuLink = document.createElement('a');
+                kozuLink.href = result.kozu_pdf_url;
+                kozuLink.target = '_blank';
+                kozuLink.rel = 'noopener';
+                kozuLink.className = 'jon-result-link';
+                kozuLink.textContent = 'PDF';
+                tdKozu.appendChild(kozuLink);
+            } else {
+                tdKozu.textContent = '-';
+                tdKozu.style.color = '#94a3b8';
+            }
+            tr.appendChild(tdKozu);
 
             // 路線価
             const tdRosenka = document.createElement('td');

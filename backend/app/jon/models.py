@@ -100,7 +100,8 @@ class JonBatchItemResult(BaseModel):
     google_map_url: Optional[str] = None
     rosenka_image: Optional[str] = None  # base64
     rosenka_urls: List[str] = Field(default_factory=list)  # 国税庁路線価図URL
-    registration: Optional[RegistrationResult] = None
+    registration: Optional[RegistrationResult] = None  # 登記簿PDF
+    kozu_pdf_url: Optional[str] = None  # 公図PDF URL
     analyze_result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
 
