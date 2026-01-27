@@ -292,6 +292,7 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem]) -> None:
                 result.location = location
                 result.locating_level = location.locating_level
                 result.accuracy_label = location.accuracy_label
+                logger.info(f"位置特定結果: address={item.address}, level={location.locating_level}, v1_code={location.v1_code}, raw_locating={location.raw_response.get('result', {}).get('locating', {})}")
 
                 # 精度チェック・警告設定
                 is_high_accuracy = location.is_high_accuracy
