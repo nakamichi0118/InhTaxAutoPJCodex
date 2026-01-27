@@ -601,22 +601,45 @@
             font-size: 1rem;
             color: #047857;
         }
-        .jon-result-item {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.6rem;
-            padding: 0.6rem;
-            border-bottom: 1px solid #d1fae5;
+        .jon-result-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
         }
-        .jon-result-item:last-child {
+        .jon-result-table th {
+            background: #d1fae5;
+            padding: 0.5rem 0.6rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.8rem;
+            color: #065f46;
+            white-space: nowrap;
+        }
+        .jon-result-table td {
+            padding: 0.5rem 0.6rem;
+            border-bottom: 1px solid #d1fae5;
+            vertical-align: middle;
+        }
+        .jon-result-table tr:last-child td {
             border-bottom: none;
         }
+        .jon-result-table .col-status { width: 60px; text-align: center; }
+        .jon-result-table .col-type { width: 50px; text-align: center; }
+        .jon-result-table .col-address { min-width: 200px; }
+        .jon-result-table .col-link { width: 90px; text-align: center; }
         .jon-result-link {
             color: #1d4ed8;
             text-decoration: none;
+            white-space: nowrap;
         }
         .jon-result-link:hover {
             text-decoration: underline;
+        }
+        .jon-link-group {
+            display: flex;
+            gap: 0.3rem;
+            flex-wrap: wrap;
+            justify-content: center;
         }
         .jon-progress {
             margin-top: 0.8rem;
@@ -664,9 +687,7 @@
             background: #fef3c7;
             color: #92400e;
         }
-        .jon-result-item {
-            align-items: center;
-        }
+        /* jon-result-item is no longer used - using table layout */
         .jon-status-badge {
             display: inline-block;
             padding: 0.2rem 0.5rem;
@@ -2674,75 +2695,118 @@
         title.textContent = '取得結果';
         resultsDiv.appendChild(title);
 
+        // テーブル作成
+        const table = document.createElement('table');
+        table.className = 'jon-result-table';
+
+        // ヘッダー
+        const thead = document.createElement('thead');
+        thead.innerHTML = `
+            <tr>
+                <th class="col-status">状態</th>
+                <th class="col-type">種別</th>
+                <th class="col-address">所在地</th>
+                <th class="col-link">地図</th>
+                <th class="col-link">登記</th>
+                <th class="col-link">路線価</th>
+            </tr>
+        `;
+        table.appendChild(thead);
+
+        // ボディ
+        const tbody = document.createElement('tbody');
+
         results.forEach(result => {
-            // Find original property to get full address
             const originalProp = jonState.properties.find(p => p.id === result.id);
             const fullAddress = originalProp?.fullAddress || result.id;
             const isLand = originalProp?.category === 'land';
 
-            const itemDiv = document.createElement('div');
-            itemDiv.className = 'jon-result-item';
+            const tr = document.createElement('tr');
 
-            // Status badge
+            // 状態
+            const tdStatus = document.createElement('td');
+            tdStatus.className = 'col-status';
             const statusBadge = document.createElement('span');
             statusBadge.className = `jon-status-badge ${result.status}`;
             statusBadge.textContent = result.status === 'completed' ? '完了'
                 : result.status === 'failed' ? '失敗'
                 : result.status === 'processing' ? '処理中' : '待機中';
-            itemDiv.appendChild(statusBadge);
+            tdStatus.appendChild(statusBadge);
+            tr.appendChild(tdStatus);
 
-            // Property type badge
+            // 種別
+            const tdType = document.createElement('td');
+            tdType.className = 'col-type';
             const typeBadge = document.createElement('span');
             typeBadge.className = `property-type-badge ${isLand ? 'land' : 'building'}`;
             typeBadge.textContent = isLand ? '土地' : '家屋';
-            typeBadge.style.marginRight = '0.5rem';
-            itemDiv.appendChild(typeBadge);
+            tdType.appendChild(typeBadge);
+            tr.appendChild(tdType);
 
-            // Full address
-            const addressSpan = document.createElement('span');
-            addressSpan.textContent = fullAddress;
-            addressSpan.style.fontWeight = '500';
-            addressSpan.style.marginRight = '0.8rem';
-            itemDiv.appendChild(addressSpan);
+            // 所在地
+            const tdAddress = document.createElement('td');
+            tdAddress.className = 'col-address';
+            tdAddress.textContent = fullAddress;
+            if (result.error) {
+                const errorSpan = document.createElement('div');
+                errorSpan.style.color = '#991b1b';
+                errorSpan.style.fontSize = '0.8rem';
+                errorSpan.textContent = `エラー: ${result.error}`;
+                tdAddress.appendChild(errorSpan);
+            }
+            tr.appendChild(tdAddress);
 
-            // Links container
-            const linksDiv = document.createElement('div');
-            linksDiv.style.display = 'inline-flex';
-            linksDiv.style.gap = '0.4rem';
-            linksDiv.style.flexWrap = 'wrap';
-
+            // 地図
+            const tdMap = document.createElement('td');
+            tdMap.className = 'col-link';
             if (result.google_map_url) {
                 const mapLink = document.createElement('a');
                 mapLink.href = result.google_map_url;
                 mapLink.target = '_blank';
                 mapLink.rel = 'noopener';
                 mapLink.className = 'jon-result-link';
-                mapLink.textContent = 'Googleマップ';
-                linksDiv.appendChild(mapLink);
+                mapLink.textContent = '開く';
+                tdMap.appendChild(mapLink);
+            } else {
+                tdMap.textContent = '-';
+                tdMap.style.color = '#94a3b8';
             }
+            tr.appendChild(tdMap);
 
+            // 登記
+            const tdTouki = document.createElement('td');
+            tdTouki.className = 'col-link';
             if (result.registration?.pdf_url) {
                 const pdfLink = document.createElement('a');
                 pdfLink.href = result.registration.pdf_url;
                 pdfLink.target = '_blank';
                 pdfLink.rel = 'noopener';
                 pdfLink.className = 'jon-result-link';
-                pdfLink.textContent = '登記PDF';
-                linksDiv.appendChild(pdfLink);
+                pdfLink.textContent = 'PDF';
+                tdTouki.appendChild(pdfLink);
+            } else {
+                tdTouki.textContent = '-';
+                tdTouki.style.color = '#94a3b8';
             }
+            tr.appendChild(tdTouki);
+
+            // 路線価
+            const tdRosenka = document.createElement('td');
+            tdRosenka.className = 'col-link';
+            const rosenkaGroup = document.createElement('div');
+            rosenkaGroup.className = 'jon-link-group';
 
             if (result.rosenka_image) {
-                // 路線価図が取得できた場合: 画像ボタン
                 const imgBtn = document.createElement('button');
                 imgBtn.type = 'button';
                 imgBtn.className = 'secondary small';
-                imgBtn.textContent = '路線価図';
+                imgBtn.style.padding = '0.2rem 0.4rem';
+                imgBtn.style.fontSize = '0.75rem';
+                imgBtn.textContent = '画像';
                 imgBtn.addEventListener('click', () => showRosenkaImage(result.rosenka_image));
-                linksDiv.appendChild(imgBtn);
+                rosenkaGroup.appendChild(imgBtn);
 
-                // 国税庁の路線価図ページへのリンク
                 if (result.rosenka_urls && result.rosenka_urls.length > 0) {
-                    // バックエンドから取得した具体的なURLを表示
                     result.rosenka_urls.forEach((url, idx) => {
                         const ntaLink = document.createElement('a');
                         ntaLink.href = url;
@@ -2751,14 +2815,13 @@
                         ntaLink.className = 'jon-result-link';
                         ntaLink.textContent = result.rosenka_urls.length > 1 ? `国税庁${idx + 1}` : '国税庁';
                         ntaLink.title = '国税庁の路線価図ページで確認';
-                        linksDiv.appendChild(ntaLink);
+                        rosenkaGroup.appendChild(ntaLink);
                     });
                 }
+                tdRosenka.appendChild(rosenkaGroup);
             } else if (isLand) {
-                // 路線価図が取得できなかった場合（倍率地域）: 倍率表へのリンク
                 const batchItem = jonState.batchItems.find(item => item.id === result.id);
                 if (batchItem?.acquisitions?.includes('rosenka')) {
-                    // rosenka_urlsがあればそれを使う（倍率表ページの可能性）
                     if (result.rosenka_urls && result.rosenka_urls.length > 0) {
                         result.rosenka_urls.forEach((url, idx) => {
                             const bairitsuLink = document.createElement('a');
@@ -2768,10 +2831,9 @@
                             bairitsuLink.className = 'jon-result-link';
                             bairitsuLink.textContent = result.rosenka_urls.length > 1 ? `倍率表${idx + 1}` : '倍率表';
                             bairitsuLink.title = '倍率地域です。国税庁の倍率表で評価額を確認してください。';
-                            linksDiv.appendChild(bairitsuLink);
+                            rosenkaGroup.appendChild(bairitsuLink);
                         });
                     } else {
-                        // フォールバック: 都道府県レベルのURL
                         const municipality = originalProp?.city || originalProp?.location_municipality || '';
                         const prefecture = originalProp?.location_prefecture || inferPrefectureFromMunicipality(municipality);
                         const rosenkaUrl = getRosenkaUrl(prefecture);
@@ -2781,26 +2843,26 @@
                         bairitsuLink.target = '_blank';
                         bairitsuLink.rel = 'noopener';
                         bairitsuLink.className = 'jon-result-link';
-                        bairitsuLink.textContent = prefecture ? `${prefecture}の倍率表` : '倍率表を検索';
+                        bairitsuLink.textContent = prefecture ? `${prefecture}の倍率表` : '倍率表';
                         bairitsuLink.title = '倍率地域です。国税庁の倍率表で評価額を確認してください。';
-                        linksDiv.appendChild(bairitsuLink);
+                        rosenkaGroup.appendChild(bairitsuLink);
                     }
+                    tdRosenka.appendChild(rosenkaGroup);
+                } else {
+                    tdRosenka.textContent = '-';
+                    tdRosenka.style.color = '#94a3b8';
                 }
+            } else {
+                tdRosenka.textContent = '-';
+                tdRosenka.style.color = '#94a3b8';
             }
+            tr.appendChild(tdRosenka);
 
-            itemDiv.appendChild(linksDiv);
-
-            if (result.error) {
-                const errorDiv = document.createElement('div');
-                errorDiv.style.color = '#991b1b';
-                errorDiv.style.fontSize = '0.85rem';
-                errorDiv.style.marginTop = '0.3rem';
-                errorDiv.textContent = `エラー: ${result.error}`;
-                itemDiv.appendChild(errorDiv);
-            }
-
-            resultsDiv.appendChild(itemDiv);
+            tbody.appendChild(tr);
         });
+
+        table.appendChild(tbody);
+        resultsDiv.appendChild(table);
 
         // Export buttons
         const exportDiv = document.createElement('div');
