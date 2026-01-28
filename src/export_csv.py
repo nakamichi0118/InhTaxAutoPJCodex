@@ -60,6 +60,22 @@ BUILDING_EXPORT_COLUMNS: Sequence[Tuple[str, str]] = (
     ("notes", "備考"),
 )
 
+# 不動産統合エクスポートカラム（土地・家屋を1つのCSVにまとめる）
+PROPERTY_EXPORT_COLUMNS: Sequence[Tuple[str, str]] = (
+    ("property_type", "種別"),
+    ("location_municipality", "市区町村"),
+    ("location_detail", "所在地"),
+    ("land_category_tax", "地目（課税）"),
+    ("land_category_registry", "地目（登記）"),
+    ("structure", "構造"),
+    ("floors", "階数"),
+    ("area", "面積（㎡）"),
+    ("built_year", "建築年"),
+    ("valuation_amount", "評価額"),
+    ("ownership_share", "持分"),
+    ("notes", "備考"),
+)
+
 JAPANESE_ERA_BASE_YEAR = {
     "令和": 2018,
     "平成": 1988,

@@ -8,6 +8,7 @@ from src.export_csv import (
     ASSET_EXPORT_COLUMNS,
     BUILDING_EXPORT_COLUMNS,
     LAND_EXPORT_COLUMNS,
+    PROPERTY_EXPORT_COLUMNS,
     TRANSACTION_EXPORT_COLUMNS,
     build_csv,
     convert_assets_payload,
@@ -23,16 +24,58 @@ def export_to_csv_strings(payload) -> Dict[str, str]:
     if bank_transactions:
         csv_map["bank_transactions.csv"] = build_csv(TRANSACTION_EXPORT_COLUMNS, bank_transactions)
 
-    # 土地・家屋の専用CSVを出力
-    land_rows = _extract_land_rows(assets)
-    building_rows = _extract_building_rows(assets)
-
-    if land_rows:
-        csv_map["land.csv"] = build_csv(LAND_EXPORT_COLUMNS, land_rows)
-    if building_rows:
-        csv_map["building.csv"] = build_csv(BUILDING_EXPORT_COLUMNS, building_rows)
+    # 不動産（土地・家屋）を統合した単一CSVを出力
+    property_rows = _extract_property_rows(assets)
+    if property_rows:
+        csv_map["properties.csv"] = build_csv(PROPERTY_EXPORT_COLUMNS, property_rows)
 
     return csv_map
+
+
+def _extract_property_rows(assets: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """Extract combined property rows (land + building) from assets."""
+    rows: List[Dict[str, str]] = []
+
+    for asset in assets:
+        category = asset.get("asset_category")
+        if category not in ("land", "building"):
+            continue
+
+        notes = asset.get("notes", "") or ""
+        valuation = str(int(asset.get("valuation_amount") or 0)) if asset.get("valuation_amount") else ""
+
+        if category == "land":
+            rows.append({
+                "property_type": "土地",
+                "location_municipality": asset.get("location_municipality", ""),
+                "location_detail": asset.get("location_detail", ""),
+                "land_category_tax": _extract_from_notes(notes, "課税地目"),
+                "land_category_registry": "",  # 手入力欄
+                "structure": "",
+                "floors": "",
+                "area": _extract_from_notes(notes, "地積"),
+                "built_year": "",
+                "valuation_amount": valuation,
+                "ownership_share": "",  # 手入力欄
+                "notes": _clean_notes_for_export(notes),
+            })
+        else:  # building
+            rows.append({
+                "property_type": "家屋",
+                "location_municipality": asset.get("location_municipality", ""),
+                "location_detail": asset.get("location_detail", ""),
+                "land_category_tax": "",
+                "land_category_registry": "",
+                "structure": _extract_from_notes(notes, "構造"),
+                "floors": _extract_from_notes(notes, "階数"),
+                "area": _extract_from_notes(notes, "床面積"),
+                "built_year": _extract_from_notes(notes, "建築年"),
+                "valuation_amount": valuation,
+                "ownership_share": "",  # 手入力欄
+                "notes": _clean_notes_for_export(notes),
+            })
+
+    return rows
 
 
 def _extract_land_rows(assets: List[Dict[str, Any]]) -> List[Dict[str, str]]:

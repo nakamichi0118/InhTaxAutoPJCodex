@@ -2294,8 +2294,11 @@
             csvEntries.forEach(([filename, base64]) => {
                 const button = document.createElement('button');
                 button.className = 'primary small';
-                // ファイル名から種別を抽出（assets, land, building）
-                const fileLabel = filename.replace('.csv', '').replace('assets', '全体').replace('land', '土地').replace('building', '建物');
+                // ファイル名から種別を抽出
+                const fileLabel = filename.replace('.csv', '')
+                    .replace('properties', '不動産')
+                    .replace('assets', '全体')
+                    .replace('bank_transactions', '取引履歴');
                 button.textContent = `${fileLabel}`;
                 button.title = `${filename} をダウンロード`;
                 button.addEventListener('click', () => downloadCsv(`${doc.name}-${filename}`, base64));
