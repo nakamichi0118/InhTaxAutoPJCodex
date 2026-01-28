@@ -27,6 +27,7 @@ from .models import (
     RosenImageResult,
     RosenkaRequest,
 )
+from ..reinfolib.client import ReinfolibClient
 
 logger = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/api/jon", tags=["jon"])
@@ -352,6 +353,25 @@ async def _process_batch(batch_id: str, items: List[JonBatchItem], skip_kozu_for
                             logger.info(f"路線価URL見つからず: {location.pref}/{location.city}/{search_district}")
                     except Exception as e:
                         logger.warning(f"路線価URL検索エラー: {e}")
+
+                # 不動産情報ライブラリから追加情報を取得
+                settings = get_settings()
+                if settings.reinfolib_api_key:
+                    try:
+                        reinfolib_client = ReinfolibClient(api_key=settings.reinfolib_api_key)
+                        # 都道府県・市区町村コードを取得（取引価格情報用）
+                        pref_code = location.v1_code[:2] if location.v1_code else None
+                        city_code = location.v1_code[:5] if location.v1_code else None
+                        reinfolib_result = await reinfolib_client.get_all_info(
+                            lat=location.lat,
+                            lng=location.long,
+                            prefecture_code=pref_code,
+                            city_code=city_code,
+                        )
+                        result.reinfolib = reinfolib_result.model_dump()
+                        logger.info(f"不動産情報ライブラリ取得成功: {item.address}")
+                    except Exception as e:
+                        logger.warning(f"不動産情報ライブラリ取得エラー: {e}")
 
                 # 3. 登記取得（高精度の場合のみ）
                 if any(acq in item.acquisitions for acq in ["touki", "kozu", "chiseki", "tatemono"]):

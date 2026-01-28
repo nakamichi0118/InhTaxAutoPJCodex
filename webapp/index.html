@@ -762,6 +762,127 @@
         }
         /* col-accuracy defined in main table styles */
 
+        /* 不動産情報ライブラリ詳細パネル */
+        .jon-result-table tbody tr.expanded {
+            background: #ecfdf5;
+        }
+        .jon-result-table tbody tr.expanded:hover {
+            background: #d1fae5;
+        }
+        .detail-row td {
+            background: #f8fafc;
+            border-bottom: 2px solid #a7f3d0;
+        }
+        .reinfolib-panel {
+            padding: 1rem;
+        }
+        .reinfolib-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 0;
+        }
+        .reinfolib-tab {
+            padding: 0.5rem 1rem;
+            border: none;
+            background: #f1f5f9;
+            color: #475569;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 6px 6px 0 0;
+            transition: all 0.15s;
+            margin-bottom: -2px;
+        }
+        .reinfolib-tab:hover {
+            background: #e2e8f0;
+        }
+        .reinfolib-tab.active {
+            background: #fff;
+            color: #065f46;
+            border: 2px solid #e2e8f0;
+            border-bottom-color: #fff;
+        }
+        .reinfolib-content {
+            display: none;
+            animation: fadeIn 0.2s ease;
+        }
+        .reinfolib-content.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .reinfolib-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.75rem;
+        }
+        .reinfolib-item {
+            display: flex;
+            flex-direction: column;
+            padding: 0.6rem 0.8rem;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+        }
+        .reinfolib-label {
+            font-size: 0.72rem;
+            color: #64748b;
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+        }
+        .reinfolib-value {
+            font-size: 0.9rem;
+            color: #1e293b;
+            font-weight: 600;
+        }
+        .reinfolib-value.risk-high {
+            color: #dc2626;
+        }
+        .reinfolib-value.risk-medium {
+            color: #d97706;
+        }
+        .reinfolib-section {
+            margin-bottom: 1rem;
+        }
+        .reinfolib-section h5 {
+            font-size: 0.85rem;
+            color: #475569;
+            margin: 0 0 0.5rem 0;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .reinfolib-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        .reinfolib-table th {
+            background: #f1f5f9;
+            padding: 0.4rem 0.6rem;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            font-size: 0.75rem;
+        }
+        .reinfolib-table td {
+            padding: 0.4rem 0.6rem;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155;
+        }
+        .reinfolib-table tbody tr:hover {
+            background: #f8fafc;
+        }
+        .no-data {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 1rem;
+        }
+
     </style>
 </head>
 <body>
@@ -3168,6 +3289,31 @@
             tr.appendChild(tdDrawing);
 
             tbody.appendChild(tr);
+
+            // 詳細パネル行（不動産情報ライブラリのデータ）
+            if (result.reinfolib) {
+                const detailRow = document.createElement('tr');
+                detailRow.className = 'detail-row';
+                detailRow.style.display = 'none';
+                detailRow.dataset.detailFor = result.id;
+
+                const detailTd = document.createElement('td');
+                detailTd.colSpan = 10;
+                detailTd.style.padding = '0';
+                detailTd.appendChild(createReinfolibPanel(result.reinfolib));
+                detailRow.appendChild(detailTd);
+                tbody.appendChild(detailRow);
+
+                // 行クリックで詳細を展開/折りたたみ
+                tr.style.cursor = 'pointer';
+                tr.title = 'クリックで詳細を表示';
+                tr.addEventListener('click', (e) => {
+                    if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON') return;
+                    const isVisible = detailRow.style.display !== 'none';
+                    detailRow.style.display = isVisible ? 'none' : 'table-row';
+                    tr.classList.toggle('expanded', !isVisible);
+                });
+            }
         });
 
         table.appendChild(tbody);
@@ -3194,6 +3340,179 @@
         exportDiv.appendChild(csvBtn);
 
         resultsDiv.appendChild(exportDiv);
+    }
+
+    // 不動産情報ライブラリの詳細パネルを作成
+    function createReinfolibPanel(reinfolib) {
+        const panel = document.createElement('div');
+        panel.className = 'reinfolib-panel';
+
+        // タブヘッダー
+        const tabHeader = document.createElement('div');
+        tabHeader.className = 'reinfolib-tabs';
+
+        const tabs = [
+            { id: 'regulation', label: '法規制' },
+            { id: 'risk', label: 'リスク情報' },
+            { id: 'price', label: '価格参考' },
+        ];
+
+        tabs.forEach((tab, idx) => {
+            const tabBtn = document.createElement('button');
+            tabBtn.type = 'button';
+            tabBtn.className = `reinfolib-tab ${idx === 0 ? 'active' : ''}`;
+            tabBtn.textContent = tab.label;
+            tabBtn.dataset.tab = tab.id;
+            tabBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                panel.querySelectorAll('.reinfolib-tab').forEach(t => t.classList.remove('active'));
+                panel.querySelectorAll('.reinfolib-content').forEach(c => c.classList.remove('active'));
+                tabBtn.classList.add('active');
+                panel.querySelector(`.reinfolib-content[data-content="${tab.id}"]`).classList.add('active');
+            });
+            tabHeader.appendChild(tabBtn);
+        });
+        panel.appendChild(tabHeader);
+
+        // タブコンテンツ: 法規制
+        const regulationContent = document.createElement('div');
+        regulationContent.className = 'reinfolib-content active';
+        regulationContent.dataset.content = 'regulation';
+
+        const regGrid = document.createElement('div');
+        regGrid.className = 'reinfolib-grid';
+
+        // 用途地域
+        const landUse = reinfolib.land_use_zone;
+        regGrid.innerHTML = `
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">用途地域</span>
+                <span class="reinfolib-value">${landUse?.zone_name || '取得できませんでした'}</span>
+            </div>
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">建ぺい率</span>
+                <span class="reinfolib-value">${landUse?.building_coverage_ratio || '-'}</span>
+            </div>
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">容積率</span>
+                <span class="reinfolib-value">${landUse?.floor_area_ratio || '-'}</span>
+            </div>
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">防火地域</span>
+                <span class="reinfolib-value">${reinfolib.fire_prevention_area?.area_type || '-'}</span>
+            </div>
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">都市計画区域</span>
+                <span class="reinfolib-value">${reinfolib.city_planning_area?.area_type || '-'}</span>
+            </div>
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">立地適正化</span>
+                <span class="reinfolib-value">${reinfolib.location_optimization_area?.area_type || '-'}</span>
+            </div>
+        `;
+        regulationContent.appendChild(regGrid);
+        panel.appendChild(regulationContent);
+
+        // タブコンテンツ: リスク情報
+        const riskContent = document.createElement('div');
+        riskContent.className = 'reinfolib-content';
+        riskContent.dataset.content = 'risk';
+
+        const riskGrid = document.createElement('div');
+        riskGrid.className = 'reinfolib-grid';
+
+        const liquefaction = reinfolib.liquefaction_risk;
+        const disasterRisk = reinfolib.disaster_risk_area;
+        const largeFill = reinfolib.large_fill_area;
+        const landslide = reinfolib.landslide_area;
+        const steepSlope = reinfolib.steep_slope_area;
+
+        riskGrid.innerHTML = `
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">液状化リスク</span>
+                <span class="reinfolib-value ${liquefaction?.risk_level === '高' ? 'risk-high' : liquefaction?.risk_level === '中' ? 'risk-medium' : ''}">${liquefaction?.risk_level || '-'}${liquefaction?.landform_type ? ` (${liquefaction.landform_type})` : ''}</span>
+            </div>
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">災害危険区域</span>
+                <span class="reinfolib-value ${disasterRisk?.is_designated ? 'risk-high' : ''}">${disasterRisk?.is_designated ? `指定あり${disasterRisk.area_name ? ` (${disasterRisk.area_name})` : ''}` : '指定なし'}</span>
+            </div>
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">大規模盛土造成地</span>
+                <span class="reinfolib-value ${largeFill?.is_designated ? 'risk-medium' : ''}">${largeFill?.is_designated ? `該当${largeFill.fill_type ? ` (${largeFill.fill_type})` : ''}` : '該当なし'}</span>
+            </div>
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">地すべり防止地区</span>
+                <span class="reinfolib-value ${landslide?.is_designated ? 'risk-high' : ''}">${landslide?.is_designated ? '指定あり' : '指定なし'}</span>
+            </div>
+            <div class="reinfolib-item">
+                <span class="reinfolib-label">急傾斜地崩壊危険区域</span>
+                <span class="reinfolib-value ${steepSlope?.is_designated ? 'risk-high' : ''}">${steepSlope?.is_designated ? '指定あり' : '指定なし'}</span>
+            </div>
+        `;
+        riskContent.appendChild(riskGrid);
+        panel.appendChild(riskContent);
+
+        // タブコンテンツ: 価格参考
+        const priceContent = document.createElement('div');
+        priceContent.className = 'reinfolib-content';
+        priceContent.dataset.content = 'price';
+
+        // 地価公示
+        if (reinfolib.nearby_land_prices && reinfolib.nearby_land_prices.length > 0) {
+            const priceSection = document.createElement('div');
+            priceSection.className = 'reinfolib-section';
+            priceSection.innerHTML = '<h5>地価公示・地価調査（近隣）</h5>';
+            const priceTable = document.createElement('table');
+            priceTable.className = 'reinfolib-table';
+            priceTable.innerHTML = `
+                <thead><tr><th>所在</th><th>価格(円/㎡)</th><th>調査年</th><th>用途</th></tr></thead>
+                <tbody>
+                    ${reinfolib.nearby_land_prices.map(p => `
+                        <tr>
+                            <td>${p.address || '-'}</td>
+                            <td>${p.price_per_sqm ? p.price_per_sqm.toLocaleString() : '-'}</td>
+                            <td>${p.survey_year || '-'}</td>
+                            <td>${p.land_use || '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            priceSection.appendChild(priceTable);
+            priceContent.appendChild(priceSection);
+        }
+
+        // 取引事例
+        if (reinfolib.nearby_transactions && reinfolib.nearby_transactions.length > 0) {
+            const transSection = document.createElement('div');
+            transSection.className = 'reinfolib-section';
+            transSection.innerHTML = '<h5>取引事例（同市区町村内）</h5>';
+            const transTable = document.createElement('table');
+            transTable.className = 'reinfolib-table';
+            transTable.innerHTML = `
+                <thead><tr><th>所在</th><th>取引価格</th><th>面積</th><th>時期</th></tr></thead>
+                <tbody>
+                    ${reinfolib.nearby_transactions.slice(0, 5).map(t => `
+                        <tr>
+                            <td>${t.address || '-'}</td>
+                            <td>${t.transaction_price ? t.transaction_price.toLocaleString() + '円' : '-'}</td>
+                            <td>${t.area_sqm ? t.area_sqm + '㎡' : '-'}</td>
+                            <td>${t.transaction_date || '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            transSection.appendChild(transTable);
+            priceContent.appendChild(transSection);
+        }
+
+        if ((!reinfolib.nearby_land_prices || reinfolib.nearby_land_prices.length === 0) &&
+            (!reinfolib.nearby_transactions || reinfolib.nearby_transactions.length === 0)) {
+            priceContent.innerHTML = '<p class="no-data">価格参考情報は取得できませんでした</p>';
+        }
+
+        panel.appendChild(priceContent);
+
+        return panel;
     }
 
     async function forceRegistrationFetch(itemId, button, warningContainer) {

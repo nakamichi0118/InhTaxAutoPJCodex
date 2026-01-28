@@ -31,6 +31,8 @@ class Settings:
     jon_api_base_url: str
     touki_login_id: Optional[str]
     touki_password: Optional[str]
+    # 不動産情報ライブラリAPI settings
+    reinfolib_api_key: Optional[str]
 
 
 @lru_cache()
@@ -103,4 +105,5 @@ def get_settings() -> Settings:
         jon_api_base_url=jon_api_base_url,
         touki_login_id=touki_login_id,
         touki_password=touki_password,
+        reinfolib_api_key=os.getenv("REINFOLIB_API_KEY"),
     )

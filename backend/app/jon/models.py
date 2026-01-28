@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+
 class LocationResult(BaseModel):
     """位置特定APIの結果"""
     lat: float
@@ -114,6 +115,8 @@ class JonBatchItemResult(BaseModel):
     tatemono_pdf_url: Optional[str] = None  # 建物図面PDF URL
     analyze_result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    # 不動産情報ライブラリからの追加情報
+    reinfolib: Optional[Dict[str, Any]] = None
 
 
 class JonBatchResponse(BaseModel):
