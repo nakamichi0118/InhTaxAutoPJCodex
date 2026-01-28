@@ -36,11 +36,12 @@ class ReinfolibClient:
 
     @staticmethod
     def lat_lng_to_tile(lat: float, lng: float, zoom: int) -> Tuple[int, int]:
-        """緯度経度をタイル座標に変換"""
+        """緯度経度をタイル座標に変換（Web Mercator / EPSG:3857）"""
         n = 2 ** zoom
         x = int((lng + 180.0) / 360.0 * n)
         lat_rad = math.radians(lat)
-        y = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+        # math.asinh(math.tan(lat_rad)) と同等だがより互換性のある計算
+        y = int((1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi) / 2.0 * n)
         return x, y
 
     async def _fetch_geojson(
@@ -49,6 +50,7 @@ class ReinfolibClient:
         """GeoJSON形式でタイルデータを取得"""
         x, y = self.lat_lng_to_tile(lat, lng, zoom)
         url = f"{BASE_URL}/{endpoint}"
+        logger.info(f"[REINFOLIB] {endpoint}: lat={lat}, lng={lng}, zoom={zoom}, x={x}, y={y}")
         params = {
             "response_format": "geojson",
             "z": zoom,

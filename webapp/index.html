@@ -762,6 +762,34 @@
         }
         /* col-accuracy defined in main table styles */
 
+        /* 詳細ボタン */
+        .detail-toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0.3rem 0.6rem;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+        }
+        .detail-toggle-btn:hover {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+        }
+        .detail-toggle-btn.expanded {
+            background: linear-gradient(135deg, #059669, #047857);
+        }
+        .detail-toggle-btn .detail-arrow {
+            font-size: 0.65rem;
+            transition: transform 0.2s;
+        }
+
         /* 不動産情報ライブラリ詳細パネル */
         .jon-result-table tbody tr.expanded {
             background: #ecfdf5;
@@ -3023,6 +3051,7 @@
                 <th class="col-link">公図</th>
                 <th class="col-link">路線価</th>
                 <th class="col-link">図面</th>
+                <th class="col-link">詳細</th>
             </tr>
         `;
         table.appendChild(thead);
@@ -3288,6 +3317,21 @@
             }
             tr.appendChild(tdDrawing);
 
+            // 詳細ボタン列
+            const tdDetail = document.createElement('td');
+            tdDetail.className = 'col-link';
+            if (result.reinfolib) {
+                const detailBtn = document.createElement('button');
+                detailBtn.type = 'button';
+                detailBtn.className = 'detail-toggle-btn';
+                detailBtn.innerHTML = '詳細 <span class="detail-arrow">▼</span>';
+                tdDetail.appendChild(detailBtn);
+            } else {
+                tdDetail.textContent = '-';
+                tdDetail.style.color = '#94a3b8';
+            }
+            tr.appendChild(tdDetail);
+
             tbody.appendChild(tr);
 
             // 詳細パネル行（不動産情報ライブラリのデータ）
@@ -3298,20 +3342,20 @@
                 detailRow.dataset.detailFor = result.id;
 
                 const detailTd = document.createElement('td');
-                detailTd.colSpan = 10;
+                detailTd.colSpan = 11;
                 detailTd.style.padding = '0';
                 detailTd.appendChild(createReinfolibPanel(result.reinfolib));
                 detailRow.appendChild(detailTd);
                 tbody.appendChild(detailRow);
 
-                // 行クリックで詳細を展開/折りたたみ
-                tr.style.cursor = 'pointer';
-                tr.title = 'クリックで詳細を表示';
-                tr.addEventListener('click', (e) => {
-                    if (e.target.tagName === 'A' || e.target.tagName === 'BUTTON') return;
+                // ボタンクリックで詳細を展開/折りたたみ
+                const detailBtn = tdDetail.querySelector('.detail-toggle-btn');
+                detailBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     const isVisible = detailRow.style.display !== 'none';
                     detailRow.style.display = isVisible ? 'none' : 'table-row';
-                    tr.classList.toggle('expanded', !isVisible);
+                    detailBtn.classList.toggle('expanded', !isVisible);
+                    detailBtn.querySelector('.detail-arrow').textContent = isVisible ? '▼' : '▲';
                 });
             }
         });
