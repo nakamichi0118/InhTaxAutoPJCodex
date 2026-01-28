@@ -96,7 +96,7 @@ class ReinfolibClient:
 
         props = feature.get("properties", {})
         return LandUseZone(
-            zone_name=props.get("u_use_district_ja") or props.get("youto_name"),
+            zone_name=props.get("use_area_ja") or props.get("u_use_district_ja") or props.get("youto_name"),
             building_coverage_ratio=props.get("u_building_coverage_ratio_ja") or props.get("kenpei"),
             floor_area_ratio=props.get("u_floor_area_ratio_ja") or props.get("yoseki"),
             raw_data=props,
