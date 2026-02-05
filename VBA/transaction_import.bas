@@ -1511,6 +1511,7 @@ Private Function CreateAnalysisJob(endpoint As String, pdfPath As String, docTyp
     http.Open "POST", endpoint, False
     http.setRequestHeader "Content-Type", "multipart/form-data; boundary=" & boundary
     http.setRequestHeader "Accept", "application/json"
+    http.setRequestHeader "X-Client-Type", "VBA"
     If Len(apiKey) > 0 Then
         http.setRequestHeader "X-API-Key", apiKey
     End If
@@ -1549,6 +1550,7 @@ Private Function SendJsonRequest(method As String, url As String, apiKey As Stri
     Set http = CreateHttpClient(receiveTimeoutMs)
     http.Open method, url, False
     http.setRequestHeader "Accept", "application/json"
+    http.setRequestHeader "X-Client-Type", "VBA"
     If Len(apiKey) > 0 Then
         http.setRequestHeader "X-API-Key", apiKey
     End If

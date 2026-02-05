@@ -34,6 +34,8 @@ from .job_manager import JobHandle, JobManager, JobRecord
 from . import job_registry
 from .ledger_router import router as ledger_router
 from .jon.router import router as jon_router
+from .analytics import AnalyticsStore, AccessLogMiddleware, analytics_page_router
+from .analytics.router import router as analytics_router, set_store as set_analytics_store
 from .models import (
     AssetRecord,
     DocumentAnalyzeResponse,
@@ -58,6 +60,13 @@ date_inference_engine = DateInferenceEngine()
 app = FastAPI(title="InhTaxAutoPJ Backend", version="0.11.0")
 app.include_router(ledger_router)
 app.include_router(jon_router)
+app.include_router(analytics_router)
+app.include_router(analytics_page_router)
+
+# Initialize analytics store and middleware
+analytics_store = AnalyticsStore(settings.analytics_db_path)
+set_analytics_store(analytics_store)
+app.add_middleware(AccessLogMiddleware, store=analytics_store)
 
 CHUNK_RESIDUAL_TOLERANCE = 500.0
 SUPPORTED_GEMINI_MODELS = {"gemini-2.5-flash", "gemini-2.5-pro"}

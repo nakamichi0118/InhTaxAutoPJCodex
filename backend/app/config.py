@@ -33,6 +33,9 @@ class Settings:
     touki_password: Optional[str]
     # 不動産情報ライブラリAPI settings
     reinfolib_api_key: Optional[str]
+    # Analytics settings
+    analytics_db_path: Path
+    analytics_password: Optional[str]
 
 
 @lru_cache()
@@ -89,6 +92,13 @@ def get_settings() -> Settings:
     touki_login_id = os.getenv("TOUKI_LOGIN_ID")
     touki_password = os.getenv("TOUKI_PASSWORD")
 
+    # Analytics settings
+    analytics_db_path_env = os.getenv("ANALYTICS_DB_PATH")
+    if analytics_db_path_env:
+        analytics_db_path = Path(analytics_db_path_env).expanduser().resolve()
+    else:
+        analytics_db_path = Path(__file__).resolve().parents[2] / "data" / "analytics.db"
+
     return Settings(
         gemini_api_key=gemini_api_key,
         gemini_api_keys=gemini_api_keys,
@@ -106,4 +116,6 @@ def get_settings() -> Settings:
         touki_login_id=touki_login_id,
         touki_password=touki_password,
         reinfolib_api_key=os.getenv("REINFOLIB_API_KEY"),
+        analytics_db_path=analytics_db_path,
+        analytics_password=os.getenv("ANALYTICS_PASSWORD"),
     )

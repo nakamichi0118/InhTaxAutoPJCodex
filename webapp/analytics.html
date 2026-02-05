@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOROBOCR Analytics</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f7fa;
+            color: #1e293b;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        header {
+            background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+            color: white;
+            padding: 1.5rem 2rem;
+            margin-bottom: 2rem;
+            border-radius: 12px;
+        }
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+        header p {
+            opacity: 0.9;
+            font-size: 0.9rem;
+            margin-top: 0.25rem;
+        }
+
+        /* Login form */
+        .login-card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 400px;
+            margin: 4rem auto;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+        .login-card h2 {
+            margin-bottom: 1rem;
+            font-size: 1.25rem;
+        }
+        .login-card input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+        .login-card button {
+            width: 100%;
+            padding: 0.75rem;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .login-card button:hover {
+            background: #2563eb;
+        }
+        .error-message {
+            color: #dc2626;
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+        }
+
+        /* Dashboard */
+        .dashboard {
+            display: none;
+        }
+        .dashboard.visible {
+            display: block;
+        }
+
+        /* Summary cards */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .summary-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.25rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .summary-card .label {
+            font-size: 0.875rem;
+            color: #64748b;
+            margin-bottom: 0.25rem;
+        }
+        .summary-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        .summary-card .sub-values {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+        }
+        .summary-card .sub-values span {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.125rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .badge.web { background: #dbeafe; color: #1e40af; }
+        .badge.excel { background: #dcfce7; color: #166534; }
+        .badge.script { background: #fef3c7; color: #92400e; }
+
+        /* Charts */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .chart-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .chart-card h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            color: #475569;
+        }
+        .chart-container {
+            position: relative;
+            height: 250px;
+        }
+
+        /* Date filter */
+        .date-filter {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        .date-filter label {
+            font-size: 0.875rem;
+            color: #64748b;
+        }
+        .date-filter input {
+            padding: 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 0.875rem;
+        }
+        .date-filter button {
+            padding: 0.5rem 1rem;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        .date-filter button:hover {
+            background: #2563eb;
+        }
+
+        /* Logs table */
+        .logs-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .logs-card h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            color: #475569;
+        }
+        .logs-table-wrapper {
+            overflow-x: auto;
+        }
+        .logs-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        .logs-table th, .logs-table td {
+            padding: 0.5rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .logs-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #475569;
+            position: sticky;
+            top: 0;
+        }
+        .logs-table tr:hover {
+            background: #f8fafc;
+        }
+        .logs-table .endpoint {
+            font-family: monospace;
+            color: #6366f1;
+        }
+        .logs-table .status-ok { color: #16a34a; }
+        .logs-table .status-error { color: #dc2626; }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SOROBOCR Analytics Dashboard</h1>
+            <p>アクセスログ・利用状況分析</p>
+        </header>
+
+        <!-- Login Form -->
+        <div class="login-card" id="loginCard">
+            <h2>認証</h2>
+            <form id="loginForm">
+                <input type="password" id="passwordInput" placeholder="パスワードを入力" required>
+                <button type="submit">ログイン</button>
+                <div class="error-message" id="loginError"></div>
+            </form>
+        </div>
+
+        <!-- Dashboard -->
+        <div class="dashboard" id="dashboard">
+            <!-- Date Filter -->
+            <div class="date-filter">
+                <label>期間:</label>
+                <input type="date" id="startDate" value="2025-02-01">
+                <span>〜</span>
+                <input type="date" id="endDate">
+                <button onclick="loadData()">更新</button>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="summary-grid" id="summaryGrid">
+                <div class="summary-card">
+                    <div class="label">総リクエスト数</div>
+                    <div class="value" id="totalRequests">-</div>
+                    <div class="sub-values" id="clientBreakdown"></div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">利用機能数</div>
+                    <div class="value" id="uniqueEndpoints">-</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">平均応答時間</div>
+                    <div class="value" id="avgDuration">-</div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="chart-grid">
+                <div class="chart-card">
+                    <h3>日別アクセス数</h3>
+                    <div class="chart-container">
+                        <canvas id="dailyChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3>機能別利用回数</h3>
+                    <div class="chart-container">
+                        <canvas id="endpointChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-grid">
+                <div class="chart-card">
+                    <h3>クライアント種別</h3>
+                    <div class="chart-container">
+                        <canvas id="clientChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3>書類種別</h3>
+                    <div class="chart-container">
+                        <canvas id="docTypeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Logs -->
+            <div class="logs-card">
+                <h3>最近のアクセスログ</h3>
+                <div class="logs-table-wrapper">
+                    <table class="logs-table">
+                        <thead>
+                            <tr>
+                                <th>日時</th>
+                                <th>エンドポイント</th>
+                                <th>メソッド</th>
+                                <th>クライアント</th>
+                                <th>ステータス</th>
+                                <th>応答時間</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTableBody">
+                            <tr><td colspan="6" class="loading">読み込み中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let password = '';
+        let charts = {};
+
+        // Set default end date to today
+        document.getElementById('endDate').value = new Date().toISOString().split('T')[0];
+
+        // Login form handler
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            password = document.getElementById('passwordInput').value;
+
+            try {
+                const response = await fetch(`/api/analytics/summary?password=${encodeURIComponent(password)}`);
+                if (response.ok) {
+                    document.getElementById('loginCard').style.display = 'none';
+                    document.getElementById('dashboard').classList.add('visible');
+                    loadData();
+                } else {
+                    const data = await response.json();
+                    document.getElementById('loginError').textContent = data.detail || '認証に失敗しました';
+                }
+            } catch (error) {
+                document.getElementById('loginError').textContent = 'サーバーに接続できません';
+            }
+        });
+
+        async function fetchApi(endpoint) {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const url = `/api/analytics/${endpoint}?password=${encodeURIComponent(password)}&start_date=${startDate}&end_date=${endDate}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('API error');
+            return response.json();
+        }
+
+        async function loadData() {
+            try {
+                const [summary, daily, endpoints, docTypes, logs] = await Promise.all([
+                    fetchApi('summary'),
+                    fetchApi('daily'),
+                    fetchApi('endpoints'),
+                    fetchApi('doc-types'),
+                    fetch(`/api/analytics/logs?password=${encodeURIComponent(password)}&limit=50`).then(r => r.json())
+                ]);
+
+                updateSummary(summary);
+                updateDailyChart(daily);
+                updateEndpointChart(endpoints);
+                updateClientChart(summary);
+                updateDocTypeChart(docTypes);
+                updateLogsTable(logs);
+            } catch (error) {
+                console.error('Failed to load data:', error);
+            }
+        }
+
+        function updateSummary(data) {
+            document.getElementById('totalRequests').textContent = data.total_requests.toLocaleString();
+            document.getElementById('uniqueEndpoints').textContent = data.unique_endpoints;
+            document.getElementById('avgDuration').textContent = data.avg_duration_ms
+                ? `${Math.round(data.avg_duration_ms)}ms`
+                : '-';
+
+            const breakdown = document.getElementById('clientBreakdown');
+            breakdown.innerHTML = Object.entries(data.client_counts)
+                .map(([type, count]) => `<span><span class="badge ${type}">${type}</span> ${count}</span>`)
+                .join('');
+        }
+
+        function updateDailyChart(data) {
+            // Group by date
+            const dateMap = {};
+            data.forEach(row => {
+                if (!dateMap[row.date]) {
+                    dateMap[row.date] = { web: 0, excel: 0, script: 0 };
+                }
+                dateMap[row.date][row.client_type] = row.count;
+            });
+
+            const dates = Object.keys(dateMap).sort();
+            const webData = dates.map(d => dateMap[d].web || 0);
+            const excelData = dates.map(d => dateMap[d].excel || 0);
+            const scriptData = dates.map(d => dateMap[d].script || 0);
+
+            if (charts.daily) charts.daily.destroy();
+            charts.daily = new Chart(document.getElementById('dailyChart'), {
+                type: 'bar',
+                data: {
+                    labels: dates.map(d => d.slice(5)), // MM-DD format
+                    datasets: [
+                        { label: 'Web', data: webData, backgroundColor: '#3b82f6' },
+                        { label: 'Excel', data: excelData, backgroundColor: '#22c55e' },
+                        { label: 'Script', data: scriptData, backgroundColor: '#f59e0b' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
+                }
+            });
+        }
+
+        function updateEndpointChart(data) {
+            // Aggregate by endpoint
+            const endpointMap = {};
+            data.forEach(row => {
+                const key = row.endpoint.replace('/api/', '');
+                if (!endpointMap[key]) endpointMap[key] = 0;
+                endpointMap[key] += row.count;
+            });
+
+            const sorted = Object.entries(endpointMap)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+
+            if (charts.endpoint) charts.endpoint.destroy();
+            charts.endpoint = new Chart(document.getElementById('endpointChart'), {
+                type: 'bar',
+                data: {
+                    labels: sorted.map(([name]) => name),
+                    datasets: [{
+                        label: 'リクエスト数',
+                        data: sorted.map(([, count]) => count),
+                        backgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    scales: { x: { beginAtZero: true } }
+                }
+            });
+        }
+
+        function updateClientChart(summary) {
+            const counts = summary.client_counts;
+            if (charts.client) charts.client.destroy();
+            charts.client = new Chart(document.getElementById('clientChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(counts).map(k => k === 'web' ? 'Webアプリ' : k === 'excel' ? 'Excel/VBA' : 'スクリプト'),
+                    datasets: [{
+                        data: Object.values(counts),
+                        backgroundColor: ['#3b82f6', '#22c55e', '#f59e0b']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        function updateDocTypeChart(data) {
+            // Aggregate by doc_type
+            const docMap = {};
+            data.forEach(row => {
+                const key = row.doc_type || '不明';
+                if (!docMap[key]) docMap[key] = 0;
+                docMap[key] += row.count;
+            });
+
+            const DOC_LABELS = {
+                'nayose': '名寄帳',
+                'bank_deposit': '通帳',
+                'transaction_history': '取引履歴',
+                'land': '土地',
+                'building': '家屋',
+                'securities': '有価証券',
+                'insurance': '生命保険',
+                'others': 'その他',
+                '不明': '不明'
+            };
+
+            if (charts.docType) charts.docType.destroy();
+            charts.docType = new Chart(document.getElementById('docTypeChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(docMap).map(k => DOC_LABELS[k] || k),
+                    datasets: [{
+                        data: Object.values(docMap),
+                        backgroundColor: ['#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16', '#64748b', '#cbd5e1']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        function updateLogsTable(logs) {
+            const tbody = document.getElementById('logsTableBody');
+            if (logs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="loading">ログがありません</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = logs.map(log => {
+                const date = new Date(log.timestamp);
+                const timeStr = date.toLocaleString('ja-JP', {
+                    month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                });
+                const statusClass = log.status_code < 400 ? 'status-ok' : 'status-error';
+                return `
+                    <tr>
+                        <td>${timeStr}</td>
+                        <td class="endpoint">${log.endpoint}</td>
+                        <td>${log.method}</td>
+                        <td><span class="badge ${log.client_type}">${log.client_type}</span></td>
+                        <td class="${statusClass}">${log.status_code || '-'}</td>
+                        <td>${log.duration_ms ? log.duration_ms + 'ms' : '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    </script>
+</body>
+</html>
