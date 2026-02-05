@@ -21,10 +21,11 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         "/analytics",
     }
 
-    # Endpoints that are typically static file requests
+    # Endpoints that are typically static file requests or analytics itself
     SKIP_PREFIXES = (
         "/ledger/",
         "/assets/",
+        "/api/analytics/",  # Don't log analytics API calls
     )
 
     def __init__(self, app, store: AnalyticsStore) -> None:
