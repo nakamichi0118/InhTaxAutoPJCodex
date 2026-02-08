@@ -79,6 +79,12 @@ class SummaryResponse(BaseModel):
     total_requests: int
     unique_endpoints: int
     avg_duration_ms: Optional[float]
+    # Cost & time savings estimates
+    pdf_analysis_count: int = 0
+    jon_batch_count: int = 0
+    jon_single_count: int = 0
+    estimated_cost_yen: int = 0
+    saved_minutes: int = 0
 
 
 class LogEntry(BaseModel):

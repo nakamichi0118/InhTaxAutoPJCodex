@@ -230,6 +230,54 @@
         .logs-table .status-ok { color: #16a34a; }
         .logs-table .status-error { color: #dc2626; }
 
+        /* Highlight cards (cost & time) */
+        .highlight-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .highlight-card {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-left: 4px solid;
+        }
+        .highlight-card.cost {
+            border-left-color: #f59e0b;
+            background: linear-gradient(135deg, #fffbeb 0%, #ffffff 60%);
+        }
+        .highlight-card.time {
+            border-left-color: #10b981;
+            background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 60%);
+        }
+        .highlight-icon {
+            font-size: 2.5rem;
+            line-height: 1;
+        }
+        .highlight-body {
+            flex: 1;
+        }
+        .highlight-label {
+            font-size: 0.85rem;
+            color: #64748b;
+            font-weight: 500;
+        }
+        .highlight-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin: 0.125rem 0;
+        }
+        .highlight-detail {
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+
         /* Loading */
         .loading {
             text-align: center;
@@ -266,6 +314,26 @@
                 <button onclick="loadData()">更新</button>
             </div>
 
+            <!-- Highlight Cards (Cost & Time) -->
+            <div class="highlight-grid">
+                <div class="highlight-card cost">
+                    <div class="highlight-icon">&#x1f4b0;</div>
+                    <div class="highlight-body">
+                        <div class="highlight-label">概算API利用料金</div>
+                        <div class="highlight-value" id="estimatedCost">-</div>
+                        <div class="highlight-detail" id="costBreakdown"></div>
+                    </div>
+                </div>
+                <div class="highlight-card time">
+                    <div class="highlight-icon">&#x23f1;</div>
+                    <div class="highlight-body">
+                        <div class="highlight-label">削減された作業時間</div>
+                        <div class="highlight-value" id="savedTime">-</div>
+                        <div class="highlight-detail" id="timeBreakdown"></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Summary Cards -->
             <div class="summary-grid" id="summaryGrid">
                 <div class="summary-card">
@@ -274,8 +342,14 @@
                     <div class="sub-values" id="clientBreakdown"></div>
                 </div>
                 <div class="summary-card">
-                    <div class="label">利用機能数</div>
-                    <div class="value" id="uniqueEndpoints">-</div>
+                    <div class="label">PDF解析</div>
+                    <div class="value" id="pdfCount">-</div>
+                    <div class="sub-values"><span style="color:#64748b;font-size:0.8rem;">通帳・名寄帳等</span></div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">不動産情報取得</div>
+                    <div class="value" id="jonCount">-</div>
+                    <div class="sub-values"><span style="color:#64748b;font-size:0.8rem;">JON API バッチ</span></div>
                 </div>
                 <div class="summary-card">
                     <div class="label">平均応答時間</div>
@@ -397,7 +471,8 @@
 
         function updateSummary(data) {
             document.getElementById('totalRequests').textContent = data.total_requests.toLocaleString();
-            document.getElementById('uniqueEndpoints').textContent = data.unique_endpoints;
+            document.getElementById('pdfCount').textContent = data.pdf_analysis_count || 0;
+            document.getElementById('jonCount').textContent = data.jon_batch_count || 0;
             document.getElementById('avgDuration').textContent = data.avg_duration_ms
                 ? `${Math.round(data.avg_duration_ms)}ms`
                 : '-';
@@ -406,6 +481,26 @@
             breakdown.innerHTML = Object.entries(data.client_counts)
                 .map(([type, count]) => `<span><span class="badge ${type}">${type}</span> ${count}</span>`)
                 .join('');
+
+            // API cost estimate
+            const costYen = data.estimated_cost_yen || 0;
+            document.getElementById('estimatedCost').textContent = `\xA5${costYen.toLocaleString()}`;
+            document.getElementById('costBreakdown').textContent =
+                `PDF解析 ${data.pdf_analysis_count || 0}回 \xD7 \xA515 + JON API ${data.jon_batch_count || 0}回 \xD7 \xA55`;
+
+            // Time savings estimate
+            const savedMin = data.saved_minutes || 0;
+            if (savedMin >= 60) {
+                const hours = Math.floor(savedMin / 60);
+                const mins = savedMin % 60;
+                document.getElementById('savedTime').textContent = mins > 0 ? `${hours}時間${mins}分` : `${hours}時間`;
+            } else {
+                document.getElementById('savedTime').textContent = `${savedMin}分`;
+            }
+            const pdfSaved = (data.pdf_analysis_count || 0) * 30;
+            const jonSaved = (data.jon_batch_count || 0) * 15;
+            document.getElementById('timeBreakdown').textContent =
+                `PDF解析 ${data.pdf_analysis_count || 0}回 \xD7 30分 + 不動産取得 ${data.jon_batch_count || 0}回 \xD7 15分（手作業比）`;
         }
 
         function updateDailyChart(data) {

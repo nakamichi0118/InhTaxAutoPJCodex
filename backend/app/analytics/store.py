@@ -186,9 +186,72 @@ class AnalyticsStore:
                 (start_date, end_date),
             ).fetchone()
 
+            # Cost and time estimates
+            cost_time = self._estimate_cost_and_time(conn, start_date, end_date)
+
             return {
                 "client_counts": {row["client_type"]: row["count"] for row in client_counts},
                 "total_requests": sum(row["count"] for row in client_counts),
                 "unique_endpoints": endpoint_count["count"] if endpoint_count else 0,
                 "avg_duration_ms": round(avg_duration["avg_ms"], 2) if avg_duration and avg_duration["avg_ms"] else None,
+                **cost_time,
             }
+
+    # ------------------------------------------------------------------
+    # API料金概算 / 削減時間の推計
+    # ------------------------------------------------------------------
+    # Gemini API 概算単価（1リクエストあたり、円換算）
+    _COST_PER_PDF_ANALYSIS = 15     # Gemini 2.5 Pro: 約¥15/リクエスト
+    _COST_PER_JON_BATCH = 5         # JON API: 約¥5/バッチ
+    _COST_PER_JON_SINGLE = 2        # JON 個別API: 約¥2/リクエスト
+    _COST_PER_REINFOLIB = 0         # 不動産情報ライブラリ: 無料
+
+    # 手作業比較（分）
+    _MANUAL_MINUTES_PER_PDF = 30    # 通帳1冊の目視確認+入力: 約30分
+    _MANUAL_MINUTES_PER_JON = 15    # 不動産1物件の登記取得+路線価確認: 約15分
+
+    def _estimate_cost_and_time(
+        self, conn: sqlite3.Connection, start_date: str, end_date: str
+    ) -> Dict[str, Any]:
+        """Estimate API costs and time savings."""
+
+        def _count_endpoint(pattern: str, method: str = "POST") -> int:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) as cnt FROM access_logs
+                WHERE date(timestamp) >= ? AND date(timestamp) <= ?
+                  AND endpoint LIKE ? AND method = ?
+                  AND status_code < 400
+                """,
+                (start_date, end_date, pattern, method),
+            ).fetchone()
+            return row["cnt"] if row else 0
+
+        pdf_count = _count_endpoint("%/analyze/pdf%")
+        jon_batch_count = _count_endpoint("%/jon/batch%")
+        jon_single_count = (
+            _count_endpoint("%/jon/locating%")
+            + _count_endpoint("%/jon/rosenka%")
+            + _count_endpoint("%/jon/registration%")
+        )
+
+        # 概算API料金（円）
+        estimated_cost_yen = (
+            pdf_count * self._COST_PER_PDF_ANALYSIS
+            + jon_batch_count * self._COST_PER_JON_BATCH
+            + jon_single_count * self._COST_PER_JON_SINGLE
+        )
+
+        # 削減時間（分）
+        saved_minutes = (
+            pdf_count * self._MANUAL_MINUTES_PER_PDF
+            + jon_batch_count * self._MANUAL_MINUTES_PER_JON
+        )
+
+        return {
+            "pdf_analysis_count": pdf_count,
+            "jon_batch_count": jon_batch_count,
+            "jon_single_count": jon_single_count,
+            "estimated_cost_yen": estimated_cost_yen,
+            "saved_minutes": saved_minutes,
+        }
