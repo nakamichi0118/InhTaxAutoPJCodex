@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# JST timezone (UTC+9)
+JST = timezone(timedelta(hours=9))
 
 
 class AnalyticsStore:
@@ -68,7 +71,7 @@ class AnalyticsStore:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        datetime.utcnow().isoformat(),
+                        datetime.now(JST).strftime("%Y-%m-%dT%H:%M:%S"),
                         endpoint,
                         method,
                         client_type,
@@ -221,13 +224,13 @@ class AnalyticsStore:
                 SELECT COUNT(*) as cnt FROM access_logs
                 WHERE date(timestamp) >= ? AND date(timestamp) <= ?
                   AND endpoint LIKE ? AND method = ?
-                  AND status_code < 400
+                  AND (status_code IS NULL OR status_code < 400)
                 """,
                 (start_date, end_date, pattern, method),
             ).fetchone()
             return row["cnt"] if row else 0
 
-        pdf_count = _count_endpoint("%/analyze/pdf%")
+        pdf_count = _count_endpoint("%/analyze%")
         jon_batch_count = _count_endpoint("%/jon/batch%")
         jon_single_count = (
             _count_endpoint("%/jon/locating%")
@@ -248,10 +251,27 @@ class AnalyticsStore:
             + jon_batch_count * self._MANUAL_MINUTES_PER_JON
         )
 
+        # Per-client analysis counts
+        def _count_analysis_by_client(client_type: str) -> int:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) as cnt FROM access_logs
+                WHERE date(timestamp) >= ? AND date(timestamp) <= ?
+                  AND endpoint LIKE '%/analyze%'
+                  AND method = 'POST'
+                  AND client_type = ?
+                  AND (status_code IS NULL OR status_code < 400)
+                """,
+                (start_date, end_date, client_type),
+            ).fetchone()
+            return row["cnt"] if row else 0
+
         return {
             "pdf_analysis_count": pdf_count,
             "jon_batch_count": jon_batch_count,
             "jon_single_count": jon_single_count,
             "estimated_cost_yen": estimated_cost_yen,
             "saved_minutes": saved_minutes,
+            "excel_analysis_count": _count_analysis_by_client("excel"),
+            "web_analysis_count": _count_analysis_by_client("web"),
         }

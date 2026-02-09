@@ -85,6 +85,9 @@ class SummaryResponse(BaseModel):
     jon_single_count: int = 0
     estimated_cost_yen: int = 0
     saved_minutes: int = 0
+    # Per-client analysis counts
+    excel_analysis_count: int = 0
+    web_analysis_count: int = 0
 
 
 class LogEntry(BaseModel):
