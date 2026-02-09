@@ -79,6 +79,11 @@ class SummaryResponse(BaseModel):
     total_requests: int
     unique_endpoints: int
     avg_duration_ms: Optional[float]
+    # Session & user estimation
+    unique_users: dict = {}
+    sessions: dict = {}
+    completed_analyses: int = 0
+    completed_by_client: dict = {}
     # Cost & time savings estimates
     pdf_analysis_count: int = 0
     jon_batch_count: int = 0

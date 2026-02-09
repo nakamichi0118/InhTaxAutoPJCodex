@@ -502,13 +502,23 @@
                     <div class="stat-card">
                         <div class="stat-label">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/>
-                                <line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
                             </svg>
-                            総リクエスト数
+                            実利用回数
                         </div>
-                        <div class="stat-value" id="totalRequests">-</div>
-                        <div class="stat-sub" id="clientBreakdown"></div>
+                        <div class="stat-value" id="totalSessions">-</div>
+                        <div class="stat-sub" id="sessionBreakdown"></div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                            ユーザー数
+                        </div>
+                        <div class="stat-value" id="totalUsers">-</div>
+                        <div class="stat-sub" id="userBreakdown"></div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">
@@ -516,31 +526,21 @@
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                                 <polyline points="14 2 14 8 20 8"/>
                             </svg>
-                            PDF解析
+                            PDF解析完了
                         </div>
                         <div class="stat-value" id="pdfCount">-</div>
-                        <div class="stat-sub" id="pdfBreakdown">通帳・名寄帳等</div>
+                        <div class="stat-sub" id="pdfBreakdown"></div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                                <circle cx="12" cy="10" r="3"/>
+                                <line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/>
+                                <line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>
                             </svg>
-                            不動産情報取得
+                            総APIコール
                         </div>
-                        <div class="stat-value" id="jonCount">-</div>
-                        <div class="stat-sub">JON API</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="10"/>
-                                <polyline points="12 6 12 12 16 14"/>
-                            </svg>
-                            平均応答時間
-                        </div>
-                        <div class="stat-value" id="avgDuration">-</div>
+                        <div class="stat-value" id="totalRequests">-</div>
+                        <div class="stat-sub" id="clientBreakdown"></div>
                     </div>
                 </div>
 
@@ -838,34 +838,45 @@
 
         // ── Summary ──
         function updateSummary(data) {
-            document.getElementById('totalRequests').textContent = data.total_requests.toLocaleString();
+            // Sessions (actual usage, not raw API calls)
+            const sessions = data.sessions || {};
+            const totalSessions = Object.values(sessions).reduce((s, v) => s + v, 0);
+            document.getElementById('totalSessions').textContent = totalSessions.toLocaleString();
+            document.getElementById('sessionBreakdown').innerHTML =
+                Object.entries(sessions)
+                    .map(([type, count]) =>
+                        `<span><span class="badge ${type}">${CLIENT_LABELS[type] || type}</span> ${count}</span>`
+                    ).join('');
 
+            // Unique users (by IP)
+            const users = data.unique_users || {};
+            const totalUsers = Object.values(users).reduce((s, v) => s + v, 0);
+            document.getElementById('totalUsers').textContent = totalUsers.toLocaleString();
+            document.getElementById('userBreakdown').innerHTML =
+                Object.entries(users)
+                    .map(([type, count]) =>
+                        `<span><span class="badge ${type}">${CLIENT_LABELS[type] || type}</span> ${count}</span>`
+                    ).join('');
+
+            // PDF analysis (completed)
             const pdfCount = data.pdf_analysis_count || 0;
             document.getElementById('pdfCount').textContent = pdfCount.toLocaleString();
-
-            // PDF breakdown by client
             const excelPdf = data.excel_analysis_count || 0;
             const webPdf = data.web_analysis_count || 0;
-            if (excelPdf > 0 || webPdf > 0) {
-                const parts = [];
-                if (webPdf > 0) parts.push(`<span class="badge web">Web</span> ${webPdf}`);
-                if (excelPdf > 0) parts.push(`<span class="badge excel">Excel</span> ${excelPdf}`);
-                document.getElementById('pdfBreakdown').innerHTML = parts.join(' ');
-            }
+            const pdfParts = [];
+            if (webPdf > 0) pdfParts.push(`<span class="badge web">Web</span> ${webPdf}`);
+            if (excelPdf > 0) pdfParts.push(`<span class="badge excel">Excel</span> ${excelPdf}`);
+            document.getElementById('pdfBreakdown').innerHTML = pdfParts.length > 0
+                ? pdfParts.join(' ')
+                : '通帳・名寄帳等';
 
-            const jonTotal = (data.jon_batch_count || 0) + (data.jon_single_count || 0);
-            document.getElementById('jonCount').textContent = jonTotal.toLocaleString();
-
-            document.getElementById('avgDuration').textContent = data.avg_duration_ms
-                ? `${Math.round(data.avg_duration_ms)}ms`
-                : '-';
-
-            // Client breakdown badges
-            const breakdown = document.getElementById('clientBreakdown');
-            breakdown.innerHTML = Object.entries(data.client_counts)
-                .map(([type, count]) =>
-                    `<span><span class="badge ${type}">${CLIENT_LABELS[type] || type}</span> ${count}</span>`
-                ).join('');
+            // Total raw API calls
+            document.getElementById('totalRequests').textContent = data.total_requests.toLocaleString();
+            document.getElementById('clientBreakdown').innerHTML =
+                Object.entries(data.client_counts)
+                    .map(([type, count]) =>
+                        `<span><span class="badge ${type}">${CLIENT_LABELS[type] || type}</span> ${count}</span>`
+                    ).join('');
         }
 
         // ── Cost Tab ──

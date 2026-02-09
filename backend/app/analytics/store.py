@@ -189,32 +189,107 @@ class AnalyticsStore:
                 (start_date, end_date),
             ).fetchone()
 
+            # Session & user estimation
+            session_data = self._estimate_sessions(conn, start_date, end_date)
+
             # Cost and time estimates
-            cost_time = self._estimate_cost_and_time(conn, start_date, end_date)
+            cost_time = self._estimate_cost_and_time(
+                conn, start_date, end_date, session_data
+            )
 
             return {
                 "client_counts": {row["client_type"]: row["count"] for row in client_counts},
                 "total_requests": sum(row["count"] for row in client_counts),
                 "unique_endpoints": endpoint_count["count"] if endpoint_count else 0,
                 "avg_duration_ms": round(avg_duration["avg_ms"], 2) if avg_duration and avg_duration["avg_ms"] else None,
+                **session_data,
                 **cost_time,
             }
 
     # ------------------------------------------------------------------
+    # セッション推定 / ユニークユーザー数
+    # ------------------------------------------------------------------
+
+    def _estimate_sessions(
+        self, conn: sqlite3.Connection, start_date: str, end_date: str
+    ) -> Dict[str, Any]:
+        """Estimate actual usage sessions and unique users.
+
+        VBA 1回の実行 = POST(1) + GET polling(10-20) + GET result(1) なので、
+        生リクエスト数ではなく「セッション」で実利用回数を推定する。
+        """
+
+        # ユニークIP数（≒ユーザー数）per client type
+        unique_ips = conn.execute(
+            """
+            SELECT client_type, COUNT(DISTINCT ip_address) as cnt
+            FROM access_logs
+            WHERE date(timestamp) >= ? AND date(timestamp) <= ?
+              AND ip_address IS NOT NULL
+            GROUP BY client_type
+            """,
+            (start_date, end_date),
+        ).fetchall()
+
+        # セッション推定: 同一IP + 30分枠でグループ化
+        sessions = conn.execute(
+            """
+            SELECT client_type, COUNT(*) as cnt
+            FROM (
+                SELECT DISTINCT
+                    client_type,
+                    COALESCE(ip_address, 'unknown') || '_' ||
+                    strftime('%Y-%m-%d-%H-', timestamp) ||
+                    CAST(CAST(strftime('%M', timestamp) AS INTEGER) / 30 AS TEXT)
+                    as session_key
+                FROM access_logs
+                WHERE date(timestamp) >= ? AND date(timestamp) <= ?
+            )
+            GROUP BY client_type
+            """,
+            (start_date, end_date),
+        ).fetchall()
+
+        # 完了解析数: ジョブ結果取得のユニーク数
+        # GET /api/jobs/{id}/result の成功数 = 実際にGeminiを呼んだ回数
+        completed = conn.execute(
+            """
+            SELECT client_type, COUNT(DISTINCT endpoint) as cnt
+            FROM access_logs
+            WHERE endpoint LIKE '/api/jobs/%/result'
+              AND method = 'GET'
+              AND (status_code IS NULL OR status_code < 400)
+              AND date(timestamp) >= ? AND date(timestamp) <= ?
+            GROUP BY client_type
+            """,
+            (start_date, end_date),
+        ).fetchall()
+
+        total_completed = sum(row["cnt"] for row in completed)
+
+        return {
+            "unique_users": {row["client_type"]: row["cnt"] for row in unique_ips},
+            "sessions": {row["client_type"]: row["cnt"] for row in sessions},
+            "completed_analyses": total_completed,
+            "completed_by_client": {row["client_type"]: row["cnt"] for row in completed},
+        }
+
+    # ------------------------------------------------------------------
     # API料金概算 / 削減時間の推計
     # ------------------------------------------------------------------
-    # Gemini API 概算単価（1リクエストあたり、円換算）
     _COST_PER_PDF_ANALYSIS = 15     # Gemini 2.5 Pro: 約¥15/リクエスト
     _COST_PER_JON_BATCH = 5         # JON API: 約¥5/バッチ
     _COST_PER_JON_SINGLE = 2        # JON 個別API: 約¥2/リクエスト
-    _COST_PER_REINFOLIB = 0         # 不動産情報ライブラリ: 無料
 
-    # 手作業比較（分）
     _MANUAL_MINUTES_PER_PDF = 30    # 通帳1冊の目視確認+入力: 約30分
     _MANUAL_MINUTES_PER_JON = 15    # 不動産1物件の登記取得+路線価確認: 約15分
 
     def _estimate_cost_and_time(
-        self, conn: sqlite3.Connection, start_date: str, end_date: str
+        self,
+        conn: sqlite3.Connection,
+        start_date: str,
+        end_date: str,
+        session_data: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Estimate API costs and time savings."""
 
@@ -230,13 +305,18 @@ class AnalyticsStore:
             ).fetchone()
             return row["cnt"] if row else 0
 
-        pdf_count = _count_endpoint("%/analyze%")
+        pdf_post_count = _count_endpoint("%/analyze%")
         jon_batch_count = _count_endpoint("%/jon/batch%")
         jon_single_count = (
             _count_endpoint("%/jon/locating%")
             + _count_endpoint("%/jon/rosenka%")
             + _count_endpoint("%/jon/registration%")
         )
+
+        # completed_analyses（ジョブ結果取得数）をフォールバックに使用
+        # Volume取り付け前のPOSTが消失していてもコスト計算が動く
+        completed = session_data.get("completed_analyses", 0)
+        pdf_count = max(pdf_post_count, completed)
 
         # 概算API料金（円）
         estimated_cost_yen = (
@@ -251,20 +331,8 @@ class AnalyticsStore:
             + jon_batch_count * self._MANUAL_MINUTES_PER_JON
         )
 
-        # Per-client analysis counts
-        def _count_analysis_by_client(client_type: str) -> int:
-            row = conn.execute(
-                """
-                SELECT COUNT(*) as cnt FROM access_logs
-                WHERE date(timestamp) >= ? AND date(timestamp) <= ?
-                  AND endpoint LIKE '%/analyze%'
-                  AND method = 'POST'
-                  AND client_type = ?
-                  AND (status_code IS NULL OR status_code < 400)
-                """,
-                (start_date, end_date, client_type),
-            ).fetchone()
-            return row["cnt"] if row else 0
+        # Per-client completed analyses
+        completed_by_client = session_data.get("completed_by_client", {})
 
         return {
             "pdf_analysis_count": pdf_count,
@@ -272,6 +340,6 @@ class AnalyticsStore:
             "jon_single_count": jon_single_count,
             "estimated_cost_yen": estimated_cost_yen,
             "saved_minutes": saved_minutes,
-            "excel_analysis_count": _count_analysis_by_client("excel"),
-            "web_analysis_count": _count_analysis_by_client("web"),
+            "excel_analysis_count": completed_by_client.get("excel", 0),
+            "web_analysis_count": completed_by_client.get("web", 0),
         }
