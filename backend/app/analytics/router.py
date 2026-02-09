@@ -86,6 +86,7 @@ class SummaryResponse(BaseModel):
     completed_by_client: dict = {}
     # Cost & time savings estimates
     pdf_analysis_count: int = 0
+    total_pages_processed: int = 0
     jon_batch_count: int = 0
     jon_single_count: int = 0
     estimated_cost_yen: int = 0

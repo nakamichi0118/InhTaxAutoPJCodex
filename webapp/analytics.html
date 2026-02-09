@@ -885,11 +885,12 @@
             document.getElementById('estimatedCost').textContent = `\xA5${costYen.toLocaleString()}`;
 
             const pdfCount = data.pdf_analysis_count || 0;
+            const totalPages = data.total_pages_processed || 0;
             const jonBatch = data.jon_batch_count || 0;
             const jonSingle = data.jon_single_count || 0;
 
             document.getElementById('costBreakdown').textContent =
-                `Gemini解析 ${pdfCount}件 + JON API ${jonBatch + jonSingle}件`;
+                `Gemini解析 ${pdfCount}件 (${totalPages}ページ) + JON API ${jonBatch + jonSingle}件`;
 
             // Time savings
             const savedMin = data.saved_minutes || 0;
@@ -901,12 +902,12 @@
                 document.getElementById('savedTime').textContent = `${savedMin}分`;
             }
             document.getElementById('timeBreakdown').textContent =
-                `PDF ${pdfCount}件\xD730分 + 不動産 ${jonBatch}件\xD715分（手作業比較）`;
+                `${totalPages}ページ \xD7 5分/ページ${jonBatch > 0 ? ' + 不動産 ' + jonBatch + '件 \xD7 15分' : ''}（手作業比較）`;
 
             // Detail cards
             document.getElementById('costPdfCount').textContent = pdfCount;
             document.getElementById('costPdfSub').innerHTML =
-                `<span class="badge web">Web</span> ${data.web_analysis_count || 0} <span class="badge excel">Excel</span> ${data.excel_analysis_count || 0}`;
+                `${totalPages}ページ処理 / <span class="badge web">Web</span> ${data.web_analysis_count || 0} <span class="badge excel">Excel</span> ${data.excel_analysis_count || 0}`;
             document.getElementById('costExcelCount').textContent = data.excel_analysis_count || 0;
             document.getElementById('costWebCount').textContent = data.web_analysis_count || 0;
             document.getElementById('costJonCount').textContent = jonBatch + jonSingle;
@@ -915,24 +916,42 @@
                 : 'まだ利用なし';
 
             // Cost table
-            const rows = [
-                { name: 'Gemini PDF解析', count: pdfCount, unit: 15, subtotal: pdfCount * 15 },
-                { name: 'JON API バッチ', count: jonBatch, unit: 5, subtotal: jonBatch * 5 },
-                { name: 'JON API 個別', count: jonSingle, unit: 2, subtotal: jonSingle * 2 },
-            ];
-            const total = rows.reduce((s, r) => s + r.subtotal, 0);
-            document.getElementById('costTableBody').innerHTML =
-                rows.map(r => `
+            const apiTotal = (pdfCount * 15) + (jonBatch * 5) + (jonSingle * 2);
+            document.getElementById('costTableBody').innerHTML = `
                     <tr>
-                        <td>${r.name}</td>
-                        <td>${r.count}回</td>
-                        <td>\xA5${r.unit}</td>
-                        <td>\xA5${r.subtotal.toLocaleString()}</td>
+                        <td>Gemini PDF解析</td>
+                        <td>${pdfCount}回</td>
+                        <td>\xA515/回</td>
+                        <td>\xA5${(pdfCount * 15).toLocaleString()}</td>
                     </tr>
-                `).join('') + `
+                    <tr style="color:var(--muted);font-size:12px;">
+                        <td style="padding-left:24px;">処理ページ数</td>
+                        <td>${totalPages}ページ</td>
+                        <td></td>
+                        <td></td>
+                    </tr>
+                    <tr>
+                        <td>JON API バッチ</td>
+                        <td>${jonBatch}回</td>
+                        <td>\xA55/回</td>
+                        <td>\xA5${(jonBatch * 5).toLocaleString()}</td>
+                    </tr>
+                    <tr>
+                        <td>JON API 個別</td>
+                        <td>${jonSingle}回</td>
+                        <td>\xA52/回</td>
+                        <td>\xA5${(jonSingle * 2).toLocaleString()}</td>
+                    </tr>
                     <tr style="font-weight:600;border-top:2px solid var(--border);">
-                        <td colspan="3">合計</td>
-                        <td>\xA5${total.toLocaleString()}</td>
+                        <td colspan="3">API料金 合計</td>
+                        <td>\xA5${apiTotal.toLocaleString()}</td>
+                    </tr>
+                    <tr style="border-top:1px solid var(--border);">
+                        <td colspan="3" style="color:var(--success);font-weight:500;">削減時間</td>
+                        <td style="color:var(--success);font-weight:500;">${savedMin >= 60 ? Math.floor(savedMin/60) + '時間' + (savedMin%60 > 0 ? savedMin%60 + '分' : '') : savedMin + '分'}</td>
+                    </tr>
+                    <tr style="color:var(--muted);font-size:12px;">
+                        <td colspan="4" style="padding-left:24px;">${totalPages}ページ \xD7 5分/ページ${jonBatch > 0 ? ' + 不動産 ' + jonBatch + '件 \xD7 15分' : ''}</td>
                     </tr>
                 `;
         }

@@ -1400,6 +1400,18 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
             transactions_payload=transactions_payload,
         )
         _log_timing(job.job_id, "JOB_TOTAL", 0, job_timer)
+        # Record page count for analytics time estimation
+        try:
+            analytics_store.log_access(
+                endpoint="/internal/job-completed",
+                method="INTERNAL",
+                client_type="system",
+                doc_type=document_type,
+                status_code=200,
+                extra=json.dumps({"pages": gemini_total_chunks, "job_id": job.job_id}),
+            )
+        except Exception:
+            pass
         return
 
     plan = PdfChunkingPlan(
@@ -1571,6 +1583,18 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
         transactions_payload=transactions_payload,
     )
     _log_timing(job.job_id, "JOB_TOTAL", 0, job_timer)
+    # Record page count for analytics time estimation
+    try:
+        analytics_store.log_access(
+            endpoint="/internal/job-completed",
+            method="INTERNAL",
+            client_type="system",
+            doc_type=asset.category,
+            status_code=200,
+            extra=json.dumps({"pages": total_chunks, "job_id": job.job_id}),
+        )
+    except Exception:
+        pass
 
 
 def _log_timing(job_id: str, component: str, page: int, start_ts: float) -> None:

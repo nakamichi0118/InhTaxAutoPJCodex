@@ -281,7 +281,7 @@ class AnalyticsStore:
     _COST_PER_JON_BATCH = 5         # JON API: 約¥5/バッチ
     _COST_PER_JON_SINGLE = 2        # JON 個別API: 約¥2/リクエスト
 
-    _MANUAL_MINUTES_PER_PDF = 30    # 通帳1冊の目視確認+入力: 約30分
+    _MANUAL_MINUTES_PER_PAGE = 5    # 1ページの目視確認+入力: 約5分
     _MANUAL_MINUTES_PER_JON = 15    # 不動産1物件の登記取得+路線価確認: 約15分
 
     def _estimate_cost_and_time(
@@ -314,9 +314,26 @@ class AnalyticsStore:
         )
 
         # completed_analyses（ジョブ結果取得数）をフォールバックに使用
-        # Volume取り付け前のPOSTが消失していてもコスト計算が動く
         completed = session_data.get("completed_analyses", 0)
         pdf_count = max(pdf_post_count, completed)
+
+        # 処理済みページ数（/internal/job-completed の extra.pages を合算）
+        pages_row = conn.execute(
+            """
+            SELECT COALESCE(SUM(
+                CAST(json_extract(extra, '$.pages') AS INTEGER)
+            ), 0) as total
+            FROM access_logs
+            WHERE endpoint = '/internal/job-completed'
+              AND date(timestamp) >= ? AND date(timestamp) <= ?
+            """,
+            (start_date, end_date),
+        ).fetchone()
+        total_pages = pages_row["total"] if pages_row else 0
+
+        # ページ数データがない場合は PDF数 × 推定5ページでフォールバック
+        if total_pages == 0 and pdf_count > 0:
+            total_pages = pdf_count * 5
 
         # 概算API料金（円）
         estimated_cost_yen = (
@@ -325,9 +342,9 @@ class AnalyticsStore:
             + jon_single_count * self._COST_PER_JON_SINGLE
         )
 
-        # 削減時間（分）
+        # 削減時間（分）= ページ数ベース
         saved_minutes = (
-            pdf_count * self._MANUAL_MINUTES_PER_PDF
+            total_pages * self._MANUAL_MINUTES_PER_PAGE
             + jon_batch_count * self._MANUAL_MINUTES_PER_JON
         )
 
@@ -336,6 +353,7 @@ class AnalyticsStore:
 
         return {
             "pdf_analysis_count": pdf_count,
+            "total_pages_processed": total_pages,
             "jon_batch_count": jon_batch_count,
             "jon_single_count": jon_single_count,
             "estimated_cost_yen": estimated_cost_yen,
