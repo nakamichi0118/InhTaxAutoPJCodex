@@ -500,9 +500,17 @@ def _analyze_page_with_gemini(
         model_override=model_override,
         chunk_page_limit_override=1,
     )
+    logger.info(
+        "[%s] Gemini page %d: %d lines, %d raw transactions",
+        job_id, page_index, len(extraction.lines), len(extraction.transactions),
+    )
+    if extraction.transactions:
+        logger.debug("[%s] Gemini page %d first txn: %s", job_id, page_index, extraction.transactions[0])
     transactions = _convert_gemini_structured_transactions(extraction.transactions, date_format=date_format)
+    logger.info("[%s] Gemini page %d: %d transactions after conversion", job_id, page_index, len(transactions))
     if not transactions:
         transactions = build_transactions_from_lines(extraction.lines, date_format=date_format)
+        logger.info("[%s] Gemini page %d: %d transactions from line fallback", job_id, page_index, len(transactions))
     _log_timing(job_id, "GEMINI_PAGE", page_index, page_timer)
     return GeminiPageResult(page_index=page_index, transactions=transactions, raw_lines=list(extraction.lines))
 
@@ -1055,8 +1063,9 @@ def _convert_gemini_structured_transactions(
                 account_type = "time_deposit"
         if not any([transaction_date, description, withdrawal, deposit, balance]):
             continue
-        # 出金・入金両方がnullの行はスキップ（繰越行など）
-        if withdrawal is None and deposit is None:
+        # 出金・入金・残高すべてnullの行はスキップ（繰越行など）
+        # balance があれば金額null でも保持 → 下流の _enforce_continuity で残高差分から復元
+        if withdrawal is None and deposit is None and balance is None:
             continue
         transactions.append(
             TransactionLine(

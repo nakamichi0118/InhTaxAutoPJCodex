@@ -69,7 +69,8 @@ HEADER_KEYWORDS: Dict[str, Iterable[str]] = {
     "balance": ("残高", "差引残高", "残高金額", "残", "高"),
 }
 
-DATE_TOKEN_RE = re.compile(r"(?:19|20)\d{2}[./-]\d{1,2}[./-]\d{1,2}")
+# 4桁西暦 (2016-01-18) または 2桁和暦 (28-1-18) にマッチ
+DATE_TOKEN_RE = re.compile(r"(?:(?:19|20)\d{2}|\d{1,2})[./-]\d{1,2}[./-]\d{1,2}")
 
 BALANCE_ONLY_KEYWORDS = (
     "繰越",
@@ -266,8 +267,8 @@ def _extract_transactions_from_lines(lines: Iterable[str], *, date_format: str) 
             withdrawal = numeric_values[-3]
             deposit = numeric_values[-2]
 
-        # 出金・入金両方がnullの行はスキップ（繰越行など）
-        if withdrawal is None and deposit is None:
+        # 出金・入金・残高すべてnullの行はスキップ（繰越行など）
+        if withdrawal is None and deposit is None and balance is None:
             continue
 
         transactions.append(
