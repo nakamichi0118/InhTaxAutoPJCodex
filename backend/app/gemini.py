@@ -92,7 +92,7 @@ class GeminiClient:
                 response = requests.post(
                     f"{self.endpoint}?key={api_key}",
                     json=payload,
-                    timeout=120,
+                    timeout=300,
                 )
             except RequestException as exc:
                 last_error = GeminiError(f"Gemini request failed: {exc}", can_retry_key=False)
@@ -127,7 +127,7 @@ class GeminiClient:
         response = requests.post(
             f"{UPLOAD_ENDPOINT}?key={api_key}",
             files=files,
-            timeout=120,
+            timeout=300,
         )
         if response.status_code >= 400:
             error_text, error_json = self._extract_error(response)
