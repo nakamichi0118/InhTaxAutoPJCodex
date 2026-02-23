@@ -277,7 +277,7 @@ class AnalyticsStore:
     # ------------------------------------------------------------------
     # API料金概算 / 削減時間の推計
     # ------------------------------------------------------------------
-    _COST_PER_PDF_ANALYSIS = 15     # Gemini 2.5 Pro: 約¥15/リクエスト
+    _COST_PER_PAGE = 15              # Gemini 2.5 Pro: 約¥15/ページ（入力+出力+思考トークン）
     _COST_PER_JON_BATCH = 5         # JON API: 約¥5/バッチ
     _COST_PER_JON_SINGLE = 2        # JON 個別API: 約¥2/リクエスト
 
@@ -335,9 +335,9 @@ class AnalyticsStore:
         if total_pages == 0 and pdf_count > 0:
             total_pages = pdf_count * 5
 
-        # 概算API料金（円）
+        # 概算API料金（円）= ページ数ベース
         estimated_cost_yen = (
-            pdf_count * self._COST_PER_PDF_ANALYSIS
+            total_pages * self._COST_PER_PAGE
             + jon_batch_count * self._COST_PER_JON_BATCH
             + jon_single_count * self._COST_PER_JON_SINGLE
         )

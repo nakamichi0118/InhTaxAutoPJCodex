@@ -916,17 +916,17 @@
                 : 'まだ利用なし';
 
             // Cost table
-            const apiTotal = (pdfCount * 15) + (jonBatch * 5) + (jonSingle * 2);
+            const apiTotal = (totalPages * 15) + (jonBatch * 5) + (jonSingle * 2);
             document.getElementById('costTableBody').innerHTML = `
                     <tr>
-                        <td>Gemini PDF解析</td>
-                        <td>${pdfCount}回</td>
-                        <td>\xA515/回</td>
-                        <td>\xA5${(pdfCount * 15).toLocaleString()}</td>
+                        <td>Gemini OCR</td>
+                        <td>${totalPages}ページ</td>
+                        <td>\xA515/ページ</td>
+                        <td>\xA5${(totalPages * 15).toLocaleString()}</td>
                     </tr>
                     <tr style="color:var(--muted);font-size:12px;">
-                        <td style="padding-left:24px;">処理ページ数</td>
-                        <td>${totalPages}ページ</td>
+                        <td style="padding-left:24px;">PDF解析回数</td>
+                        <td>${pdfCount}回</td>
                         <td></td>
                         <td></td>
                     </tr>
