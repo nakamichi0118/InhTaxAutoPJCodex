@@ -1238,6 +1238,174 @@ def _resolve_document_assets(
     return detected_type, assets, lines
 
 
+def _process_generic_ocr_job(
+    job: JobRecord,
+    handle: JobHandle,
+    contents: bytes,
+    source_name: str,
+    settings,
+    job_timer: float,
+) -> None:
+    """Process a generic OCR job: extract structured table data page-by-page."""
+    model_label = job.gemini_model or settings.gemini_model
+    handle.update(
+        stage="analyzing",
+        detail=f"書類を解析しています（{model_label}）…",
+        processed_chunks=0,
+        total_chunks=1,
+    )
+
+    plan = PdfChunkingPlan(
+        max_bytes=settings.gemini_max_document_bytes,
+        max_pages=1,
+    )
+    try:
+        chunks = chunk_pdf_by_limits(contents, plan)
+    except PdfChunkingError as exc:
+        raise ValueError(str(exc)) from exc
+
+    if not chunks:
+        raise ValueError("PDFにページが含まれていません")
+
+    total_chunks = len(chunks)
+    handle.update(
+        stage="analyzing",
+        detail=f"書類を解析中… 0/{total_chunks}",
+        processed_chunks=0,
+        total_chunks=total_chunks,
+    )
+
+    client = GeminiClient(api_keys=settings.gemini_api_keys, model=model_label)
+    all_headers: List[str] = []
+    all_rows: List[List[str]] = []
+    metadata: Dict[str, Any] = {}
+    document_title = ""
+
+    max_workers = min(4, total_chunks)
+    futures = []
+
+    def _extract_page(page_idx: int, chunk_bytes: bytes) -> Dict[str, Any]:
+        raw_text = client.extract_generic_from_pdf(chunk_bytes)
+        # Parse JSON from response
+        cleaned = re.sub(r"```json\s*", "", raw_text)
+        cleaned = re.sub(r"```\s*$", "", cleaned)
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if not match:
+            return {"headers": [], "rows": [], "metadata": {}, "document_title": ""}
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            # Try truncated parse
+            json_str = match.group()
+            last_brace = json_str.rfind("}")
+            while last_brace > 0:
+                try:
+                    return json.loads(json_str[:last_brace + 1])
+                except json.JSONDecodeError:
+                    last_brace = json_str.rfind("}", 0, last_brace)
+            return {"headers": [], "rows": [], "metadata": {}, "document_title": ""}
+
+    with ThreadPoolExecutor(max_workers=max_workers or 1) as executor:
+        for page_index, chunk in enumerate(chunks):
+            futures.append(
+                executor.submit(_extract_page, page_index, chunk)
+            )
+
+        completed = 0
+        page_results: List[tuple] = []
+        try:
+            for future in as_completed(futures):
+                result = future.result()
+                page_results.append((futures.index(future), result))
+                completed += 1
+                handle.update(
+                    stage="analyzing",
+                    detail=f"書類を解析中… {completed}/{total_chunks}",
+                    processed_chunks=completed,
+                    total_chunks=total_chunks,
+                )
+        except Exception as exc:
+            for pending in futures:
+                pending.cancel()
+            raise ValueError(str(exc)) from exc
+
+    # Sort by page index and merge
+    page_results.sort(key=lambda x: x[0])
+    for _, page_data in page_results:
+        page_headers = page_data.get("headers", [])
+        page_rows = page_data.get("rows", [])
+        page_meta = page_data.get("metadata", {})
+        page_title = page_data.get("document_title", "")
+
+        if page_headers and not all_headers:
+            all_headers = page_headers
+        if page_title and not document_title:
+            document_title = page_title
+        if page_meta:
+            metadata.update(page_meta)
+        all_rows.extend(page_rows)
+
+    # Build CSV
+    handle.update(stage="exporting", detail="CSVを生成しています…")
+    csv_buf = StringIO()
+    writer = csv.writer(csv_buf)
+    if all_headers:
+        writer.writerow(all_headers)
+    for row in all_rows:
+        # Ensure row length matches headers
+        if all_headers and len(row) < len(all_headers):
+            row.extend([""] * (len(all_headers) - len(row)))
+        writer.writerow(row)
+
+    csv_content = csv_buf.getvalue()
+    csv_b64 = base64.b64encode(csv_content.encode("utf-8-sig")).decode("ascii")
+
+    # Also build JSON result
+    json_result = {
+        "document_title": document_title,
+        "metadata": metadata,
+        "headers": all_headers,
+        "row_count": len(all_rows),
+        "rows": all_rows,
+    }
+    json_b64 = base64.b64encode(
+        json.dumps(json_result, ensure_ascii=False, indent=2).encode("utf-8")
+    ).decode("ascii")
+
+    files_map = {
+        "generic_ocr.csv": csv_b64,
+        "generic_ocr.json": json_b64,
+    }
+
+    detail_msg = f"完了（{len(all_rows)}行抽出）"
+    handle.update(
+        status="completed",
+        stage="completed",
+        detail=detail_msg,
+        document_type="generic_ocr",
+        result_files=files_map,
+        partial_files=files_map,
+        processed_chunks=total_chunks,
+        total_chunks=total_chunks,
+        assets_payload=[],
+        transactions_payload=[],
+    )
+
+    try:
+        analytics_store.log_access(
+            endpoint="/internal/job-completed",
+            method="INTERNAL",
+            client_type="system",
+            doc_type="generic_ocr",
+            status_code=200,
+            extra=json.dumps({"pages": total_chunks, "job_id": job.job_id}),
+        )
+    except Exception:
+        pass
+
+    _log_timing(job.job_id, "TOTAL_JOB", 0, job_timer)
+
+
 def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
     settings = get_settings()
     job_timer = time.perf_counter()
@@ -1292,6 +1460,11 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
                 detail=f"名寄帳解析エラー: {exc}",
             )
             return
+
+    # 汎用OCR（その他書類）の場合はページ単位で構造化データを抽出
+    if job.document_type_hint == "generic_ocr":
+        _process_generic_ocr_job(job, handle, contents, source_name, settings, job_timer)
+        return
 
     if job.processing_mode == "gemini":
         model_label = job.gemini_model or settings.gemini_model

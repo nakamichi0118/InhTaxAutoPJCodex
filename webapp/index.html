@@ -1183,15 +1183,16 @@
         },
         {
             id: 'others',
-            label: 'その他財産',
-            description: 'その他の財産種別については今後追加予定です。',
-            docType: 'unknown',
-            allowUpload: false,
+            label: 'その他書類',
+            description: 'どんな書類でもAI-OCRで構造化データ（CSV）に変換します。PDFは20MBまで対応。表形式データの抽出に最適化されています。',
+            docType: 'generic_ocr',
+            allowUpload: true,
+            recommendedModel: 'gemini_pro',
         },
         {
             id: 'bank_documents',
             label: '通帳・取引履歴',
-            description: '預貯金通帳や取引履歴の PDF をアップロードし、用途に応じた読み取り種別を選択してください。',
+            description: '預貯金通帳や銀行の取引履歴（預金取引推移表等）のみ対応しています。投資信託・有価証券などの書類は「その他書類」タブをご利用ください。',
             docType: 'transaction_history',
             allowUpload: true,
             allowDateFormat: true,
@@ -1212,7 +1213,8 @@
         building: '家屋',
         securities: '有価証券',
         insurance: '生命保険',
-        others: 'その他財産',
+        generic_ocr: 'その他書類（汎用OCR）',
+        others: 'その他書類',
         unknown: '未分類',
     };
 
@@ -1864,7 +1866,8 @@
         const jobId = await enqueueJob(file, docType, dateFormat, processingConfig, startDate, endDate);
         const result = await pollJobUntilComplete(jobId, { fileName: file.name });
         const assets = Array.isArray(result.assets) ? result.assets : [];
-        if (!assets.length) {
+        const resolvedDocType = docType || result.documentType || result.document_type;
+        if (!assets.length && resolvedDocType !== 'generic_ocr') {
             throw new Error('取引情報が見つかりませんでした。');
         }
         const durationSeconds = Math.max(0, (performance.now() - startedAt) / 1000);
@@ -1872,7 +1875,7 @@
         return {
             id: createDocId(),
             name: file.name,
-            docType: docType || result.documentType || result.document_type,
+            docType: resolvedDocType,
             dateFormat,
             assets,
             csvFiles: result.files,
@@ -2012,6 +2015,116 @@
             alert.style.display = 'block';
             alert.textContent = doc.error;
             container.appendChild(alert);
+            return container;
+        }
+
+        // Generic OCR: show structured table preview and download buttons
+        if (doc.docType === 'generic_ocr') {
+            const summaryList = document.createElement('div');
+            summaryList.className = 'summary-list';
+            const durationValue = typeof doc.durationSeconds === 'number'
+                ? `${doc.durationSeconds.toFixed(1)} 秒` : '計測中';
+            [
+                { label: '処理時間', value: durationValue },
+                { label: '資料種別', value: 'その他書類（汎用OCR）' },
+            ].forEach((item) => {
+                const div = document.createElement('div');
+                div.innerHTML = `<strong>${item.label}</strong><div style="margin-top:0.4rem;">${escapeHtml(item.value)}</div>`;
+                summaryList.appendChild(div);
+            });
+            container.appendChild(summaryList);
+
+            // Try to decode and display the JSON result as a table
+            const jsonFile = doc.csvFiles && (doc.csvFiles['generic_ocr.json']);
+            if (jsonFile) {
+                try {
+                    const jsonText = decodeBase64(jsonFile);
+                    const parsed = JSON.parse(jsonText);
+                    const title = parsed.document_title || '抽出結果';
+                    const headers = parsed.headers || [];
+                    const rows = parsed.rows || [];
+
+                    const titleEl = document.createElement('h3');
+                    titleEl.style.margin = '0';
+                    titleEl.style.fontSize = '1rem';
+                    titleEl.textContent = `${title}（${rows.length}行）`;
+                    container.appendChild(titleEl);
+
+                    if (parsed.metadata && Object.keys(parsed.metadata).length) {
+                        const metaDiv = document.createElement('div');
+                        metaDiv.style.cssText = 'font-size:0.85rem;color:#4b5563;margin-bottom:0.5rem;';
+                        metaDiv.textContent = Object.entries(parsed.metadata)
+                            .filter(([, v]) => v)
+                            .map(([k, v]) => `${k}: ${v}`)
+                            .join(' / ');
+                        container.appendChild(metaDiv);
+                    }
+
+                    if (headers.length && rows.length) {
+                        const tableWrap = document.createElement('div');
+                        tableWrap.style.cssText = 'overflow-x:auto;max-height:500px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;';
+                        const table = document.createElement('table');
+                        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.8rem;';
+                        const thead = document.createElement('thead');
+                        thead.innerHTML = '<tr>' + headers.map(h =>
+                            `<th style="padding:0.4rem 0.6rem;background:#f1f5f9;border-bottom:2px solid #e2e8f0;text-align:left;white-space:nowrap;position:sticky;top:0;">${escapeHtml(String(h))}</th>`
+                        ).join('') + '</tr>';
+                        table.appendChild(thead);
+                        const tbody = document.createElement('tbody');
+                        const maxPreview = Math.min(rows.length, 100);
+                        for (let i = 0; i < maxPreview; i++) {
+                            const tr = document.createElement('tr');
+                            tr.style.borderBottom = '1px solid #f1f5f9';
+                            (rows[i] || []).forEach(cell => {
+                                const td = document.createElement('td');
+                                td.style.cssText = 'padding:0.3rem 0.6rem;white-space:nowrap;';
+                                td.textContent = cell != null ? String(cell) : '';
+                                tr.appendChild(td);
+                            });
+                            tbody.appendChild(tr);
+                        }
+                        table.appendChild(tbody);
+                        tableWrap.appendChild(table);
+                        container.appendChild(tableWrap);
+                        if (rows.length > 100) {
+                            const more = document.createElement('p');
+                            more.style.cssText = 'color:#6b7280;font-size:0.8rem;margin:0.5rem 0 0;';
+                            more.textContent = `※ プレビューは先頭100行のみ表示。全${rows.length}行はCSVダウンロードで確認できます。`;
+                            container.appendChild(more);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Generic OCR JSON parse error:', e);
+                }
+            }
+
+            // Download buttons
+            const dlDiv = document.createElement('div');
+            dlDiv.style.cssText = 'display:flex;gap:0.8rem;margin-top:0.5rem;';
+            if (doc.csvFiles) {
+                Object.entries(doc.csvFiles).forEach(([fname, b64]) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'primary';
+                    btn.style.fontSize = '0.85rem';
+                    btn.textContent = fname.endsWith('.csv') ? 'CSV ダウンロード' : 'JSON ダウンロード';
+                    btn.addEventListener('click', () => {
+                        if (fname.endsWith('.csv')) {
+                            downloadCsv(fname, b64);
+                        } else {
+                            const decoded = decodeBase64(b64);
+                            const blob = new Blob([decoded], { type: 'application/json;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = fname;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                        }
+                    });
+                    dlDiv.appendChild(btn);
+                });
+            }
+            container.appendChild(dlDiv);
             return container;
         }
 
@@ -2295,10 +2408,11 @@
                 const button = document.createElement('button');
                 button.className = 'primary small';
                 // ファイル名から種別を抽出
-                const fileLabel = filename.replace('.csv', '')
+                const fileLabel = filename.replace('.csv', '').replace('.json', '')
                     .replace('properties', '不動産')
                     .replace('assets', '全体')
-                    .replace('bank_transactions', '取引履歴');
+                    .replace('bank_transactions', '取引履歴')
+                    .replace('generic_ocr', 'その他書類');
                 button.textContent = `${fileLabel}`;
                 button.title = `${filename} をダウンロード`;
                 button.addEventListener('click', () => downloadCsv(`${doc.name}-${filename}`, base64));

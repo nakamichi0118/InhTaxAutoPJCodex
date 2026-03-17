@@ -14,6 +14,7 @@ import requests
 from requests import RequestException
 
 from .prompts.nayose_prompt import NAYOSE_PROMPT
+from .prompts.generic_ocr_prompt import GENERIC_OCR_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -367,6 +368,77 @@ class GeminiClient:
         return self._base_prompt(
             parts=[
                 {"text": NAYOSE_PROMPT},
+                {
+                    "file_data": {
+                        "mime_type": "application/pdf",
+                        "file_uri": file_name,
+                    }
+                },
+            ]
+        )
+
+    # ── Generic OCR ──────────────────────────────────────────
+
+    def extract_generic_from_pdf(self, pdf_bytes: bytes) -> str:
+        """Extract structured data from any document PDF.
+
+        Returns the raw JSON response text from Gemini.
+        """
+        last_error: GeminiError | None = None
+        for index, api_key in enumerate(self.api_keys):
+            try:
+                return self._extract_generic_with_key(pdf_bytes, api_key)
+            except GeminiError as exc:
+                last_error = exc
+                if exc.can_retry_key and index < len(self.api_keys) - 1:
+                    logger.warning("Gemini API key rejected (reason: %s); trying next key", exc)
+                    continue
+                raise
+        if last_error:
+            raise last_error
+        raise GeminiError("Gemini API key configuration is empty")
+
+    def _extract_generic_with_key(self, pdf_bytes: bytes, api_key: str) -> str:
+        """Extract generic OCR data using a specific API key."""
+        if len(pdf_bytes) <= INLINE_LIMIT_BYTES:
+            payload = self._build_generic_inline_payload(pdf_bytes)
+        else:
+            file_name = self._upload_file(pdf_bytes, api_key=api_key, mime_type="application/pdf")
+            try:
+                payload = self._build_generic_file_payload(file_name)
+            finally:
+                self._delete_file(file_name, api_key=api_key)
+
+        data = self._invoke_generate(payload, api_key)
+        candidates = data.get("candidates") or []
+        if not candidates:
+            raise GeminiError("No candidates returned from Gemini API")
+        parts = candidates[0].get("content", {}).get("parts", [])
+        if not parts:
+            raise GeminiError("Candidate contains no parts")
+        text = parts[0].get("text", "").strip()
+        if not text:
+            raise GeminiError("Gemini response did not contain text")
+        return text
+
+    def _build_generic_inline_payload(self, pdf_bytes: bytes) -> Dict[str, Any]:
+        encoded = base64.b64encode(pdf_bytes).decode("ascii")
+        return self._base_prompt(
+            parts=[
+                {"text": GENERIC_OCR_PROMPT},
+                {
+                    "inline_data": {
+                        "mime_type": "application/pdf",
+                        "data": encoded,
+                    }
+                },
+            ]
+        )
+
+    def _build_generic_file_payload(self, file_name: str) -> Dict[str, Any]:
+        return self._base_prompt(
+            parts=[
+                {"text": GENERIC_OCR_PROMPT},
                 {
                     "file_data": {
                         "mime_type": "application/pdf",
