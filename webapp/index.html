@@ -1182,14 +1182,6 @@
             allowUpload: false,
         },
         {
-            id: 'others',
-            label: 'その他書類',
-            description: 'どんな書類でもAI-OCRで構造化データ（CSV）に変換します。PDFは20MBまで対応。表形式データの抽出に最適化されています。',
-            docType: 'generic_ocr',
-            allowUpload: true,
-            recommendedModel: 'gemini_pro',
-        },
-        {
             id: 'bank_documents',
             label: '通帳・取引履歴',
             description: '預貯金通帳や銀行の取引履歴（預金取引推移表等）のみ対応しています。投資信託・有価証券などの書類は「その他書類」タブをご利用ください。',
@@ -1200,6 +1192,14 @@
                 { value: 'transaction_history', label: '取引履歴' },
                 { value: 'bank_deposit', label: '通帳（預貯金）' },
             ],
+            recommendedModel: 'gemini_pro',
+        },
+        {
+            id: 'others',
+            label: 'その他書類',
+            description: 'どんな書類でもAI-OCRで構造化データ（CSV）に変換します。PDFは20MBまで対応。表形式データの抽出に最適化されています。',
+            docType: 'generic_ocr',
+            allowUpload: true,
             recommendedModel: 'gemini_pro',
         },
     ];
