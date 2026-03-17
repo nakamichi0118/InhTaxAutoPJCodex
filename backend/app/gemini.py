@@ -253,6 +253,7 @@ class GeminiClient:
         text = parts[0].get("text", "").strip()
         if not text:
             raise GeminiError("Gemini response did not contain text")
+        logger.info("Gemini raw response: length=%d, first 300 chars: %s", len(text), text[:300])
         match = JSON_PATTERN.search(text)
         if match:
             try:
@@ -346,6 +347,7 @@ class GeminiClient:
         text = parts[0].get("text", "").strip()
         if not text:
             raise GeminiError("Gemini response did not contain text")
+        logger.info("Gemini nayose raw response: length=%d, first 300 chars: %s", len(text), text[:300])
         return text
 
     def _build_nayose_inline_payload(self, pdf_bytes: bytes) -> Dict[str, Any]:
@@ -419,6 +421,7 @@ class GeminiClient:
         text = parts[0].get("text", "").strip()
         if not text:
             raise GeminiError("Gemini response did not contain text")
+        logger.info("Gemini generic_ocr raw response: length=%d, first 300 chars: %s", len(text), text[:300])
         return text
 
     def _build_generic_inline_payload(self, pdf_bytes: bytes) -> Dict[str, Any]:

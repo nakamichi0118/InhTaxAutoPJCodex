@@ -1286,24 +1286,44 @@ def _process_generic_ocr_job(
 
     def _extract_page(page_idx: int, chunk_bytes: bytes) -> Dict[str, Any]:
         raw_text = client.extract_generic_from_pdf(chunk_bytes)
+        logger.info(
+            "[%s] generic_ocr page %d: raw response length=%d, first 500 chars: %s",
+            job.job_id, page_idx + 1, len(raw_text), raw_text[:500],
+        )
         # Parse JSON from response
         cleaned = re.sub(r"```json\s*", "", raw_text)
         cleaned = re.sub(r"```\s*$", "", cleaned)
         match = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if not match:
+            logger.warning("[%s] generic_ocr page %d: no JSON found in response", job.job_id, page_idx + 1)
             return {"headers": [], "rows": [], "metadata": {}, "document_title": ""}
         try:
-            return json.loads(match.group())
+            data = json.loads(match.group())
         except json.JSONDecodeError:
             # Try truncated parse
             json_str = match.group()
             last_brace = json_str.rfind("}")
             while last_brace > 0:
                 try:
-                    return json.loads(json_str[:last_brace + 1])
+                    data = json.loads(json_str[:last_brace + 1])
+                    logger.warning("[%s] generic_ocr page %d: JSON truncated parse used", job.job_id, page_idx + 1)
+                    break
                 except json.JSONDecodeError:
                     last_brace = json_str.rfind("}", 0, last_brace)
-            return {"headers": [], "rows": [], "metadata": {}, "document_title": ""}
+            else:
+                logger.error("[%s] generic_ocr page %d: JSON parse failed entirely", job.job_id, page_idx + 1)
+                return {"headers": [], "rows": [], "metadata": {}, "document_title": ""}
+        row_count = len(data.get("rows", []))
+        headers = data.get("headers", [])
+        logger.info(
+            "[%s] generic_ocr page %d: %d headers, %d rows extracted",
+            job.job_id, page_idx + 1, len(headers), row_count,
+        )
+        # Log first row for debugging
+        rows = data.get("rows", [])
+        if rows:
+            logger.info("[%s] generic_ocr page %d: first row: %s", job.job_id, page_idx + 1, rows[0][:10] if len(rows[0]) > 10 else rows[0])
+        return data
 
     with ThreadPoolExecutor(max_workers=max_workers or 1) as executor:
         for page_index, chunk in enumerate(chunks):
