@@ -48,7 +48,7 @@ from .models import (
 )
 from .parser import build_assets, detect_document_type
 from .parsers.nayose_parser import parse_nayose_response
-from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits
+from .pdf_utils import PdfChunkingError, PdfChunkingPlan, chunk_pdf_by_limits, compress_pdf
 from .date_inference import DateInferenceEngine, DateInferenceContext
 
 logger = logging.getLogger("uvicorn.error")
@@ -380,6 +380,26 @@ async def _load_file_bytes(file: UploadFile) -> tuple[bytes, str]:
     if content_type != "application/pdf":
         logger.warning("Unexpected content type %s; defaulting to application/pdf", content_type)
         content_type = "application/pdf"
+
+    # Auto-compress large PDFs (e.g. scanned images at high DPI)
+    settings = get_settings()
+    max_upload = settings.gemini_max_document_bytes
+    if len(contents) > max_upload:
+        original_mb = len(contents) / (1024 * 1024)
+        logger.info("PDF too large (%.1fMB > %dMB limit), attempting compression...",
+                    original_mb, max_upload // (1024 * 1024))
+        contents = compress_pdf(contents, max_bytes=max_upload)
+        if len(contents) > max_upload:
+            raise HTTPException(
+                status_code=413,
+                detail=f"ファイルサイズが大きすぎます（{original_mb:.0f}MB）。"
+                       f"圧縮後も{len(contents) / (1024 * 1024):.0f}MBあり、"
+                       f"上限{max_upload // (1024 * 1024)}MBを超えています。"
+                       f"スキャン解像度を下げて再度お試しください。"
+            )
+        logger.info("PDF compressed: %.1fMB -> %.1fMB",
+                    original_mb, len(contents) / (1024 * 1024))
+
     return contents, content_type
 
 

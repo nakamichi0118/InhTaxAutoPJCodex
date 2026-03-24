@@ -1197,7 +1197,7 @@
         {
             id: 'others',
             label: 'その他書類',
-            description: 'どんな書類でもAI-OCRで構造化データ（CSV）に変換します。PDFは20MBまで対応。表形式データの抽出に最適化されています。',
+            description: 'どんな書類でもAI-OCRで構造化データ（CSV）に変換します。大容量PDF（100MB超）も自動圧縮して処理します。表形式データの抽出に最適化されています。',
             docType: 'generic_ocr',
             allowUpload: true,
             recommendedModel: 'gemini_pro',
@@ -1301,12 +1301,12 @@
         if (!uploadGuidance) return;
         if (fallback) {
             uploadGuidance.textContent =
-                'PDFのみ対応（1口座=1ファイル）。通常は1ファイルあたり20MB前後までのPDFを目安にしてください。';
+                'PDFのみ対応（1口座=1ファイル）。大容量スキャンPDF（100MB超）も自動圧縮されます。';
             return;
         }
         const limitMb = state.limits?.gemini?.document_max_mb;
         if (limitMb) {
-            uploadGuidance.textContent = `PDFのみ対応／1口座=1ファイル。Geminiの上限目安は1ファイル最大 ${limitMb}MB です。超える場合は分割・圧縮してください。`;
+            uploadGuidance.textContent = `PDFのみ対応／1口座=1ファイル。大容量スキャンPDF（100MB超）も自動圧縮されます。`;
         } else {
             uploadGuidance.textContent = 'PDFのみ対応（1口座=1ファイル）。読み取り可能サイズを確認しています…';
         }
