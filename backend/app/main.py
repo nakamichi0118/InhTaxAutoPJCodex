@@ -12,8 +12,12 @@ from datetime import datetime, timezone
 from io import StringIO
 from typing import Any, Callable, Dict, List, Optional
 
+from pathlib import Path as _Path
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from description_utils import normalize_description
 
@@ -2045,3 +2049,25 @@ def log_startup() -> None:
         settings.gemini_max_document_bytes,
         settings.gemini_chunk_page_limit,
     )
+
+
+# ── Static file serving (webapp) ──
+# Must be AFTER all API routes to avoid overriding them.
+_WEBAPP_DIR = _Path(__file__).resolve().parents[2] / "webapp"
+
+if _WEBAPP_DIR.is_dir():
+    @app.get("/")
+    async def serve_root():
+        return FileResponse(_WEBAPP_DIR / "index.html")
+
+    @app.get("/analytics")
+    @app.get("/analytics.html")
+    async def serve_analytics():
+        return FileResponse(_WEBAPP_DIR / "analytics.html")
+
+    @app.get("/help")
+    @app.get("/help.html")
+    async def serve_help():
+        return FileResponse(_WEBAPP_DIR / "help.html")
+
+    app.mount("/", StaticFiles(directory=str(_WEBAPP_DIR)), name="webapp")
