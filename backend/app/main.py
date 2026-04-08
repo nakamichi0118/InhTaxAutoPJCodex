@@ -836,6 +836,22 @@ def _gemini_refine_chunk(
     return reconciled
 
 
+def _fill_null_dates(transactions: List[TransactionLine]) -> List[TransactionLine]:
+    """Fill null dates using the previous transaction's date.
+
+    When Gemini returns null dates (because the date column is blank on that row),
+    we forward-fill from the last known date. This is the standard passbook convention:
+    blank date means "same day as previous transaction".
+    """
+    last_date: Optional[str] = None
+    for txn in transactions:
+        if txn.transaction_date:
+            last_date = txn.transaction_date
+        elif last_date:
+            txn.transaction_date = last_date
+    return transactions
+
+
 def _enforce_continuity(
     prev_balance: Optional[float],
     transactions: List[TransactionLine],
@@ -1578,6 +1594,9 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
                 txn.line_order = line_order
                 combined_transactions.append(txn)
                 line_order += 1
+
+        # 日付がnullの取引に前の取引の日付を補完（ページまたぎ対応）
+        combined_transactions = _fill_null_dates(combined_transactions)
 
         # 総合口座の場合、普通預金と定期預金を分離
         assets: List[AssetRecord] = _separate_assets_by_account_type(
