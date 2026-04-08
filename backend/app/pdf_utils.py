@@ -4,11 +4,86 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Iterable, List
+from typing import Iterable, List, Optional, Tuple
 
 from pypdf import PdfReader, PdfWriter
 
 logger = logging.getLogger(__name__)
+
+
+def enhance_scanned_page(pdf_bytes: bytes, page_index: int = 0) -> Optional[bytes]:
+    """Extract and enhance a scanned page image for better OCR accuracy.
+
+    For scanned PDFs (passbooks etc.), extracts the embedded image directly,
+    applies grayscale + autocontrast + sharpening, and returns as PNG bytes.
+
+    Returns None if PyMuPDF/Pillow are unavailable or the page has no images.
+    """
+    try:
+        import fitz  # PyMuPDF
+        from PIL import Image, ImageEnhance, ImageOps
+        import io
+    except ImportError:
+        return None
+
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        if page_index >= len(doc):
+            doc.close()
+            return None
+
+        page = doc[page_index]
+        imgs = page.get_images()
+
+        if not imgs:
+            # No embedded images — not a scanned document
+            doc.close()
+            return None
+
+        # Extract the first (usually only) embedded image
+        xref = imgs[0][0]
+        base_image = doc.extract_image(xref)
+        doc.close()
+
+        img = Image.open(io.BytesIO(base_image["image"]))
+
+        # Convert to grayscale for cleaner OCR
+        img = ImageOps.grayscale(img)
+        # Auto-contrast: stretch histogram to use full range
+        img = ImageOps.autocontrast(img, cutoff=1)
+        # Sharpen to make blurry dot-printer text clearer
+        img = ImageEnhance.Sharpness(img).enhance(3.0)
+        # Boost contrast to make faint text stand out
+        img = ImageEnhance.Contrast(img).enhance(2.0)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        enhanced_bytes = buf.getvalue()
+
+        logger.info(
+            "Enhanced scanned page %d: %dx%d, %dKB -> %dKB",
+            page_index,
+            img.width, img.height,
+            len(base_image["image"]) // 1024,
+            len(enhanced_bytes) // 1024,
+        )
+        return enhanced_bytes
+
+    except Exception as exc:
+        logger.warning("Failed to enhance scanned page %d: %s", page_index, exc)
+        return None
+
+
+def enhance_scanned_pdf(pdf_bytes: bytes) -> Tuple[bytes, str]:
+    """Try to enhance a single-page scanned PDF for OCR.
+
+    Returns (image_bytes, mime_type) if enhancement succeeded,
+    or (pdf_bytes, "application/pdf") if not applicable.
+    """
+    enhanced = enhance_scanned_page(pdf_bytes, page_index=0)
+    if enhanced is not None:
+        return enhanced, "image/png"
+    return pdf_bytes, "application/pdf"
 
 
 class PdfChunkingError(RuntimeError):

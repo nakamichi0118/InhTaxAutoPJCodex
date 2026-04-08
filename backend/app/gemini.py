@@ -15,6 +15,7 @@ from requests import RequestException
 
 from .prompts.nayose_prompt import NAYOSE_PROMPT
 from .prompts.generic_ocr_prompt import GENERIC_OCR_PROMPT
+from .pdf_utils import enhance_scanned_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -153,13 +154,15 @@ class GeminiClient:
             logger.debug("Failed to delete Gemini file %s: %s", file_name, exc)
 
     def _build_inline_payload(self, pdf_bytes: bytes) -> Dict[str, Any]:
-        encoded = base64.b64encode(pdf_bytes).decode("ascii")
+        # Try to enhance scanned images for better OCR accuracy
+        data_bytes, mime_type = enhance_scanned_pdf(pdf_bytes)
+        encoded = base64.b64encode(data_bytes).decode("ascii")
         return self._base_prompt(
             parts=[
                 {"text": self._prompt_text()},
                 {
                     "inline_data": {
-                        "mime_type": "application/pdf",
+                        "mime_type": mime_type,
                         "data": encoded,
                     }
                 },
@@ -356,13 +359,14 @@ class GeminiClient:
 
     def _build_nayose_inline_payload(self, pdf_bytes: bytes) -> Dict[str, Any]:
         """Build inline payload for nayose extraction."""
-        encoded = base64.b64encode(pdf_bytes).decode("ascii")
+        data_bytes, mime_type = enhance_scanned_pdf(pdf_bytes)
+        encoded = base64.b64encode(data_bytes).decode("ascii")
         return self._base_prompt(
             parts=[
                 {"text": NAYOSE_PROMPT},
                 {
                     "inline_data": {
-                        "mime_type": "application/pdf",
+                        "mime_type": mime_type,
                         "data": encoded,
                     }
                 },
@@ -429,13 +433,14 @@ class GeminiClient:
         return text
 
     def _build_generic_inline_payload(self, pdf_bytes: bytes) -> Dict[str, Any]:
-        encoded = base64.b64encode(pdf_bytes).decode("ascii")
+        data_bytes, mime_type = enhance_scanned_pdf(pdf_bytes)
+        encoded = base64.b64encode(data_bytes).decode("ascii")
         return self._base_prompt(
             parts=[
                 {"text": GENERIC_OCR_PROMPT},
                 {
                     "inline_data": {
-                        "mime_type": "application/pdf",
+                        "mime_type": mime_type,
                         "data": encoded,
                     }
                 },
