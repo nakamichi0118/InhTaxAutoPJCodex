@@ -58,11 +58,11 @@ class GeminiClient:
         self.model = model
         self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-    def extract_lines_from_pdf(self, pdf_bytes: bytes) -> GeminiExtraction:
+    def extract_lines_from_pdf(self, pdf_bytes: bytes, *, page_context: str = "") -> GeminiExtraction:
         last_error: GeminiError | None = None
         for index, api_key in enumerate(self.api_keys):
             try:
-                return self._extract_with_key(pdf_bytes, api_key)
+                return self._extract_with_key(pdf_bytes, api_key, page_context=page_context)
             except GeminiError as exc:
                 last_error = exc
                 if exc.can_retry_key and index < len(self.api_keys) - 1:
@@ -73,9 +73,9 @@ class GeminiClient:
             raise last_error
         raise GeminiError("Gemini API key configuration is empty")
 
-    def _extract_with_key(self, pdf_bytes: bytes, api_key: str) -> GeminiExtraction:
+    def _extract_with_key(self, pdf_bytes: bytes, api_key: str, *, page_context: str = "") -> GeminiExtraction:
         if len(pdf_bytes) <= INLINE_LIMIT_BYTES:
-            payload = self._build_inline_payload(pdf_bytes)
+            payload = self._build_inline_payload(pdf_bytes, page_context=page_context)
             data = self._invoke_generate(payload, api_key)
             return self._parse_response(data)
 
@@ -153,13 +153,16 @@ class GeminiClient:
         except requests.RequestException as exc:
             logger.debug("Failed to delete Gemini file %s: %s", file_name, exc)
 
-    def _build_inline_payload(self, pdf_bytes: bytes) -> Dict[str, Any]:
+    def _build_inline_payload(self, pdf_bytes: bytes, *, page_context: str = "") -> Dict[str, Any]:
         # Try to enhance scanned images for better OCR accuracy
         data_bytes, mime_type = enhance_scanned_pdf(pdf_bytes)
         encoded = base64.b64encode(data_bytes).decode("ascii")
+        prompt = self._prompt_text()
+        if page_context:
+            prompt = f"{page_context}\n\n{prompt}"
         return self._base_prompt(
             parts=[
-                {"text": self._prompt_text()},
+                {"text": prompt},
                 {
                     "inline_data": {
                         "mime_type": mime_type,
@@ -196,28 +199,34 @@ class GeminiClient:
     @staticmethod
     def _prompt_text() -> str:
         return (
-            "You are assisting with converting Japanese bank and financial documents into structured text. "
-            "Read the attached PDF and return JSON with two keys: `lines` containing an array of strings "
-            "in reading order, and `transactions` containing an array of objects with the fields "
-            "`date`, `description`, `withdrawal`, `deposit`, `balance`, and `account_type`. "
-            "IMPORTANT: Japanese passbooks use 2-digit Japanese era years (和暦). "
-            "Return dates EXACTLY as shown in the document without converting the year. "
-            "For example: if the document shows '01-12-06', return '01-12-06' (not '2001-12-06' or '2019-12-06'). "
-            "If it shows '17-11-24', return '17-11-24' (not '2005-11-24' or '2017-11-24'). "
-            "DATE RULE: If a transaction row has NO date printed (the date column is blank/empty), "
-            "return null for the date field. Do NOT copy the date from a previous row. "
-            "Each transaction's date must come from what is actually printed on THAT row.\n"
-            "Use null for unknown numeric values, keep amounts as plain numbers (no commas), and do not add "
-            "explanations or markdown. Return raw JSON only.\n\n"
-            "CRITICAL: Only extract data that is ACTUALLY VISIBLE in the PDF. "
-            "Do NOT generate, guess, or fabricate any data. "
-            "If a page contains no bank transactions (e.g. investment trust reports, securities statements, or other non-passbook documents), "
-            "return {\"lines\": [], \"transactions\": []}.\n\n"
-            "ACCOUNT TYPE DETECTION: For combined passbooks (総合口座通帳), detect and return `account_type` for each transaction:\n"
-            "- 'ordinary_deposit': Transactions on pages labeled 普通預金, 普通口座, or the front side of the passbook\n"
-            "- 'time_deposit': Transactions on pages labeled 定期預金, 定期積金, 定期, or the back side showing fixed deposits\n"
-            "If account type cannot be determined, return null for `account_type`.\n"
-            "IMPORTANT: Always extract the description (摘要) for ALL transactions, regardless of amount."
+            "あなたは日本の銀行通帳・取引明細を構造化データに変換するAIアシスタントです。\n"
+            "添付画像を読み取り、以下のJSON形式で返してください:\n"
+            '{"lines": ["行1", "行2", ...], "transactions": [...]}\n\n'
+            "transactionsの各要素:\n"
+            '{"date": "YY-M-D", "description": "摘要", "withdrawal": 数値orNull, '
+            '"deposit": 数値orNull, "balance": 数値orNull, "account_type": "ordinary_deposit"orNull}\n\n'
+            "【日付ルール（最重要）】\n"
+            "- 日付は印字されたまま返すこと（年号変換しない）。例: 01-12-06 → そのまま \"01-12-06\"\n"
+            "- 通帳では同じ日の2行目以降は日付欄が空白になることがある。\n"
+            "  空白の場合はnullにせず、直前の取引と同じ日付をコピーしてよい。\n"
+            "- ただし、異なる月/日の取引には必ず異なる日付が印字されている。\n"
+            "  ページ内で新しい日付が現れたら、必ずその日付を正確に読み取ること。\n"
+            "- 各ページの最初の取引には必ず日付が印字されている。見落とさないこと。\n\n"
+            "【金額ルール】\n"
+            "- 金額はカンマなしの数値で返すこと\n"
+            "- 不明な場合はnull\n"
+            "- 出金=withdrawal, 入金=deposit, 残高=balance\n\n"
+            "【厳守事項】\n"
+            "- 画像に実際に存在するデータのみ抽出すること。推測・捏造は厳禁。\n"
+            "- 銀行取引以外の書類（投資信託、有価証券等）の場合は "
+            '{\"lines\": [], \"transactions\": []} を返すこと。\n'
+            "- 摘要（description）は金額の有無にかかわらず必ず抽出すること。\n"
+            "- 「未記帳分合算」の行も必ず含めること。\n\n"
+            "【口座種別】\n"
+            "- 普通預金ページ → account_type: \"ordinary_deposit\"\n"
+            "- 定期預金ページ → account_type: \"time_deposit\"\n"
+            "- 判別不能 → null\n\n"
+            "JSONのみ返すこと（説明不要）。"
         )
 
     @staticmethod

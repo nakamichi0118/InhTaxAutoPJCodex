@@ -461,6 +461,7 @@ def _analyze_with_gemini(
     model_override: Optional[str] = None,
     chunk_page_limit_override: Optional[int] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
+    page_context: str = "",
 ) -> GeminiExtraction:
     model = model_override or settings.gemini_model
     client = GeminiClient(api_keys=settings.gemini_api_keys, model=model)
@@ -473,7 +474,7 @@ def _analyze_with_gemini(
     )
 
     def analyzer(blob: bytes) -> GeminiExtraction:
-        return client.extract_lines_from_pdf(blob)
+        return client.extract_lines_from_pdf(blob, page_context=page_context)
 
     return _with_pdf_chunks(contents, plan, analyzer, progress_callback=progress_callback)
 
@@ -516,13 +517,16 @@ def _analyze_page_with_gemini(
     *,
     date_format: str,
     model_override: Optional[str],
+    total_pages: int = 0,
 ) -> GeminiPageResult:
     page_timer = time.perf_counter()
+    page_ctx = f"【この画像は通帳の{page_index}ページ目（全{total_pages}ページ中）です。このページの最初の取引の日付を正確に読み取ってください。】" if total_pages > 0 else ""
     extraction = _analyze_with_gemini(
         chunk,
         settings,
         model_override=model_override,
         chunk_page_limit_override=1,
+        page_context=page_ctx,
     )
     logger.info(
         "[%s] Gemini page %d: %d lines, %d raw transactions",
@@ -1568,6 +1572,7 @@ def _process_job_record(job: JobRecord, handle: JobHandle) -> None:
                         settings,
                         date_format=job.date_format,
                         model_override=model_label,
+                        total_pages=total_chunks,
                     )
                 )
             completed = 0
