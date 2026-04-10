@@ -218,21 +218,30 @@ End Function
 '2桁年号の場合はスマート推論を適用（相続税案件向け）
 Function ConvertDateFormat(dateStr As String) As String
     Dim dateParts() As String
+    Dim normalized As String
     Dim year As Integer
     Dim month As Integer
     Dim day As Integer
     Dim gengo As String
     Dim warekiYear As Integer
 
-    dateParts = Split(dateStr, "-")
+    ' 区切り文字を "-" に統一（"/" や "." にも対応）
+    normalized = Trim$(dateStr)
+    normalized = Replace(normalized, "/", "-")
+    normalized = Replace(normalized, ".", "-")
+
+    dateParts = Split(normalized, "-")
     If UBound(dateParts) <> 2 Then
         ConvertDateFormat = ""
         Exit Function
     End If
 
+    ' 数値変換（失敗時は空文字を返す）
+    On Error GoTo ParseError
     year = CInt(dateParts(0))
     month = CInt(dateParts(1))
     day = CInt(dateParts(2))
+    On Error GoTo 0
 
     '2桁年号のスマート推論（相続税案件では直近の日付が多い）
     If year < 100 Then
@@ -252,6 +261,10 @@ Function ConvertDateFormat(dateStr As String) As String
     End If
 
     ConvertDateFormat = gengo & warekiYear & "(" & year & ")/" & Format(month, "00") & "/" & Format(day, "00")
+    Exit Function
+
+ParseError:
+    ConvertDateFormat = ""
 End Function
 
 '2桁年号から西暦4桁を推論する
