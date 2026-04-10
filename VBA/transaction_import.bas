@@ -294,7 +294,6 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
     Dim dateToFind As String
     Dim gyouhajime As Long
     Dim gyousaigo As Long
-    Dim gyousaigoInitial As Long
     Dim retuhajime As Long
     Dim retusaigo As Long
     Dim FoundCell As Range
@@ -307,7 +306,6 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
     '範囲を取得
     gyouhajime = ws.Range("A1:A10000").Find("資金移動始").row
     gyousaigo = ws.Range("A1:A10000").Find("資金移動終").row
-    gyousaigoInitial = gyousaigo
     retuhajime = ws.Range("C1:BZ1").Find("資金移動始").Column
     retusaigo = ws.Range("C1:DZ1").Find("資金移動終").Column
 
@@ -389,9 +387,6 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
 
     '罫線の更新
     Call UpdateBorders
-
-    '挿入された行数分、ボタン位置を下にずらす（取引挿入で下にシフトしているため）
-    buttonRow = buttonRow + (gyousaigo - gyousaigoInitial)
 
     '用途サマリをボタン行の1つ上へ表示
     If IsEmpty(usageData) Then
@@ -629,8 +624,17 @@ Sub WriteUsageSummary(csvData As Variant, buttonCol As Long, buttonRow As Long)
     If IsEmpty(csvData) Then Exit Sub
     If buttonRow <= 1 Then Exit Sub
 
-    targetRow = buttonRow - 1
     Set ws = Worksheets("預金推移")
+
+    ' ボタンの現在位置を再取得（取引挿入で位置がずれている可能性があるため）
+    buttonRow = GetCurrentButtonRow(ws, buttonCol, buttonRow)
+
+    ' 過去の実行で挿入された古い用途サマリ行を削除（日付欄が空かつ用途欄に文字がある行）
+    Call ClearOldUsageSummaryRows(ws, buttonCol, buttonRow)
+    ' 削除後にボタン位置を再取得
+    buttonRow = GetCurrentButtonRow(ws, buttonCol, buttonRow)
+
+    targetRow = buttonRow - 1
 
     withdrawalSummary = BuildUsageSummary(csvData, True)
     depositSummary = BuildUsageSummary(csvData, False)
@@ -643,15 +647,64 @@ Sub WriteUsageSummary(csvData As Variant, buttonCol As Long, buttonRow As Long)
         rowsToInsert = rowsNeeded - 1
         ' targetRowの上に行を挿入
         ws.Rows(targetRow & ":" & targetRow + rowsToInsert - 1).Insert Shift:=xlDown
-        ' 挿入後、targetRowは変わらない（挿入された行の下になる）
-        ' 最初の用途行から書き始める
-        targetRow = targetRow  ' 挿入された行の最初
     End If
 
     ' 複数行に分割して書き込み
     WriteMultiRowSummary ws, targetRow, buttonCol, withdrawalSummary, rowsNeeded
     WriteMultiRowSummary ws, targetRow, buttonCol + 1, depositSummary, rowsNeeded
 End Sub
+
+'===============================================================================
+' 古い用途サマリ行を削除
+' ボタンのすぐ上から上方向に走査し、
+' 「日付欄(C列)が空 かつ buttonCol または buttonCol+1 に文字がある行」を削除する
+'===============================================================================
+Private Sub ClearOldUsageSummaryRows(ws As Worksheet, buttonCol As Long, buttonRow As Long)
+    Dim currentRow As Long
+    Dim dateValue As String
+    Dim withdrawalValue As String
+    Dim depositValue As String
+    Dim maxScan As Long
+
+    currentRow = buttonRow - 1
+    maxScan = 10 ' サマリは最大5行だが念のため10行まで走査
+
+    Do While currentRow >= 1 And maxScan > 0
+        dateValue = Trim$(CStr(ws.Cells(currentRow, 3).value))
+        withdrawalValue = Trim$(CStr(ws.Cells(currentRow, buttonCol).value))
+        depositValue = Trim$(CStr(ws.Cells(currentRow, buttonCol + 1).value))
+
+        ' 日付が入っている行まで来たら停止（取引行なので削除しない）
+        If Len(dateValue) > 0 Then Exit Do
+
+        ' 用途欄が両方空ならサマリではない（境界）→ 停止
+        If Len(withdrawalValue) = 0 And Len(depositValue) = 0 Then Exit Do
+
+        ' サマリ行と判断 → 削除
+        ws.Rows(currentRow).Delete Shift:=xlUp
+        ' 削除したので currentRow は変えない（上の行が繰り下がる）
+        currentRow = currentRow - 1
+        maxScan = maxScan - 1
+    Loop
+End Sub
+
+'===============================================================================
+' ボタンの現在位置を取得（Shapesコレクションから）
+'===============================================================================
+Private Function GetCurrentButtonRow(ws As Worksheet, buttonCol As Long, fallbackRow As Long) As Long
+    Dim shp As Shape
+    On Error Resume Next
+    For Each shp In ws.Shapes
+        If shp.TopLeftCell.Column = buttonCol Then
+            If Not shp.TopLeftCell Is Nothing Then
+                GetCurrentButtonRow = shp.TopLeftCell.Row
+                Exit Function
+            End If
+        End If
+    Next shp
+    On Error GoTo 0
+    GetCurrentButtonRow = fallbackRow
+End Function
 
 '===============================================================================
 ' 必要な行数を計算（1行あたり約200文字）
@@ -791,8 +844,17 @@ Sub WriteUsageSummaryOnly(csvData As Variant, buttonCol As Long, buttonRow As Lo
     If IsEmpty(csvData) Then Exit Sub
     If buttonRow <= 1 Then Exit Sub
 
-    targetRow = buttonRow - 1
     Set ws = Worksheets("預金推移")
+
+    ' ボタンの現在位置を再取得
+    buttonRow = GetCurrentButtonRow(ws, buttonCol, buttonRow)
+
+    ' 過去の実行で挿入された古い用途サマリ行を削除
+    Call ClearOldUsageSummaryRows(ws, buttonCol, buttonRow)
+    ' 削除後にボタン位置を再取得
+    buttonRow = GetCurrentButtonRow(ws, buttonCol, buttonRow)
+
+    targetRow = buttonRow - 1
 
     withdrawalSummary = BuildUsageSummary(csvData, True)
     depositSummary = BuildUsageSummary(csvData, False)
