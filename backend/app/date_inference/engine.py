@@ -26,12 +26,14 @@ class DateInferenceEngine:
 
     # 現在の令和年（動的に計算）
     CURRENT_YEAR = datetime.now().year
-    CURRENT_REIWA_YEAR = CURRENT_YEAR - 2018  # 2024 → R6
+    CURRENT_REIWA_YEAR = CURRENT_YEAR - 2018  # 2024 → R6, 2026 → R8
 
     # 年号の境界値
     DEFINITE_SEIREKI_THRESHOLD = 32  # これ以上は確実に西暦2桁
-    HIGH_PROB_HEISEI_MIN = 8         # 平成8年(1996)以上は高確率で平成
-    AMBIGUOUS_MAX = 7                # 1-7は曖昧ゾーン
+    # 令和範囲内(1〜現在令和年)は令和優先、それを超えたら平成優先
+    # 例: 2026年なら令和8年まで → 9以上は平成として扱う
+    HIGH_PROB_HEISEI_MIN = CURRENT_REIWA_YEAR + 1
+    AMBIGUOUS_MAX = CURRENT_REIWA_YEAR  # 1〜現在令和年は曖昧ゾーン
 
     def __init__(self, learned_formats: Optional[dict] = None):
         """
