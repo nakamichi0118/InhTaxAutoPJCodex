@@ -294,6 +294,7 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
     Dim dateToFind As String
     Dim gyouhajime As Long
     Dim gyousaigo As Long
+    Dim gyousaigoInitial As Long
     Dim retuhajime As Long
     Dim retusaigo As Long
     Dim FoundCell As Range
@@ -306,6 +307,7 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
     '範囲を取得
     gyouhajime = ws.Range("A1:A10000").Find("資金移動始").row
     gyousaigo = ws.Range("A1:A10000").Find("資金移動終").row
+    gyousaigoInitial = gyousaigo
     retuhajime = ws.Range("C1:BZ1").Find("資金移動始").Column
     retusaigo = ws.Range("C1:DZ1").Find("資金移動終").Column
 
@@ -387,6 +389,9 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
 
     '罫線の更新
     Call UpdateBorders
+
+    '挿入された行数分、ボタン位置を下にずらす（取引挿入で下にシフトしているため）
+    buttonRow = buttonRow + (gyousaigo - gyousaigoInitial)
 
     '用途サマリをボタン行の1つ上へ表示
     If IsEmpty(usageData) Then
