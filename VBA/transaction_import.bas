@@ -388,8 +388,9 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
     retuhajime = ws.Range("C1:BZ1").Find("資金移動始").Column
     retusaigo = ws.Range("C1:DZ1").Find("資金移動終").Column
 
+    '日付列(C列)をソート範囲に含める（含めないとソート時にC列と他列の対応がずれる）
     With ws
-        .Range(.Cells(gyouhajime + 1, retuhajime), .Cells(gyousaigo - 3, retusaigo)).Sort Key1:=.Columns(3)
+        .Range(.Cells(gyouhajime + 1, 3), .Cells(gyousaigo - 3, retusaigo)).Sort Key1:=.Columns(3)
     End With
 
     '罫線の更新
