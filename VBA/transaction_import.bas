@@ -313,6 +313,13 @@ Sub ImportDataToExcel(csvData As Variant, buttonCol As Long, buttonRow As Long, 
     Application.ScreenUpdating = False
     Application.EnableEvents = False
 
+    '過去の壊れた取引行（日付が空の行）を削除
+    Call CleanupOrphanedTransactionRows(ws, gyouhajime, gyousaigo)
+
+    '範囲を再取得（削除後）
+    gyouhajime = ws.Range("A1:A10000").Find("資金移動始").row
+    gyousaigo = ws.Range("A1:A10000").Find("資金移動終").row
+
     'データを1件ずつ処理
     For i = 1 To UBound(csvData, 1)
         dateToFind = csvData(i, 1)
@@ -652,6 +659,48 @@ Sub WriteUsageSummary(csvData As Variant, buttonCol As Long, buttonRow As Long)
     ' 複数行に分割して書き込み
     WriteMultiRowSummary ws, targetRow, buttonCol, withdrawalSummary, rowsNeeded
     WriteMultiRowSummary ws, targetRow, buttonCol + 1, depositSummary, rowsNeeded
+End Sub
+
+'===============================================================================
+' 取引範囲内で日付が空の壊れた行を削除
+' 過去のバグで挿入された日付なし行をクリーンアップする
+'===============================================================================
+Private Sub CleanupOrphanedTransactionRows(ws As Worksheet, gyouhajime As Long, gyousaigo As Long)
+    Dim i As Long
+    Dim dateValue As String
+    Dim hasDataInRow As Boolean
+    Dim col As Long
+    Dim endCol As Long
+    Dim deletedCount As Long
+
+    ' 取引範囲: gyouhajime+1 から gyousaigo-1 まで
+    ' 下から上に向かって走査（削除時にインデックスがずれないため）
+    endCol = ws.UsedRange.Columns.Count
+    If endCol < 3 Then endCol = 3
+
+    deletedCount = 0
+    For i = gyousaigo - 1 To gyouhajime + 1 Step -1
+        dateValue = Trim$(CStr(ws.Cells(i, 3).value))
+
+        ' 日付が入っていればスキップ（正常な取引行）
+        If Len(dateValue) > 0 Then GoTo NextRow
+
+        ' 日付が空 → 他の列にデータがあるか確認
+        hasDataInRow = False
+        For col = 4 To endCol
+            If Len(Trim$(CStr(ws.Cells(i, col).value))) > 0 Then
+                hasDataInRow = True
+                Exit For
+            End If
+        Next col
+
+        ' データがある行のみ削除（完全に空の行は残す）
+        If hasDataInRow Then
+            ws.Rows(i).Delete Shift:=xlUp
+            deletedCount = deletedCount + 1
+        End If
+NextRow:
+    Next i
 End Sub
 
 '===============================================================================
