@@ -11,13 +11,12 @@ from pypdf import PdfReader, PdfWriter
 logger = logging.getLogger(__name__)
 
 
-def enhance_scanned_page(pdf_bytes: bytes, page_index: int = 0) -> Optional[bytes]:
-    """Extract and enhance a scanned page image for better OCR accuracy.
+def enhance_scanned_page(pdf_bytes: bytes, page_index: int = 0, dpi: int = 300) -> Optional[bytes]:
+    """Render and enhance a PDF page for better OCR accuracy.
 
-    For scanned PDFs (passbooks etc.), extracts the embedded image directly,
-    applies grayscale + autocontrast + sharpening, and returns as PNG bytes.
-
-    Returns None if PyMuPDF/Pillow are unavailable or the page has no images.
+    Renders the full page as a pixmap (correctly composites all embedded images
+    and vector content), then applies grayscale + autocontrast + sharpening.
+    Returns enhanced PNG bytes.
     """
     try:
         import fitz  # PyMuPDF
@@ -33,19 +32,13 @@ def enhance_scanned_page(pdf_bytes: bytes, page_index: int = 0) -> Optional[byte
             return None
 
         page = doc[page_index]
-        imgs = page.get_images()
-
-        if not imgs:
-            # No embedded images — not a scanned document
-            doc.close()
-            return None
-
-        # Extract the first (usually only) embedded image
-        xref = imgs[0][0]
-        base_image = doc.extract_image(xref)
+        # Render the full page at specified DPI (composites all layers)
+        pix = page.get_pixmap(dpi=dpi)
+        raw_png = pix.tobytes("png")
+        raw_size = len(raw_png)
         doc.close()
 
-        img = Image.open(io.BytesIO(base_image["image"]))
+        img = Image.open(io.BytesIO(raw_png))
 
         # Convert to grayscale for cleaner OCR
         img = ImageOps.grayscale(img)
@@ -61,16 +54,17 @@ def enhance_scanned_page(pdf_bytes: bytes, page_index: int = 0) -> Optional[byte
         enhanced_bytes = buf.getvalue()
 
         logger.info(
-            "Enhanced scanned page %d: %dx%d, %dKB -> %dKB",
+            "Enhanced page %d: rendered %dx%d @ %ddpi, %dKB -> %dKB",
             page_index,
             img.width, img.height,
-            len(base_image["image"]) // 1024,
+            dpi,
+            raw_size // 1024,
             len(enhanced_bytes) // 1024,
         )
         return enhanced_bytes
 
     except Exception as exc:
-        logger.warning("Failed to enhance scanned page %d: %s", page_index, exc)
+        logger.warning("Failed to enhance page %d: %s", page_index, exc)
         return None
 
 
