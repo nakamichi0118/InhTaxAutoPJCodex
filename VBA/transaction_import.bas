@@ -1629,8 +1629,8 @@ Private Function CreateAnalysisJob(endpoint As String, pdfPath As String, docTyp
     dateFmt As String, apiKey As String, _
     Optional startDate As String = "", Optional endDate As String = "") As String
 
-    Const CHUNKED_THRESHOLD As Long = 25 * 1024 * 1024   ' 25MB
-    Const MAX_FILE_BYTES    As Long = 500 * 1024 * 1024  ' 500MB（Long型上限は~2GBだが実用上の制限）
+    Const CHUNKED_THRESHOLD As Long = 26214400    ' 25MB (25*1024*1024)
+    Const MAX_FILE_BYTES    As Long = 524288000   ' 500MB (500*1024*1024)
 
     Dim fileSize As Long
     fileSize = FileLen(pdfPath)
@@ -1638,7 +1638,7 @@ Private Function CreateAnalysisJob(endpoint As String, pdfPath As String, docTyp
     ' Fix #2: 500MB超のPDFは処理不可
     If fileSize > MAX_FILE_BYTES Then
         MsgBox "500MBを超えるPDFは処理できません。" & vbCrLf & _
-               "ファイルサイズ: " & Format(fileSize \ (1024 * 1024), "#,##0") & "MB" & vbCrLf & _
+               "ファイルサイズ: " & Format(fileSize \ 1048576, "#,##0") & "MB" & vbCrLf & _
                "スキャン解像度を下げて再度お試しください。", vbExclamation, "ファイルサイズ超過"
         CreateAnalysisJob = ""
         Exit Function
@@ -2817,7 +2817,7 @@ Private Function CreateAnalysisJobChunked(baseUrl As String, pdfPath As String, 
     docType As String, dateFmt As String, apiKey As String, _
     Optional startDate As String = "", Optional endDate As String = "") As String
 
-    Const CHUNK_SIZE As Long = 20 * 1024 * 1024  ' 20MB
+    Const CHUNK_SIZE As Long = 20971520  ' 20MB (20*1024*1024)
 
     ' 1. upload_id 取得
     Dim uploadId As String
