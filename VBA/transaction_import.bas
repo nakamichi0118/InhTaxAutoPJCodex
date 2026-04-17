@@ -2821,7 +2821,7 @@ Private Function CreateAnalysisJobChunked(baseUrl As String, pdfPath As String, 
 
     ' 1. upload_id 取得
     Dim uploadId As String
-    uploadId = InitChunkedUpload(baseUrl & "/api/upload/init", apiKey)
+    uploadId = InitChunkedUpload(baseUrl & "/upload/init", apiKey)
     If Len(uploadId) = 0 Then Exit Function
 
     ' 2. ADODB.Stream でファイルをチャンク読み込み → 送信
@@ -2853,7 +2853,7 @@ Private Function CreateAnalysisJobChunked(baseUrl As String, pdfPath As String, 
         Application.StatusBar = "PDFアップロード中... " & (chunkIndex + 1) & "/" & totalChunks & " チャンク"
         DoEvents
 
-        If Not UploadChunk(baseUrl & "/api/upload/" & uploadId & "/chunk", chunkIndex, chunkBytes, apiKey) Then
+        If Not UploadChunk(baseUrl & "/upload/" & uploadId & "/chunk", chunkIndex, chunkBytes, apiKey) Then
             MsgBox "チャンク " & chunkIndex & " のアップロードに失敗しました", vbExclamation
             stream.Close
             Set stream = Nothing
@@ -2870,7 +2870,7 @@ Private Function CreateAnalysisJobChunked(baseUrl As String, pdfPath As String, 
 
     ' 3. ジョブ作成
     CreateAnalysisJobChunked = FinalizeChunkedUpload( _
-        baseUrl & "/api/upload/" & uploadId & "/jobs", _
+        baseUrl & "/upload/" & uploadId & "/jobs", _
         pdfPath, docType, dateFmt, apiKey, startDate, endDate)
 End Function
 
