@@ -2879,12 +2879,16 @@ Private Function InitChunkedUpload(endpoint As String, apiKey As String) As Stri
     Set http = CreateHttpClient(60000)
     http.Open "POST", endpoint, False
     http.setRequestHeader "Accept", "application/json"
+    http.setRequestHeader "Content-Type", "application/json"
     http.setRequestHeader "X-Client-Type", "VBA"
     If Len(apiKey) > 0 Then http.setRequestHeader "X-API-Key", apiKey
-    http.send
+    ' ダミーbodyを送信してContent-Lengthを明示（Cloud Run GFE対策）
+    http.send "{}"
 
     If http.Status <> 200 And http.Status <> 201 Then
-        MsgBox "アップロード初期化に失敗: " & http.Status & " " & http.statusText, vbExclamation
+        MsgBox "アップロード初期化に失敗: " & http.Status & " " & http.statusText & vbCrLf & _
+               "URL: " & endpoint & vbCrLf & _
+               "Response: " & ReadUtf8Response(http), vbExclamation
         Exit Function
     End If
 
