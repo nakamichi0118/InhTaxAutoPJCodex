@@ -40,6 +40,7 @@ from .ledger_router import router as ledger_router
 from .jon.router import router as jon_router
 from .analytics import AnalyticsStore, AccessLogMiddleware, analytics_page_router
 from .analytics.router import router as analytics_router, set_store as set_analytics_store
+from .upload_router import router as upload_router
 from .models import (
     AssetRecord,
     DocumentAnalyzeResponse,
@@ -66,6 +67,7 @@ app.include_router(ledger_router)
 app.include_router(jon_router)
 app.include_router(analytics_router)
 app.include_router(analytics_page_router)
+app.include_router(upload_router)
 
 # Initialize analytics store and middleware
 analytics_store = AnalyticsStore(settings.analytics_db_path)
@@ -376,16 +378,14 @@ app.add_middleware(
 )
 
 
-async def _load_file_bytes(file: UploadFile) -> tuple[bytes, str]:
-    contents = await file.read()
+def _process_pdf_bytes(contents: bytes) -> bytes:
+    """PDFバイト列を受け取り、必要に応じて圧縮して返す。
+
+    upload_router.py の _process_pdf_bytes と同一ロジック。
+    チャンクアップロード経由でも同じ圧縮フローを通すために分離している。
+    """
     if not contents:
         raise HTTPException(status_code=400, detail="Empty file uploaded")
-    content_type = file.content_type or "application/pdf"
-    if content_type != "application/pdf":
-        logger.warning("Unexpected content type %s; defaulting to application/pdf", content_type)
-        content_type = "application/pdf"
-
-    # Auto-compress large PDFs (e.g. scanned images at high DPI)
     settings = get_settings()
     max_upload = settings.gemini_max_document_bytes
     if len(contents) > max_upload:
@@ -403,8 +403,19 @@ async def _load_file_bytes(file: UploadFile) -> tuple[bytes, str]:
             )
         logger.info("PDF compressed: %.1fMB -> %.1fMB",
                     original_mb, len(contents) / (1024 * 1024))
+    return contents
 
-    return contents, content_type
+
+async def _load_file_bytes(file: UploadFile) -> tuple[bytes, str]:
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+    content_type = file.content_type or "application/pdf"
+    if content_type != "application/pdf":
+        logger.warning("Unexpected content type %s; defaulting to application/pdf", content_type)
+        content_type = "application/pdf"
+
+    return _process_pdf_bytes(contents), content_type
 
 
 def _with_pdf_chunks(

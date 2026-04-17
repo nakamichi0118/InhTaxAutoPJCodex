@@ -1628,6 +1628,31 @@ End Function
 Private Function CreateAnalysisJob(endpoint As String, pdfPath As String, docType As String, _
     dateFmt As String, apiKey As String, _
     Optional startDate As String = "", Optional endDate As String = "") As String
+
+    Const CHUNKED_THRESHOLD As Long = 25 * 1024 * 1024   ' 25MB
+    Const MAX_FILE_BYTES    As Long = 500 * 1024 * 1024  ' 500MB（Long型上限は~2GBだが実用上の制限）
+
+    Dim fileSize As Long
+    fileSize = FileLen(pdfPath)
+
+    ' Fix #2: 500MB超のPDFは処理不可
+    If fileSize > MAX_FILE_BYTES Then
+        MsgBox "500MBを超えるPDFは処理できません。" & vbCrLf & _
+               "ファイルサイズ: " & Format(fileSize \ (1024 * 1024), "#,##0") & "MB" & vbCrLf & _
+               "スキャン解像度を下げて再度お試しください。", vbExclamation, "ファイルサイズ超過"
+        CreateAnalysisJob = ""
+        Exit Function
+    End If
+
+    If fileSize > CHUNKED_THRESHOLD Then
+        ' チャンクモード: endpoint は ".../jobs" で渡ってくるので baseUrl に戻す
+        Dim baseUrl As String
+        baseUrl = Left$(endpoint, Len(endpoint) - Len("/jobs"))
+        CreateAnalysisJob = CreateAnalysisJobChunked(baseUrl, pdfPath, docType, dateFmt, apiKey, startDate, endDate)
+        Exit Function
+    End If
+
+    ' ---- 既存フロー（25MB以下） ----
     Dim boundary As String
     Dim body() As Byte
     Dim http As Object
@@ -2782,6 +2807,178 @@ Private Function PromptDateInput(title As String, prompt As String) As String
     End If
 
     PromptDateInput = ""
+End Function
+
+' ============================================================
+' チャンクアップロード関連（25MB超のPDF対応）
+' ============================================================
+
+Private Function CreateAnalysisJobChunked(baseUrl As String, pdfPath As String, _
+    docType As String, dateFmt As String, apiKey As String, _
+    Optional startDate As String = "", Optional endDate As String = "") As String
+
+    Const CHUNK_SIZE As Long = 20 * 1024 * 1024  ' 20MB
+
+    ' 1. upload_id 取得
+    Dim uploadId As String
+    uploadId = InitChunkedUpload(baseUrl & "/api/upload/init", apiKey)
+    If Len(uploadId) = 0 Then Exit Function
+
+    ' 2. ADODB.Stream でファイルをチャンク読み込み → 送信
+    Dim stream As Object
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 1  ' binary
+    stream.Open
+    stream.LoadFromFile pdfPath
+
+    Dim totalSize As Long
+    totalSize = stream.Size
+    Dim totalChunks As Long
+    totalChunks = Int((totalSize + CHUNK_SIZE - 1) / CHUNK_SIZE)
+
+    Dim chunkIndex As Long
+    chunkIndex = 0
+    Do While stream.Position < totalSize
+        Dim remaining As Long
+        remaining = totalSize - stream.Position
+        Dim bytesToRead As Long
+        bytesToRead = IIf(remaining < CHUNK_SIZE, remaining, CHUNK_SIZE)
+
+        ' Fix #3: bytesToRead が 0 以下なら無限ループを防ぐため脱出
+        If bytesToRead <= 0 Then Exit Do
+
+        Dim chunkBytes() As Byte
+        chunkBytes = stream.Read(bytesToRead)
+
+        Application.StatusBar = "PDFアップロード中... " & (chunkIndex + 1) & "/" & totalChunks & " チャンク"
+        DoEvents
+
+        If Not UploadChunk(baseUrl & "/api/upload/" & uploadId & "/chunk", chunkIndex, chunkBytes, apiKey) Then
+            MsgBox "チャンク " & chunkIndex & " のアップロードに失敗しました", vbExclamation
+            stream.Close
+            Set stream = Nothing
+            Exit Function
+        End If
+
+        chunkIndex = chunkIndex + 1
+    Loop
+    stream.Close
+    Set stream = Nothing
+
+    Application.StatusBar = "アップロード完了、ジョブ作成中..."
+    DoEvents
+
+    ' 3. ジョブ作成
+    CreateAnalysisJobChunked = FinalizeChunkedUpload( _
+        baseUrl & "/api/upload/" & uploadId & "/jobs", _
+        pdfPath, docType, dateFmt, apiKey, startDate, endDate)
+End Function
+
+Private Function InitChunkedUpload(endpoint As String, apiKey As String) As String
+    Dim http As Object
+    Set http = CreateHttpClient(60000)
+    http.Open "POST", endpoint, False
+    http.setRequestHeader "Accept", "application/json"
+    http.setRequestHeader "X-Client-Type", "VBA"
+    If Len(apiKey) > 0 Then http.setRequestHeader "X-API-Key", apiKey
+    http.send
+
+    If http.Status <> 200 And http.Status <> 201 Then
+        MsgBox "アップロード初期化に失敗: " & http.Status & " " & http.statusText, vbExclamation
+        Exit Function
+    End If
+
+    InitChunkedUpload = GetJsonStringValue(ReadUtf8Response(http), "upload_id")
+End Function
+
+Private Function UploadChunk(endpoint As String, chunkIndex As Long, _
+    chunkBytes() As Byte, apiKey As String) As Boolean
+
+    Dim boundary As String
+    boundary = "----SOROBOCRCHUNK" & Format(Now, "yymmddhhmmss") & CStr(chunkIndex)
+
+    Dim stream As Object
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 1  ' binary
+    stream.Open
+
+    ' chunk_index フィールド（テキストパート）
+    stream.Write StringToBytes(BuildTextPart(boundary, "chunk_index", CStr(chunkIndex)))
+
+    ' chunk ファイルパート
+    stream.Write StringToBytes("--" & boundary & vbCrLf & _
+        "Content-Disposition: form-data; name=""chunk""; filename=""chunk_" & chunkIndex & ".bin""" & vbCrLf & _
+        "Content-Type: application/octet-stream" & vbCrLf & vbCrLf)
+    stream.Write chunkBytes
+    stream.Write StringToBytes(BuildClosingBoundary(boundary))
+
+    stream.Position = 0
+    Dim body() As Byte
+    body = stream.Read
+    stream.Close
+    Set stream = Nothing
+
+    Dim http As Object
+    Set http = CreateHttpClient(300000)  ' 5分タイムアウト
+    http.Open "POST", endpoint, False
+    http.setRequestHeader "Content-Type", "multipart/form-data; boundary=" & boundary
+    http.setRequestHeader "Accept", "application/json"
+    http.setRequestHeader "X-Client-Type", "VBA"
+    If Len(apiKey) > 0 Then http.setRequestHeader "X-API-Key", apiKey
+    http.send body
+
+    UploadChunk = (http.Status = 200 Or http.Status = 201)
+    If Not UploadChunk Then
+        Debug.Print "Chunk upload failed: " & http.Status & " " & ReadUtf8Response(http)
+    End If
+End Function
+
+Private Function FinalizeChunkedUpload(endpoint As String, pdfPath As String, _
+    docType As String, dateFmt As String, apiKey As String, _
+    Optional startDate As String = "", Optional endDate As String = "") As String
+
+    Dim fileName As String
+    fileName = Mid$(pdfPath, InStrRev(pdfPath, Application.PathSeparator) + 1)
+
+    Dim boundary As String
+    boundary = "----SOROBOCRFINAL" & Format(Now, "yymmddhhmmss")
+
+    Dim stream As Object
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 1  ' binary
+    stream.Open
+    stream.Write StringToBytes(BuildTextPart(boundary, "file_name", fileName))
+    If Len(docType) > 0 Then stream.Write StringToBytes(BuildTextPart(boundary, "document_type", docType))
+    If Len(dateFmt) > 0 Then stream.Write StringToBytes(BuildTextPart(boundary, "date_format", dateFmt))
+    If Len(startDate) > 0 Then stream.Write StringToBytes(BuildTextPart(boundary, "start_date", startDate))
+    If Len(endDate) > 0 Then stream.Write StringToBytes(BuildTextPart(boundary, "end_date", endDate))
+    stream.Write StringToBytes("--" & boundary & "--" & vbCrLf)
+    stream.Position = 0
+
+    Dim body() As Byte
+    body = stream.Read
+    stream.Close
+    Set stream = Nothing
+
+    Dim http As Object
+    ' Fix #6: finalize は compress_pdf 等で100MB超PDFが2分超かかる可能性があるため5分に延長
+    Set http = CreateHttpClient(300000)
+    http.Open "POST", endpoint, False
+    http.setRequestHeader "Content-Type", "multipart/form-data; boundary=" & boundary
+    http.setRequestHeader "Accept", "application/json"
+    http.setRequestHeader "X-Client-Type", "VBA"
+    If Len(apiKey) > 0 Then http.setRequestHeader "X-API-Key", apiKey
+    http.send body
+
+    Dim responseText As String
+    responseText = ReadUtf8Response(http)
+
+    If http.Status <> 200 And http.Status <> 202 Then
+        MsgBox "ジョブ作成に失敗: " & http.Status & " " & http.statusText & vbCrLf & responseText, vbExclamation
+        Exit Function
+    End If
+
+    FinalizeChunkedUpload = GetJsonStringValue(responseText, "job_id")
 End Function
 
 

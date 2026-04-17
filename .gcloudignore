@@ -28,3 +28,7 @@ image copy.png
 要望/
 財産目録*
 webapp/追加実装/
+読取りエラー.pdf
+*.pdf
+tmp.json
+ledger_frontend/dist/

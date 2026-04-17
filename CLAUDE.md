@@ -120,6 +120,26 @@ curl http://localhost:8000/api/jobs/{job_id}/result
 - CSVs output with UTF-8 BOM for Windows Excel compatibility
 - All user-facing responses in Japanese
 
+## モデル役割分担規約（本PJ必須）
+
+本PJでは、作業フェーズごとに使用するClaudeモデルを厳密に分ける。これはコスト最適化と品質維持の両立を目的とした規約である。
+
+| フェーズ | 役割 | 使用モデル |
+|---------|------|----------|
+| **入口** | 要件整理・仕様策定・実装計画 | **Opus**（claude-opus-4-7） |
+| **コーディング** | 実装・型チェック・ビルド | **Sonnet**（claude-sonnet-4-6） |
+| **出口** | コードレビュー・品質ゲート・受入判断 | **Opus**（claude-opus-4-7） |
+
+### 具体的な運用
+
+- **入口（Opus）**: ユーザー要件を読み解き、既存コード調査・影響範囲分析・仕様確定。`spec` エージェントを使う場合も Opus を指定。
+- **コーディング（Sonnet）**: `impl` エージェントをSonnetで起動し、仕様書に沿って実装。型チェック・ビルド成功まで責任を持つ。
+- **出口（Opus）**: `review` / `po-check` エージェントをOpusで起動。既存規約違反・バグ・パフォーマンス問題・要件充足を判断。
+
+### 例外
+
+ユーザーが明示的に別モデルを指定した場合のみ、それに従う。
+
 ## Versioning
 
 本プロジェクトはセマンティックバージョニング（MAJOR.MINOR.PATCH）に準拠。詳細は `Docs/VERSIONING.md` を参照。
