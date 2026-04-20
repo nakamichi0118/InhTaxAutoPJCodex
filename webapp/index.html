@@ -1884,7 +1884,17 @@
         };
     }
 
+    // チャンクアップロード定数
+    const CHUNK_UPLOAD_THRESHOLD = 25 * 1024 * 1024;  // 25 MiB: これを超えたらチャンク経路に切替
+    const CHUNK_UPLOAD_SIZE = 20 * 1024 * 1024;       // 20 MiB: 1チャンクのサイズ
+    const CHUNK_UPLOAD_CONCURRENCY = 3;               // 並列アップロード数
+
     async function enqueueJob(file, docType, dateFormat, processingConfig = {}, startDate = '', endDate = '') {
+        // 25 MiB超の場合はチャンクアップロード経路に委譲
+        if (file.size > CHUNK_UPLOAD_THRESHOLD) {
+            return enqueueJobChunked(file, docType, dateFormat, processingConfig, startDate, endDate);
+        }
+
         const base = normalizedApiBase();
         const form = new FormData();
         form.append('file', file);
@@ -1919,6 +1929,138 @@
             throw new Error('ジョブ登録に失敗しました。');
         }
         return payload.job_id;
+    }
+
+    async function enqueueJobChunked(file, docType, dateFormat, processingConfig, startDate, endDate) {
+        const base = normalizedApiBase();
+
+        // 共有AbortController: 全チャンク + init/finalize で同じsignalを使う
+        const sharedController = new AbortController();
+        state.currentAbortController = sharedController;  // キャンセルボタンと紐付け
+
+        try {
+            // 1. アップロードセッション初期化
+            setStatus(`「${file.name}」のアップロードを準備中…`, 'info');
+            const initRes = await fetch(`${base}/upload/init`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+                signal: sharedController.signal,
+            });
+            if (!initRes.ok) {
+                const text = await initRes.text();
+                throw new Error(`アップロード初期化に失敗しました (HTTP ${initRes.status}): ${text}`);
+            }
+            const { upload_id: uploadId, max_total_bytes: maxTotal } = await initRes.json();
+
+            if (file.size > maxTotal) {
+                throw new Error(`${Math.round(maxTotal / (1024 * 1024))}MBを超えるファイルはアップロードできません。`);
+            }
+
+            // 2. ファイルをチャンク分割
+            const chunks = [];
+            for (let offset = 0; offset < file.size; offset += CHUNK_UPLOAD_SIZE) {
+                chunks.push(file.slice(offset, Math.min(offset + CHUNK_UPLOAD_SIZE, file.size)));
+            }
+
+            // 3. チャンクを並列アップロード
+            await uploadChunksInParallel(base, uploadId, chunks, sharedController, (done, total) => {
+                setStatus(`「${file.name}」をアップロード中… (${done}/${total} チャンク)`, 'info');
+            });
+
+            // 4. ジョブ作成（finalize）
+            setStatus(`「${file.name}」のジョブを作成しています…`, 'info');
+            const form = new FormData();
+            form.append('file_name', file.name);
+            if (docType) form.append('document_type', docType);
+            if (dateFormat) form.append('date_format', normalizeDateFormat(dateFormat));
+            if (processingConfig && processingConfig.processing_mode) form.append('processing_mode', processingConfig.processing_mode);
+            if (processingConfig && processingConfig.gemini_model) form.append('gemini_model', processingConfig.gemini_model);
+            if (startDate) form.append('start_date', startDate);
+            if (endDate) form.append('end_date', endDate);
+
+            const finalizeRes = await fetch(`${base}/upload/${uploadId}/jobs`, {
+                method: 'POST',
+                body: form,
+                signal: sharedController.signal,
+            });
+            if (!finalizeRes.ok) {
+                const text = await finalizeRes.text();
+                throw new Error(`ジョブ作成に失敗しました (HTTP ${finalizeRes.status}): ${text}`);
+            }
+            const payload = await finalizeRes.json();
+            if (payload.status !== 'accepted' || !payload.job_id) {
+                throw new Error('ジョブ登録に失敗しました。');
+            }
+            return payload.job_id;
+        } finally {
+            // 後始末: currentAbortController を解放
+            if (state.currentAbortController === sharedController) {
+                state.currentAbortController = null;
+            }
+        }
+    }
+
+    async function uploadChunksInParallel(base, uploadId, chunks, controller, onProgress) {
+        let nextIndex = 0;
+        let completed = 0;
+        const errors = [];
+
+        async function worker() {
+            while (true) {
+                if (controller.signal.aborted) return;
+                const i = nextIndex++;
+                if (i >= chunks.length) return;
+                try {
+                    await uploadChunkWithRetry(base, uploadId, i, chunks[i], controller);
+                    completed++;
+                    onProgress(completed, chunks.length);
+                } catch (e) {
+                    errors.push({ index: i, error: e });
+                    // 他workerも止めるため全体abort
+                    controller.abort();
+                    throw e;
+                }
+            }
+        }
+
+        try {
+            await Promise.all(Array.from({ length: CHUNK_UPLOAD_CONCURRENCY }, worker));
+        } catch (e) {
+            if (errors.length > 0) {
+                console.error('All chunk errors:', errors);
+                throw errors[0].error;
+            }
+            throw e;
+        }
+    }
+
+    async function uploadChunkWithRetry(base, uploadId, index, blob, controller, retries = 1) {
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                const form = new FormData();
+                form.append('chunk_index', String(index));
+                form.append('chunk', blob, `chunk_${index}.bin`);
+                const res = await fetch(`${base}/upload/${uploadId}/chunk`, {
+                    method: 'POST',
+                    body: form,
+                    signal: controller.signal,
+                });
+                if (!res.ok) {
+                    const text = await res.text();
+                    throw new Error(`HTTP ${res.status}: ${text}`);
+                }
+                return;
+            } catch (e) {
+                // AbortErrorまたはキャンセル中はretryしない
+                if (e?.name === 'AbortError' || controller.signal.aborted || state.cancelRequested) {
+                    throw e;
+                }
+                if (attempt >= retries) {
+                    throw new Error(`チャンク ${index + 1} のアップロードに失敗しました: ${e.message}`);
+                }
+            }
+        }
     }
 
     async function pollJobUntilComplete(jobId, { fileName } = {}) {
