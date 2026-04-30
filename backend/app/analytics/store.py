@@ -85,6 +85,64 @@ class AnalyticsStore:
                 )
                 return cursor.lastrowid or 0
 
+    def bulk_insert_logs(self, rows: List[Dict[str, Any]]) -> Dict[str, int]:
+        """Bulk insert with deduplication. Single transaction + executemany.
+
+        Optimized for GCS Fuse-mounted SQLite where commit cost dominates.
+        """
+        if not rows:
+            return {"inserted": 0, "skipped": 0}
+        with self._lock:
+            with self._connect() as conn:
+                # 既存キーを一括取得（O(N+M)で重複判定）
+                existing_keys = set()
+                cur = conn.execute(
+                    "SELECT timestamp, endpoint, COALESCE(ip_address, '') FROM access_logs"
+                )
+                for ts, ep, ip in cur.fetchall():
+                    existing_keys.add((ts, ep, ip))
+
+                to_insert = []
+                skipped = 0
+                for row in rows:
+                    ts = row.get("timestamp") or ""
+                    ep = row.get("endpoint") or ""
+                    ip = row.get("ip_address") or ""
+                    key = (ts, ep, ip)
+                    if not ts or not ep:
+                        skipped += 1
+                        continue
+                    if key in existing_keys:
+                        skipped += 1
+                        continue
+                    existing_keys.add(key)
+                    to_insert.append(
+                        (
+                            ts,
+                            ep,
+                            row.get("method") or "GET",
+                            row.get("client_type") or "web",
+                            row.get("doc_type"),
+                            row.get("status_code"),
+                            row.get("duration_ms"),
+                            row.get("user_agent"),
+                            row.get("ip_address"),
+                            row.get("extra"),
+                        )
+                    )
+
+                if to_insert:
+                    conn.executemany(
+                        """
+                        INSERT INTO access_logs
+                        (timestamp, endpoint, method, client_type, doc_type, status_code, duration_ms, user_agent, ip_address, extra)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        to_insert,
+                    )
+                    conn.commit()
+                return {"inserted": len(to_insert), "skipped": skipped}
+
     def exists_log(
         self,
         timestamp: Optional[str],

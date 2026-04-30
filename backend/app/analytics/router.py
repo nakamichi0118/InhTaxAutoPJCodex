@@ -200,34 +200,13 @@ def import_logs(
             detail=f"Batch too large: {len(payload)} rows exceeds limit of {MAX_BATCH_SIZE}. "
                    "Split into smaller batches.",
         )
-    inserted = 0
-    skipped = 0
-    for row in payload:
-        try:
-            if store.exists_log(
-                row.get("timestamp"),
-                row.get("endpoint"),
-                row.get("ip_address"),
-            ):
-                skipped += 1
-                continue
-            store.insert_log_raw(
-                timestamp=row.get("timestamp") or "",
-                endpoint=row.get("endpoint") or "",
-                method=row.get("method", "GET") or "GET",
-                client_type=row.get("client_type", "web") or "web",
-                doc_type=row.get("doc_type"),
-                status_code=row.get("status_code"),
-                duration_ms=row.get("duration_ms"),
-                user_agent=row.get("user_agent"),
-                ip_address=row.get("ip_address"),
-                extra=row.get("extra"),
-            )
-            inserted += 1
-        except Exception as e:
-            logger.warning(f"Skipped log row: {e}")
-            skipped += 1
-    return ImportResult(inserted=inserted, skipped=skipped, total=len(payload))
+    # Bulk insert with deduplication (single transaction, executemany)
+    result = store.bulk_insert_logs(payload)
+    return ImportResult(
+        inserted=result["inserted"],
+        skipped=result["skipped"],
+        total=len(payload),
+    )
 
 
 @router.get("/logs")
