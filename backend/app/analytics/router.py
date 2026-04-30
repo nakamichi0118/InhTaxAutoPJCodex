@@ -232,7 +232,7 @@ def import_logs(
 
 @router.get("/logs")
 def get_recent_logs(
-    limit: int = Query(100, ge=1, le=1000, description="Number of logs to return"),
+    limit: int = Query(100, ge=1, le=100000, description="Number of logs to return"),
     _: bool = Depends(verify_password),
     store: AnalyticsStore = Depends(get_store),
 ) -> list[LogEntry]:
