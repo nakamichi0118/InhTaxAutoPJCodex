@@ -110,6 +110,7 @@ class LogEntry(BaseModel):
     duration_ms: Optional[int]
     user_agent: Optional[str]
     ip_address: Optional[str]
+    extra: Optional[str] = None
 
 
 @router.get("/summary")
