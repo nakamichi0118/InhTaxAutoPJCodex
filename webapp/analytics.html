@@ -758,6 +758,13 @@
         const CLIENT_COLORS = { web: '#4f6ef7', excel: '#22c55e', script: '#f59e0b' };
         const CLIENT_LABELS = { web: 'Webアプリ', excel: 'Excel/VBA', script: 'スクリプト' };
 
+        // ── API Base ──
+        // Cloudflare Pages (*.pages.dev) から開かれた場合は Cloud Run を絶対URLで叩く。
+        // localhost や Cloud Run 直配信の場合は相対パス。
+        const API_BASE = (window.location.hostname.includes('pages.dev'))
+            ? 'https://sorobocr-441106995152.asia-northeast1.run.app'
+            : '';
+
         let password = '';
         let charts = {};
         let allLogs = [];
@@ -782,7 +789,7 @@
             e.preventDefault();
             password = document.getElementById('passwordInput').value;
             try {
-                const response = await fetch(`/api/analytics/summary?password=${encodeURIComponent(password)}`);
+                const response = await fetch(`${API_BASE}/api/analytics/summary?password=${encodeURIComponent(password)}`);
                 if (response.ok) {
                     document.getElementById('loginCard').style.display = 'none';
                     document.getElementById('dashboard').classList.add('visible');
@@ -806,7 +813,7 @@
                 end_date: endDate,
                 ...params
             });
-            const response = await fetch(`/api/analytics/${endpoint}?${qs}`);
+            const response = await fetch(`${API_BASE}/api/analytics/${endpoint}?${qs}`);
             if (!response.ok) throw new Error('API error');
             return response.json();
         }
