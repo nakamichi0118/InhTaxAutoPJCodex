@@ -85,6 +85,49 @@ class AnalyticsStore:
                 )
                 return cursor.lastrowid or 0
 
+    def exists_log(
+        self,
+        timestamp: Optional[str],
+        endpoint: Optional[str],
+        ip_address: Optional[str],
+    ) -> bool:
+        """Check if a log with the same timestamp+endpoint+ip exists (for dedup on import)."""
+        if not timestamp or not endpoint:
+            return False
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM access_logs WHERE timestamp = ? AND endpoint = ? AND COALESCE(ip_address, '') = COALESCE(?, '') LIMIT 1",
+                (timestamp, endpoint, ip_address),
+            ).fetchone()
+            return row is not None
+
+    def insert_log_raw(
+        self,
+        timestamp: str,
+        endpoint: str,
+        method: str = "GET",
+        client_type: str = "web",
+        doc_type: Optional[str] = None,
+        status_code: Optional[int] = None,
+        duration_ms: Optional[int] = None,
+        user_agent: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        extra: Optional[str] = None,
+    ) -> int:
+        """Insert a log with explicit timestamp (for bulk import).
+        Unlike log_access(), this does NOT auto-set timestamp to now()."""
+        with self._lock:
+            with self._connect() as conn:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO access_logs
+                    (timestamp, endpoint, method, client_type, doc_type, status_code, duration_ms, user_agent, ip_address, extra)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (timestamp, endpoint, method, client_type, doc_type, status_code, duration_ms, user_agent, ip_address, extra),
+                )
+                return cursor.lastrowid or 0
+
     def get_daily_stats(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
         """Get daily access counts between dates."""
         with self._connect() as conn:

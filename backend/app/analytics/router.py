@@ -1,13 +1,16 @@
 """Analytics API router."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from ..config import Settings, get_settings
 from .store import AnalyticsStore
@@ -174,6 +177,57 @@ def get_doc_type_stats(
 
     rows = store.get_doc_type_stats(start_date, end_date)
     return [DocTypeStats(**row) for row in rows]
+
+
+class ImportResult(BaseModel):
+    inserted: int
+    skipped: int
+    total: int
+
+
+@router.post("/import")
+def import_logs(
+    payload: List[Dict[str, Any]],
+    _: bool = Depends(verify_password),
+    store: AnalyticsStore = Depends(get_store),
+) -> ImportResult:
+    """Bulk import access logs from external source (e.g., Railway export)."""
+    # 1リクエスト最大10,000件まで（メモリ保護）
+    MAX_BATCH_SIZE = 10_000
+    if len(payload) > MAX_BATCH_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Batch too large: {len(payload)} rows exceeds limit of {MAX_BATCH_SIZE}. "
+                   "Split into smaller batches.",
+        )
+    inserted = 0
+    skipped = 0
+    for row in payload:
+        try:
+            if store.exists_log(
+                row.get("timestamp"),
+                row.get("endpoint"),
+                row.get("ip_address"),
+            ):
+                skipped += 1
+                continue
+            store.insert_log_raw(
+                timestamp=row.get("timestamp") or "",
+                endpoint=row.get("endpoint") or "",
+                method=row.get("method", "GET") or "GET",
+                client_type=row.get("client_type", "web") or "web",
+                doc_type=row.get("doc_type"),
+                status_code=row.get("status_code"),
+                duration_ms=row.get("duration_ms"),
+                user_agent=row.get("user_agent"),
+                ip_address=row.get("ip_address"),
+                extra=row.get("extra"),
+            )
+            inserted += 1
+        except Exception as e:
+            logger.warning(f"Skipped log row: {e}")
+            skipped += 1
+    return ImportResult(inserted=inserted, skipped=skipped, total=len(payload))
 
 
 @router.get("/logs")
